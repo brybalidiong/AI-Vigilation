@@ -1,0 +1,119 @@
+erDiagram
+    auth_user ||--o| accounts_userprofile : "has"
+    auth_user ||--o{ accounts_subject : "teaches"
+    auth_user ||--o{ accounts_studentset : "creates"
+
+    accounts_subject ||--o{ accounts_studentset : "has rosters"
+    accounts_subject ||--o{ accounts_subjectenrollment : "enrolls"
+    accounts_subject ||--o{ accounts_examset : "has exams"
+
+    accounts_studentset ||--o{ accounts_enrolledstudent : "contains"
+    accounts_studentset ||--o{ accounts_examset_assigned_sets : "assigned exams"
+    accounts_examset ||--o{ accounts_examset_assigned_sets : "assigned rosters"
+
+    accounts_examset ||--o{ accounts_examsubmission : "submissions"
+    accounts_examset ||--o{ accounts_examquestion : "questions"
+    accounts_examset ||--o{ accounts_studentanswer : "answers"
+
+    accounts_examquestion ||--o{ accounts_studentanswer : "answered"
+
+    auth_user {
+        int id PK
+        varchar username
+        varchar email
+    }
+
+    accounts_userprofile {
+        bigint id PK
+        int user_id FK
+        varchar role
+        boolean is_enrolled
+    }
+
+    accounts_subject {
+        bigint id PK
+        int instructor_id FK
+        varchar name
+        varchar code
+    }
+
+    accounts_studentset {
+        bigint id PK
+        bigint subject_id FK
+        int created_by_id FK
+        varchar name
+    }
+
+    accounts_enrolledstudent {
+        bigint id PK
+        bigint student_set_id FK
+        varchar email
+    }
+
+    accounts_subjectenrollment {
+        bigint id PK
+        bigint subject_id FK
+        varchar email
+    }
+
+    accounts_examset {
+        bigint id PK
+        bigint subject_id FK
+        varchar title
+        int max_attempts
+        int time_limit
+    }
+
+    accounts_examset_assigned_sets {
+        bigint examset_id FK
+        bigint studentset_id FK
+    }
+
+    accounts_examsubmission ||--o{ accounts_examproctoringevent : "logs"
+    accounts_examsubmission ||--o{ accounts_examproctoringevidence : "screenshots"
+    accounts_examsubmission ||--o{ accounts_examintegrityreport : "reports"
+    accounts_examproctoringevent ||--o{ accounts_examproctoringevidence : "linked"
+
+    accounts_examsubmission {
+        bigint id PK
+        bigint exam_set_id FK
+        varchar student_email
+        numeric score
+        numeric integrity_score
+    }
+
+    accounts_examproctoringevent {
+        bigint id PK
+        bigint submission_id FK
+        varchar event_type
+        varchar severity
+    }
+
+    accounts_examproctoringevidence {
+        bigint id PK
+        bigint submission_id FK
+        varchar image
+        varchar evidence_type
+    }
+
+    accounts_examintegrityreport {
+        bigint id PK
+        bigint submission_id FK
+        numeric integrity_score
+        text narrative
+    }
+
+    accounts_examquestion {
+        bigint id PK
+        bigint exam_set_id FK
+        varchar question_type
+        jsonb choices
+    }
+
+    accounts_studentanswer {
+        bigint id PK
+        bigint exam_set_id FK
+        bigint question_id FK
+        varchar student_email
+        boolean is_correct
+    }

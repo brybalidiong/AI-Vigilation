@@ -1,0 +1,180 @@
+/* Shared login page styles for Admin & Instructor login */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  font-family: 'Inter', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.login-brand {
+  width: 46%;
+  background: #1D3461;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-brand::before {
+  content: '';
+  position: absolute;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 65%);
+  top: -150px; right: -150px;
+  pointer-events: none;
+}
+.login-brand::after {
+  content: '';
+  position: absolute;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(236,72,153,0.15) 0%, transparent 65%);
+  bottom: -100px; left: -100px;
+  pointer-events: none;
+}
+
+.brand-content {
+  position: relative;
+  z-index: 1;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.brand-logo { display: flex; align-items: center; gap: 1rem; }
+.brand-name { 
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.8rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; 
+  background: linear-gradient(to right, #fff, #a5b4fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-tagline h1 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 3.5rem; font-weight: 800; color: #fff;
+  line-height: 1.05; letter-spacing: -0.03em; margin-bottom: 1.1rem;
+}
+.brand-tagline p { font-size: 1rem; color: rgba(255,255,255,0.6); line-height: 1.6; }
+
+.brand-features { display: flex; flex-direction: column; gap: 1rem; }
+.feature-item { display: flex; align-items: center; gap: 1rem; color: rgba(255,255,255,0.8); font-size: 0.95rem; font-weight: 500; }
+.feature-dot { width: 8px; height: 8px; border-radius: 50%; background: #4a7bc4; flex-shrink: 0; box-shadow: 0 0 0 4px rgba(29,52,97,0.3); }
+
+.login-form-panel {
+  flex: 1;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  position: relative;
+}
+.login-form-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+}
+
+.login-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 24px;
+  padding: 3rem;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 16px 48px rgba(15,23,42,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 10;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.login-header h2 { font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 800; color: #1e293b; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+.login-header p { font-size: 0.95rem; color: #64748b; }
+
+.login-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.field-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.field-group label { font-family: 'Outfit', sans-serif; font-size: 0.85rem; font-weight: 700; color: #1e293b; }
+
+.input-wrap { position: relative; }
+.input-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; }
+
+.input-wrap input {
+  width: 100%;
+  padding: 0.9rem 1.25rem 0.9rem 2.8rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: #1e293b;
+  background: rgba(255,255,255,0.7);
+  outline: none;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-sizing: border-box;
+}
+.input-wrap input::placeholder { color: #94a3b8; }
+.input-wrap input:focus {
+  border-color: #1D3461;
+  box-shadow: 0 0 0 4px rgba(29,52,97,0.12), inset 0 2px 4px rgba(0,0,0,0.02);
+  background: #fff;
+}
+
+.toggle-btn {
+  position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+  background: #f1f5f9; border: 1px solid #e2e8f0; color: #64748b;
+  font-weight: 600; border-radius: 8px; padding: 0.3rem 0.75rem;
+  font-size: 0.75rem; cursor: pointer; transition: all 0.2s; font-family: inherit;
+}
+.toggle-btn:hover { background: #e2e8f0; color: #1e293b; }
+
+.btn-primary {
+  width: 100%; padding: 1rem;
+  background: #1D3461; color: #fff;
+  border: none; border-radius: 12px;
+  font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700;
+  cursor: pointer; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); margin-top: 0.5rem;
+  box-shadow: 0 8px 20px rgba(29,52,97,0.25);
+}
+.btn-primary:hover:not(:disabled) {
+  background: #162a4f;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(29,52,97,0.35);
+}
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; background: #94a3b8; }
+
+.error-msg {
+  display: flex; align-items: center; gap: 0.75rem;
+  background: rgba(254, 226, 226, 0.5); border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px; padding: 0.85rem 1.25rem;
+  font-size: 0.9rem; font-weight: 600; color: #ef4444;
+}
+
+.btn-back {
+  background: transparent; border: none; color: #94a3b8;
+  font-family: inherit; font-size: 0.9rem; font-weight: 600;
+  cursor: pointer; padding: 0.5rem 0; text-align: center; transition: color 0.2s;
+}
+.btn-back:hover { color: #1e293b; }
+
+@media (max-width: 768px) {
+  .login-brand { display: none; }
+  .login-form-panel { background: #fff; }
+}

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Django
+*.sqlite3
+exambackend/db.sqlite3
+exambackend/media/
+exambackend/course_photos/
+exambackend/staticfiles/
+
+# Environment / Secrets
+.env
+*.env
+exambackend/.env
+exambackend/serviceAccountKey.json
+
+# Node / Frontend
+node_modules/
+examfrontend/node_modules/
+examfrontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Misc
+datadump.json
+examfrontend/check_tags.py
+examfrontend/fix_back.py
+examfrontend/fix_mojibake.py
+exambackend/fix_tracker.py
+exambackend/restore.py
+
+# Large model binaries (too big for git — sync manually or via sync_gaze_assets.py)
+*.keras
+*.h5
+*.onnx
+*.tflite
+*.task
+TrainModel/temp_keras_extract/

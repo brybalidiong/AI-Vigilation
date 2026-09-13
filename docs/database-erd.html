@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Online Invigilator — Database ERD</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    @page {
+      size: A3 landscape;
+      margin: 12mm;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: #1a1a2e;
+      background: #fff;
+      margin: 0;
+      padding: 24px 32px;
+      line-height: 1.5;
+    }
+
+    header {
+      border-bottom: 3px solid #2563eb;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.75rem;
+      color: #1e3a8a;
+    }
+
+    .meta {
+      font-size: 0.9rem;
+      color: #64748b;
+    }
+
+    h2 {
+      font-size: 1.15rem;
+      color: #1e40af;
+      margin: 28px 0 12px;
+      page-break-after: avoid;
+    }
+
+    .diagram-wrap {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 20px;
+      overflow-x: auto;
+      page-break-inside: avoid;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-bottom: 24px;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    th {
+      background: #eff6ff;
+      color: #1e3a8a;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) td { background: #f8fafc; }
+
+    .pk { color: #b45309; font-weight: 600; }
+    .fk { color: #047857; font-weight: 600; }
+
+    .cat {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .cat-app { background: #dbeafe; color: #1e40af; }
+    .cat-auth { background: #fef3c7; color: #92400e; }
+    .cat-django { background: #f3f4f6; color: #374151; }
+
+    h3 {
+      font-size: 1rem;
+      color: #334155;
+      margin: 20px 0 10px;
+    }
+
+    .overview-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 0.85rem;
+      margin: 16px 0 24px;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 6px;
+      vertical-align: middle;
+      border-radius: 2px;
+    }
+
+    .legend .pk::before { background: #f59e0b; }
+    .legend .fk::before { background: #10b981; }
+
+    footer {
+      margin-top: 32px;
+      padding-top: 12px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+      h2 { page-break-before: auto; }
+      .page-break { page-break-before: always; }
+    }
+
+    .print-hint {
+      background: #eff6ff;
+      border: 1px solid #93c5fd;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 24px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Online Invigilator — Entity Relationship Diagram</h1>
+    <p class="meta">
+      Database: Supabase PostgreSQL &nbsp;|&nbsp;
+      Schema: public &nbsp;|&nbsp;
+      23 tables total (13 application + 6 auth + 4 Django)
+    </p>
+  </header>
+
+  <p class="print-hint no-print">
+    <strong>Save as PDF:</strong> Press <kbd>Ctrl</kbd>+<kbd>P</kbd> (or <kbd>Cmd</kbd>+<kbd>P</kbd> on Mac),
+    choose <em>Save as PDF</em>, set orientation to <strong>Landscape</strong> for best results.
+  </p>
+
+  <div class="legend">
+    <span class="pk">PK = Primary Key</span>
+    <span class="fk">FK = Foreign Key</span>
+  </div>
+
+  <h2>ERD — Application Tables</h2>
+  <div class="diagram-wrap">
+    <pre class="mermaid">
+erDiagram
+    auth_user ||--o| accounts_userprofile : "has"
+    auth_user ||--o{ accounts_subject : "teaches"
+    auth_user ||--o{ accounts_studentset : "creates"
+
+    accounts_subject ||--o{ accounts_studentset : "has rosters"
+    accounts_subject ||--o{ accounts_subjectenrollment : "enrolls"
+    accounts_subject ||--o{ accounts_examset : "has exams"
+
+    accounts_studentset ||--o{ accounts_enrolledstudent : "contains"
+    accounts_studentset ||--o{ accounts_examset_assigned_sets : "assigned exams"
+    accounts_examset ||--o{ accounts_examset_assigned_sets : "assigned rosters"
+
+    accounts_examset ||--o{ accounts_examsubmission : "submissions"
+    accounts_examset ||--o{ accounts_examquestion : "questions"
+    accounts_examset ||--o{ accounts_studentanswer : "answers"
+
+    accounts_examsubmission ||--o{ accounts_examproctoringevent : "logs"
+    accounts_examsubmission ||--o{ accounts_examproctoringevidence : "screenshots"
+    accounts_examsubmission ||--o{ accounts_examintegrityreport : "reports"
+    accounts_examproctoringevent ||--o{ accounts_examproctoringevidence : "linked"
+
+    accounts_examquestion ||--o{ accounts_studentanswer : "answered"
+
+    auth_user {
+        int id PK
+        varchar username
+        varchar email
+        varchar password
+    }
+
+    accounts_userprofile {
+        bigint id PK
+        int user_id FK
+        varchar role
+        boolean is_enrolled
+        varchar google_photo
+    }
+
+    accounts_subject {
+        bigint id PK
+        varchar name
+        varchar code
+        int instructor_id FK
+        text announcements
+        varchar display_photo
+        timestamptz created_at
+    }
+
+    accounts_studentset {
+        bigint id PK
+        varchar name
+        bigint subject_id FK
+        int created_by_id FK
+        timestamptz created_at
+    }
+
+    accounts_enrolledstudent {
+        bigint id PK
+        varchar email
+        bigint student_set_id FK
+        timestamptz created_at
+    }
+
+    accounts_subjectenrollment {
+        bigint id PK
+        varchar email
+        bigint subject_id FK
+        timestamptz created_at
+    }
+
+    accounts_examset {
+        bigint id PK
+        bigint subject_id FK
+        varchar title
+        text description
+        timestamptz available_from
+        timestamptz due_at
+        varchar exam_file
+        boolean is_final
+        int max_attempts
+        int time_limit
+        timestamptz created_at
+    }
+
+    accounts_examset_assigned_sets {
+        bigint id PK
+        bigint examset_id FK
+        bigint studentset_id FK
+    }
+
+    accounts_examsubmission {
+        bigint id PK
+        bigint exam_set_id FK
+        varchar student_email
+        boolean is_done
+        numeric score
+        numeric integrity_score
+        timestamptz started_at
+        timestamptz submitted_at
+        boolean terminated
+        smallint tab_switches
+        int attempt_count
+    }
+
+    accounts_examquestion {
+        bigint id PK
+        bigint exam_set_id FK
+        int order
+        varchar question_type
+        text question_text
+        jsonb choices
+        varchar correct_answer
+        timestamptz created_at
+    }
+
+    accounts_studentanswer {
+        bigint id PK
+        bigint exam_set_id FK
+        bigint question_id FK
+        varchar student_email
+        text answer_text
+        boolean is_correct
+        timestamptz submitted_at
+    }
+
+    accounts_examproctoringevent {
+        bigint id PK
+        bigint submission_id FK
+        int attempt_number
+        varchar event_type
+        varchar severity
+        text message
+        jsonb metadata
+        timestamptz created_at
+    }
+
+    accounts_examproctoringevidence {
+        bigint id PK
+        bigint submission_id FK
+        bigint event_id FK
+        varchar evidence_type
+        varchar image
+        varchar caption
+        timestamptz created_at
+    }
+
+    accounts_examintegrityreport {
+        bigint id PK
+        bigint submission_id FK
+        int attempt_number
+        numeric integrity_score
+        int event_count
+        int evidence_count
+        text narrative
+        timestamptz generated_at
+    }
+    </pre>
+  </div>
+
+  <h2 class="page-break">Complete Table Reference (23 tables)</h2>
+
+  <div class="overview-box">
+    <strong>ERD diagram above</strong> shows application relationships (14 core entities).<br>
+    <strong>This section</strong> documents every table in Supabase, including Django framework tables not drawn on the ERD.
+  </div>
+
+  <h3>Application tables — <span class="cat cat-app">accounts_*</span> (13 tables)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Table</th>
+        <th>Function</th>
+        <th>Relationships</th>
+        <th>Who uses it</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>accounts_userprofile</strong></td>
+        <td>Extends login with role (admin / instructor / student), enrollment status, and Google profile photo URL.</td>
+        <td>1:1 with <strong>auth_user</strong></td>
+        <td>All roles</td>
+        <td>Created on first Google login; drives access control in the API.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_subject</strong></td>
+        <td>Represents a course: name, code, announcements, and optional display photo.</td>
+        <td>Many → <strong>auth_user</strong> (instructor); parent of rosters, enrollments, exams</td>
+        <td>Instructor, Student</td>
+        <td>Unique <em>(instructor, code)</em>. Photo path stored in Supabase Storage.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_studentset</strong></td>
+        <td>Named roster or class section (e.g. “BSIT 3A”) under a subject.</td>
+        <td>→ <strong>accounts_subject</strong>, → <strong>auth_user</strong> (created_by)</td>
+        <td>Instructor</td>
+        <td>Instructor creates rosters to group students for exam assignment.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_enrolledstudent</strong></td>
+        <td>Lists student emails allowed in a specific roster.</td>
+        <td>→ <strong>accounts_studentset</strong></td>
+        <td>Instructor, Student</td>
+        <td>Unique <em>(email, student_set)</em>. Used to validate who may take assigned exams.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_subjectenrollment</strong></td>
+        <td>Links student emails to a subject (course-level enrollment).</td>
+        <td>→ <strong>accounts_subject</strong></td>
+        <td>Instructor, Student</td>
+        <td>Unique <em>(subject, email)</em>. Determines which courses appear on the student dashboard.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examset</strong></td>
+        <td>Exam or assignment: title, schedule, PDF/file, time limit, max attempts, final flag.</td>
+        <td>→ <strong>accounts_subject</strong>; M2M ↔ <strong>accounts_studentset</strong> via join table</td>
+        <td>Instructor, Student</td>
+        <td><code>exam_file</code> is a Storage path. <code>is_final</code> locks questions after publish.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examset_assigned_sets</strong></td>
+        <td>Join table: which rosters may access which exam.</td>
+        <td>↔ <strong>accounts_examset</strong> + <strong>accounts_studentset</strong></td>
+        <td>Instructor</td>
+        <td>If empty, exam may be open to all rosters in the subject (per app logic).</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examsubmission</strong></td>
+        <td>One student’s attempt on an exam: score, integrity %, start/submit times, proctoring flags.</td>
+        <td>→ <strong>accounts_examset</strong>; parent of proctoring logs &amp; reports</td>
+        <td>Student, Instructor</td>
+        <td>Unique <em>(exam_set, student_email)</em>. Tracks <code>tab_switches</code>, <code>terminated</code>, <code>attempt_count</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examquestion</strong></td>
+        <td>Individual question: multiple choice or identification, choices (JSON), correct answer.</td>
+        <td>→ <strong>accounts_examset</strong></td>
+        <td>Instructor, Student</td>
+        <td>Ordered by <code>order</code>. MC auto-graded; identification graded manually.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_studentanswer</strong></td>
+        <td>Student’s answer to one question, with optional auto-grade result.</td>
+        <td>→ <strong>accounts_examset</strong>, → <strong>accounts_examquestion</strong></td>
+        <td>Student, Instructor</td>
+        <td>Unique <em>(exam_set, question, student_email)</em>. <code>is_correct</code> null for identification.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examproctoringevent</strong></td>
+        <td>Timestamped action log during an exam (tab switch, copy, split screen, exam start/end, etc.).</td>
+        <td>→ <strong>accounts_examsubmission</strong>; optional link from evidence</td>
+        <td>Student (writes), Instructor (reads)</td>
+        <td>Severity: info / warning / critical. Used to compute integrity score and audit trail.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examproctoringevidence</strong></td>
+        <td>Webcam or screen capture stored as image proof of exam session.</td>
+        <td>→ <strong>accounts_examsubmission</strong>; optional → <strong>accounts_examproctoringevent</strong></td>
+        <td>Student (uploads), Instructor (views)</td>
+        <td>Images in Supabase Storage (<code>proctoring_evidence/</code>). Periodic + event-triggered snapshots.</td>
+      </tr>
+      <tr>
+        <td><strong>accounts_examintegrityreport</strong></td>
+        <td>Generated summary per attempt: integrity %, event/evidence counts, narrative text.</td>
+        <td>→ <strong>accounts_examsubmission</strong></td>
+        <td>Instructor</td>
+        <td>Unique <em>(submission, attempt_number)</em>. Built on exam submit; shown in integrity report UI.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Authentication tables — <span class="cat cat-auth">auth_*</span> (6 tables)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Table</th>
+        <th>Function</th>
+        <th>Relationships</th>
+        <th>Who uses it</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>auth_user</strong></td>
+        <td>Django user accounts: username, email, password hash, staff/superuser flags.</td>
+        <td>1:1 <strong>accounts_userprofile</strong>; referenced by subjects &amp; rosters</td>
+        <td>All roles</td>
+        <td><strong>Primary login table.</strong> Populated via Google OAuth, instructor login, or admin login.</td>
+      </tr>
+      <tr>
+        <td><strong>auth_group</strong></td>
+        <td>Named permission groups (e.g. “Moderators”).</td>
+        <td>M2M with users and permissions</td>
+        <td>Django Admin</td>
+        <td>Framework table; not used directly by the Vue frontend today.</td>
+      </tr>
+      <tr>
+        <td><strong>auth_permission</strong></td>
+        <td>Granular permissions (add/change/delete per model).</td>
+        <td>Linked to groups and users</td>
+        <td>Django Admin</td>
+        <td>Auto-created for each model; supports Django Admin access control.</td>
+      </tr>
+      <tr>
+        <td><strong>auth_user_groups</strong></td>
+        <td>Join table: which groups a user belongs to.</td>
+        <td>↔ <strong>auth_user</strong> + <strong>auth_group</strong></td>
+        <td>Django Admin</td>
+        <td>Many-to-many link table.</td>
+      </tr>
+      <tr>
+        <td><strong>auth_user_user_permissions</strong></td>
+        <td>Extra permissions assigned directly to a user (outside groups).</td>
+        <td>↔ <strong>auth_user</strong> + <strong>auth_permission</strong></td>
+        <td>Django Admin</td>
+        <td>Overrides or supplements group permissions.</td>
+      </tr>
+      <tr>
+        <td><strong>auth_group_permissions</strong></td>
+        <td>Permissions granted to a group.</td>
+        <td>↔ <strong>auth_group</strong> + <strong>auth_permission</strong></td>
+        <td>Django Admin</td>
+        <td>Defines what members of a group can do in Admin.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Django framework tables — <span class="cat cat-django">django_*</span> (4 tables)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Table</th>
+        <th>Function</th>
+        <th>Relationships</th>
+        <th>Who uses it</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>django_migrations</strong></td>
+        <td>Records which database migrations have been applied.</td>
+        <td>None (standalone)</td>
+        <td>Django (system)</td>
+        <td>Updated by <code>python manage.py migrate</code>. Do not edit manually.</td>
+      </tr>
+      <tr>
+        <td><strong>django_session</strong></td>
+        <td>Server-side session data for logged-in browser sessions.</td>
+        <td>Keyed by session id</td>
+        <td>Django (system)</td>
+        <td>Used if session middleware is active; API primarily uses JWT instead.</td>
+      </tr>
+      <tr>
+        <td><strong>django_content_type</strong></td>
+        <td>Maps each model to an ID for the permission framework.</td>
+        <td>Referenced by <strong>auth_permission</strong></td>
+        <td>Django (system)</td>
+        <td>Auto-maintained when models are registered.</td>
+      </tr>
+      <tr>
+        <td><strong>django_admin_log</strong></td>
+        <td>Audit log of actions performed in Django Admin (who changed what).</td>
+        <td>→ <strong>auth_user</strong>, content types</td>
+        <td>Django Admin</td>
+        <td>Stores add/change/delete history for admin UI actions.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Data flow summary</h3>
+  <div class="overview-box">
+    <ol style="margin: 0; padding-left: 1.25rem;">
+      <li><strong>Instructor</strong> creates <em>subject</em> → <em>rosters</em> → enrolls students → creates <em>exam</em> and <em>questions</em>.</li>
+      <li><strong>Student</strong> opens exam → <em>submission</em> starts → proctoring <em>events</em> and <em>evidence</em> are recorded.</li>
+      <li>On submit → answers saved → <em>integrity report</em> generated → instructor reviews report in Exam Progress.</li>
+      <li><strong>auth_*</strong> and <strong>django_*</strong> tables support login, permissions, and framework operation in the background.</li>
+    </ol>
+  </div>
+
+  <footer>
+    Online Invigilator — Database documentation (23 Supabase tables).
+    Media files (course photos, exam PDFs, proctoring screenshots) are stored in Supabase Storage; only file paths are kept in the database.
+  </footer>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      er: {
+        layoutDirection: 'TB',
+        useMaxWidth: true
+      },
+      securityLevel: 'loose'
+    });
+  </script>
+</body>
+</html>
