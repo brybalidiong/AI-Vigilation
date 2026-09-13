@@ -4,8 +4,8 @@
 
 ```
 exambackend/
-  gaze_tracker/          # Copied from TrainModel — do not edit unless retraining
-    assets/              # gaze_model_float32.tflite, class_names.json, face_landmarker.task
+  gaze_tracker/          # Runtime gaze inference
+    assets/              # EfficientNetB0_gaze_float32.tflite, class_names.json, face_landmarker.task
   accounts/
     gaze_service.py      # Loads GazeTracker once
 ```
@@ -15,7 +15,8 @@ exambackend/
 `POST /api/student/exams/<exam_id>/proctoring/gaze/`
 
 - Auth: student JWT (same as other exam routes)
-- Body: `multipart/form-data` with field `image` (JPEG webcam frame)
+- Body: `multipart/form-data` with field `image` (JPEG webcam frame). A WebSocket result can
+  include `frame_receipt` so the API reuses the exact frame that was classified.
 - Response: `{ label, confidence, face_detected, is_normal, is_suspicious, probabilities, logged_event? }`
 - Logs `gaze_violation` or `gaze_no_face` proctoring events when applicable
 
@@ -29,7 +30,11 @@ python manage.py migrate
 
 ## Frontend
 
-During an exam, `StudentDashboardView.vue` sends a frame every **5 seconds** to the gaze endpoint and shows a warning overlay when the student is not looking at the screen.
+During an exam, `StudentDashboardView.vue` streams one JPEG at a time over the gaze
+WebSocket. The next frame is sent after the previous result arrives, so a slow inference
+cannot create a queue of stale frames. A one-second HTTP observer remains available for
+strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
+the CSS selfie preview does not change the left/right direction used by inference.
 
 ## Updating the model
 
@@ -42,7 +47,7 @@ Replace files in `exambackend/gaze_tracker/assets/` and restart the Django serve
 | Look away (`gaze_violation`) | **8** strikes |
 | Face not visible (`gaze_no_face`) | **5** strikes |
 
-Checks run every **5 seconds**. When a limit is reached, the gaze API returns `should_terminate: true` and the exam is force-submitted.
+When a limit is reached, the gaze API returns `should_terminate: true` and the exam is force-submitted.
 
 ## Instructor integrity report
 

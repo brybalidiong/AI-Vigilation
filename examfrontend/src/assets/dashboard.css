@@ -2997,3 +2997,429 @@
   font-weight: 600;
   font-size: 0.9rem;
 }
+
+/* ================================================================
+   Dashboard workspace refresh
+   Shared by the student and instructor portals.
+================================================================ */
+.dashboard-role {
+  --dash-accent: #1d3461;
+  --dash-accent-strong: #162a50;
+  --dash-accent-soft: #e8eef8;
+  --dash-accent-rgb: 29, 52, 97;
+  background: #f4f7fb;
+}
+.dashboard-role--instructor {
+  --dash-accent: #1d3461;
+  --dash-accent-strong: #162a50;
+  --dash-accent-soft: #e8eef8;
+  --dash-accent-rgb: 29, 52, 97;
+}
+
+.dashboard-role .dashboard-container { height: 100dvh; }
+.dashboard-role .sidebar {
+  width: 248px;
+  padding: 1rem 0.85rem;
+  color: #dbe7f6;
+  background: #1d3461;
+  border: 0;
+  box-shadow: 14px 0 42px rgba(15, 23, 42, 0.13);
+}
+.dashboard-role .sidebar-logo {
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding: 0.65rem 0.65rem 1.35rem;
+  margin: 0 0 0.75rem;
+}
+.dashboard-role .sidebar-logo::after {
+  left: 0.65rem;
+  right: 0.65rem;
+  background: rgba(255, 255, 255, 0.09);
+}
+.sidebar-brand-mark {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: #fff;
+  background: #ffffff;
+  color: #1d3461;
+  box-shadow: none;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.83rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+.dashboard-role--instructor .sidebar-brand-mark { background: #ffffff; }
+.sidebar-brand-lockup { display: grid; gap: 0.08rem; min-width: 0; }
+.dashboard-role .sidebar-brand-name {
+  color: #fff;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.sidebar-brand-context {
+  color: #8fa3bf;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+.dashboard-role .sidebar-nav { padding: 0.5rem 0; gap: 0.35rem; }
+.dashboard-role .nav-item {
+  min-height: 44px;
+  padding: 0.7rem 0.85rem;
+  color: #9fb0c8;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  font-size: 0.87rem;
+  font-weight: 650;
+}
+.dashboard-role .nav-item:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.06);
+  transform: none;
+}
+.dashboard-role .nav-item.active {
+  color: #fff;
+  background: #2a4a7c;
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 9px 24px rgba(var(--dash-accent-rgb), 0.25);
+}
+.dashboard-role .nav-item.active::after { display: none; }
+.dashboard-role .nav-icon { width: 18px; height: 18px; stroke: currentColor; }
+.dashboard-role .nav-item:hover .nav-icon,
+.dashboard-role .nav-item.active .nav-icon { stroke: currentColor; }
+.dashboard-role .sidebar-footer-nav { padding: 0.8rem 0 0; }
+.dashboard-role .sidebar-user-info {
+  padding: 0.72rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+.dashboard-role .sidebar-user-info:hover { background: rgba(255, 255, 255, 0.075); box-shadow: none; }
+.dashboard-role .sidebar-user-avatar {
+  width: 36px;
+  height: 36px;
+  color: #fff;
+  background: rgba(var(--dash-accent-rgb), 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+}
+.dashboard-role .sidebar-user-name { color: #f8fafc; font-size: 0.82rem; }
+.dashboard-role .sidebar-user-role { color: #8fa3bf; font-size: 0.65rem; }
+.dashboard-role .logout-nav:hover {
+  color: #fecaca !important;
+  background: rgba(239, 68, 68, 0.11) !important;
+  border-color: rgba(248, 113, 113, 0.14);
+}
+.dashboard-role .logout-nav:hover .nav-icon { stroke: currentColor !important; }
+
+.dashboard-role .main-content {
+  padding: 2rem clamp(1.4rem, 3vw, 3.5rem) 3rem;
+  background: transparent;
+}
+.dashboard-role .main-header,
+.dashboard-role .dashboard-welcome,
+.dashboard-role .moodle-card,
+.dashboard-role .courses-page,
+.dashboard-role .course-workspace,
+.dashboard-role .workspace-area {
+  width: 100%;
+  max-width: 1420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.dashboard-role .main-header {
+  flex: 0 0 auto;
+  min-height: 68px;
+  margin-bottom: 1.5rem;
+  overflow: visible;
+  animation: none;
+}
+.dashboard-eyebrow {
+  color: var(--dash-accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.dashboard-role .header-titles { gap: 0.2rem; }
+.dashboard-role .header-titles h1 {
+  margin: 0;
+  color: #14213a;
+  font-size: clamp(1.8rem, 3vw, 2.45rem);
+  line-height: 1.08;
+}
+.dashboard-role .header-sub { color: #68778d; font-size: 0.9rem; }
+.dashboard-role .role-pill {
+  padding: 0.48rem 0.85rem;
+  color: var(--dash-accent-strong);
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(var(--dash-accent-rgb), 0.18);
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(10px);
+}
+
+.dashboard-welcome {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  min-height: 160px;
+  padding: clamp(1.6rem, 3vw, 2.4rem);
+  overflow: hidden;
+  color: #fff;
+  background: #1d3461;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+}
+.dashboard-welcome::after { display: none; }
+.dashboard-welcome__copy { position: relative; z-index: 1; max-width: 720px; }
+.dashboard-welcome__eyebrow {
+  display: inline-block;
+  margin-bottom: 0.65rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.dashboard-welcome h2 {
+  margin: 0;
+  max-width: 680px;
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  font-size: clamp(1.65rem, 3vw, 2.45rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+}
+.dashboard-welcome p {
+  margin: 0.8rem 0 0;
+  max-width: 640px;
+  color: rgba(235, 244, 255, 0.78);
+  font-size: 0.91rem;
+  line-height: 1.6;
+}
+.dashboard-welcome__action {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  flex: 0 0 auto;
+  padding: 0.72rem 1rem;
+  color: #14213a;
+  background: #fff;
+  border: 0;
+  border-radius: 11px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.14);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.dashboard-welcome__action:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18); }
+
+.dashboard-role .moodle-card {
+  padding: clamp(1.2rem, 2.5vw, 1.75rem);
+  background: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  border-radius: 18px;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.055);
+  animation: none;
+}
+.dashboard-role .dashboard-agenda {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: clamp(600px, 68vh, 780px);
+  margin-top: 1rem;
+  overflow: hidden;
+}
+.dashboard-role .dashboard-agenda .moodle-filters,
+.dashboard-role .dashboard-agenda .moodle-section-title {
+  flex: 0 0 auto;
+}
+.dashboard-role .dashboard-agenda .dashboard-timeline-scroll {
+  flex: 1 1 auto;
+  min-height: 420px;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.45rem;
+  scrollbar-gutter: stable;
+}
+.dashboard-role .dashboard-agenda .dashboard-timeline-scroll > .empty-state {
+  min-height: 100%;
+}
+.dashboard-role .moodle-card::before,
+.dashboard-role .moodle-section-title::before { display: none; }
+.dashboard-role .moodle-section-title {
+  margin: 0 0 1rem;
+  padding: 0;
+  color: #17243b;
+  font-size: 1.15rem;
+  font-weight: 750;
+}
+.dashboard-role .moodle-section-title::after {
+  content: 'Upcoming schedule';
+  display: block;
+  margin-top: 0.15rem;
+  color: #8a98ab;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 550;
+  letter-spacing: 0;
+}
+.dashboard-role .moodle-filters,
+.dashboard-role .courses-command,
+.dashboard-role .panel-toolbar {
+  padding: 0.7rem;
+  background: #f6f8fb;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+  box-shadow: none;
+}
+.dashboard-role .moodle-filters { margin-bottom: 1.25rem; padding-bottom: 0.7rem; }
+.dashboard-role .moodle-select,
+.dashboard-role .moodle-search,
+.dashboard-role .courses-search-input,
+.dashboard-role .courses-sort-select {
+  min-height: 40px;
+  color: #2c3b52;
+  background-color: #fff;
+  border-color: #dce3ed;
+  border-radius: 9px;
+  box-shadow: none;
+}
+.dashboard-role .moodle-select:focus,
+.dashboard-role .moodle-search:focus,
+.dashboard-role .courses-search-input:focus,
+.dashboard-role .courses-sort-select:focus {
+  border-color: var(--dash-accent);
+  box-shadow: 0 0 0 3px rgba(var(--dash-accent-rgb), 0.12);
+}
+.dashboard-role .moodle-day-header {
+  color: #75849a;
+  background: transparent;
+  border: 0;
+  letter-spacing: 0.1em;
+}
+.dashboard-role .timeline-row {
+  border-color: #e5eaf1;
+  border-radius: 13px;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.035);
+}
+.dashboard-role .timeline-row:hover {
+  border-color: rgba(var(--dash-accent-rgb), 0.25);
+  box-shadow: 0 9px 24px rgba(var(--dash-accent-rgb), 0.09);
+}
+.dashboard-role .timeline-btn-primary,
+.dashboard-role .new-course-btn,
+.dashboard-role .primary-btn {
+  color: #fff;
+  background: var(--dash-accent);
+  border-color: var(--dash-accent);
+  box-shadow: 0 7px 18px rgba(var(--dash-accent-rgb), 0.2);
+}
+.dashboard-role .timeline-btn-primary:hover,
+.dashboard-role .new-course-btn:hover,
+.dashboard-role .primary-btn:hover { background: var(--dash-accent-strong); }
+.dashboard-role .course-display-card {
+  border-color: #dde5ef;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.06);
+}
+.dashboard-role .course-tabs-card,
+.dashboard-role .create-panel,
+.dashboard-role .ep-student-panel,
+.dashboard-role .ep-results-panel {
+  border-color: #dfe6ef;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.055);
+}
+
+.dashboard-role :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid rgba(var(--dash-accent-rgb), 0.22);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-role .sidebar { width: 220px; }
+}
+@media (max-width: 760px) {
+  .dashboard-role .dashboard-container { display: block; height: 100dvh; }
+  .dashboard-role .sidebar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 1000;
+    width: 100%;
+    height: 70px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.45rem 0.6rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.2);
+  }
+  .dashboard-role .sidebar-logo,
+  .dashboard-role .sidebar-user-info { display: none; }
+  .dashboard-role .sidebar-nav,
+  .dashboard-role .sidebar-footer-nav {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0;
+  }
+  .dashboard-role .sidebar-nav { flex: 1; }
+  .dashboard-role .sidebar-footer-nav { flex: 1; }
+  .dashboard-role .nav-item {
+    min-width: 0;
+    min-height: 52px;
+    justify-content: center;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.72rem;
+    gap: 0.35rem;
+  }
+  .dashboard-role .main-content {
+    height: calc(100dvh - 70px);
+    padding: 1.1rem 1rem 2rem;
+  }
+  .dashboard-role .main-content--dashboard { overflow-y: auto; }
+  .dashboard-role .main-header { min-height: 58px; margin-bottom: 1rem; }
+  .dashboard-role .header-actions { display: none; }
+  .dashboard-welcome { min-height: 0; align-items: flex-start; flex-direction: column; gap: 1.2rem; border-radius: 17px; }
+  .dashboard-welcome__action { width: 100%; }
+  .dashboard-role .moodle-filters { align-items: stretch !important; }
+  .dashboard-role .moodle-search { min-width: 100%; }
+  .dashboard-role .dashboard-agenda { min-height: max(560px, 72dvh); }
+  .dashboard-role .dashboard-agenda .dashboard-timeline-scroll { min-height: 360px; }
+}
+@media (max-width: 460px) {
+  .dashboard-role .nav-item { flex-direction: column; font-size: 0.61rem; line-height: 1; }
+  .dashboard-role .nav-icon { width: 17px; height: 17px; }
+  .dashboard-welcome h2 { font-size: 1.55rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-role *, .dashboard-role *::before, .dashboard-role *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

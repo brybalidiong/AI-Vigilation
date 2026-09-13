@@ -59,13 +59,13 @@ const timeMeridiem = computed(() => {
 .timeline-row {
   position: relative;
   display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
   grid-template-areas: "time main actions";
   align-items: center;
   column-gap: 1rem;
-  padding: 0.7rem 1rem 0.7rem 0.85rem;
-  margin-bottom: 0.5rem;
-  border-radius: 12px;
+  padding: 0.85rem 1rem 0.85rem 0.9rem;
+  margin-bottom: 0.6rem;
+  border-radius: 13px;
   background: #fff;
   border: 1px solid #e8edf5;
   transition: border-color 0.18s, box-shadow 0.18s;
@@ -77,13 +77,13 @@ const timeMeridiem = computed(() => {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #1D3461;
+  background: var(--dash-accent, #1D3461);
   border-radius: 3px 0 0 3px;
   pointer-events: none;
 }
 .timeline-row:hover {
-  border-color: rgba(29, 52, 97, 0.2);
-  box-shadow: 0 2px 10px rgba(29, 52, 97, 0.07);
+  border-color: rgba(var(--dash-accent-rgb, 29, 52, 97), 0.22);
+  box-shadow: 0 8px 24px rgba(var(--dash-accent-rgb, 29, 52, 97), 0.09);
 }
 .timeline-time {
   grid-area: time;
@@ -127,8 +127,8 @@ const timeMeridiem = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1D3461;
-  background: #eef2ff;
+  color: var(--dash-accent, #1D3461);
+  background: var(--dash-accent-soft, #eef2ff);
 }
 .timeline-icon svg {
   width: 17px;

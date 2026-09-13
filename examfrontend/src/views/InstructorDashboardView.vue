@@ -1,11 +1,15 @@
 <template>
-  <div class="app-wrapper">
+  <div class="app-wrapper dashboard-role dashboard-role--instructor">
     <div class="dashboard-container">
 
       <!-- LEFT SIDEBAR -->
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <span class="sidebar-brand-name">AI-Vigilation</span>
+          <span class="sidebar-brand-mark" aria-hidden="true">AI</span>
+          <span class="sidebar-brand-lockup">
+            <span class="sidebar-brand-name">AI-Vigilation</span>
+            <span class="sidebar-brand-context">Instructor workspace</span>
+          </span>
         </div>
         <nav class="sidebar-nav">
           <a href="#" class="nav-item" :class="{ active: activeNav === 'dashboard' }" @click.prevent="goDashboard">
@@ -40,7 +44,7 @@
       </aside>
 
       <!-- CENTER CONTENT -->
-      <main class="main-content">
+      <main class="main-content" :class="{ 'main-content--dashboard': activeNav === 'dashboard' }">
         <header class="main-header" :class="{ 'main-header--tight': activeNav === 'courses' }" v-show="!(activeNav === 'courses' && isCourseDetailRoute)">
           <div class="header-titles">
             <template v-if="activeNav === 'courses' && isCourseDetailRoute">
@@ -55,6 +59,7 @@
               <p class="header-sub">{{ courseDetailMeta }}</p>
             </template>
             <template v-else>
+              <span class="dashboard-eyebrow">{{ currentDate }}</span>
               <h1>{{ dashboardTitle }}</h1>
               <p v-if="activeNav === 'settings'" class="header-sub">Manage your profile and account preferences.</p>
               <p v-else-if="activeNav === 'courses'" class="header-sub">Create a course, then open it to run exams and enroll students.</p>
@@ -78,8 +83,20 @@
 
         <!-- DASHBOARD TAB -->
         <template v-if="activeNav === 'dashboard'">
-          <div class="moodle-card">
-            <h2 class="moodle-section-title">Timeline</h2>
+          <section class="dashboard-welcome">
+            <div class="dashboard-welcome__copy">
+              <span class="dashboard-welcome__eyebrow">Teaching overview</span>
+              <h2>Keep every assessment on track.</h2>
+              <p>Manage your courses, monitor scheduled exams, and review student progress from one workspace.</p>
+            </div>
+            <button type="button" class="dashboard-welcome__action" @click="goCourses">
+              Manage courses
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+          </section>
+
+          <div class="moodle-card dashboard-agenda">
+            <h2 class="moodle-section-title">Exam timeline</h2>
             <div class="moodle-filters" style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-start; align-items: center;">
               <div class="select-wrapper">
                 <select v-model="timelineWindowDays" class="moodle-select">
@@ -95,13 +112,6 @@
                 <select v-model="timelineSort" class="moodle-select">
                   <option value="due_asc">Sort by dates</option>
                   <option value="title_asc">Sort by title</option>
-                </select>
-              </div>
-              <div class="select-wrapper">
-                <select class="moodle-select">
-                  <option value="card">Card</option>
-                  <option value="list">List</option>
-                  <option value="summary">Summary</option>
                 </select>
               </div>
             </div>
@@ -398,7 +408,7 @@
                   </div>
                   <div>
                     <h3 class="create-panel__title">Upload New Exam</h3>
-                    <p class="create-panel__sub">Upload a .txt question file and configure the exam settings.</p>
+                    <p class="create-panel__sub">Upload a .txt question file and configure the exam settings. Question order is automatically shuffled for each student and attempt.</p>
                   </div>
                 </div>
                 <form @submit.prevent="createExamSet(); showUploadExamPanel = false">
@@ -812,7 +822,12 @@
         </template>
 
         <!-- GLOBAL MESSAGES -->
-        <p v-if="message" class="message global">{{ message }}</p>
+        <Transition name="action-toast">
+          <div v-if="message" class="action-success-toast" role="status" aria-live="polite">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <div><strong>Success</strong><span>{{ message }}</span></div>
+          </div>
+        </Transition>
         <p v-if="error" class="error global">{{ error }}</p>
 
       </main>
@@ -1279,13 +1294,17 @@
                           <span style="font-size: 0.8rem; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 6px;" :title="`Gaze away: ${ex.gaze_violation_count} | No face: ${ex.gaze_no_face_count}`">
                             ⚠ {{ ex.gaze_violation_count + ex.gaze_no_face_count }}
                           </span>
-                          <span style="font-size: 0.68rem; color: #92400e;">{{ ex.gaze_violation_count }}↗ {{ ex.gaze_no_face_count }}👁</span>
+                          <span class="stats-violation-breakdown">
+                            <span>{{ ex.gaze_violation_count }} gaze away</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{{ ex.gaze_no_face_count }} face hidden</span>
+                          </span>
                         </div>
                         <span v-else style="color: #6b7280; font-size: 0.85rem;">—</span>
                       </td>
                       <td class="stats-center">
                         <div class="stats-snapshot-wrapper">
-                          <img v-if="ex.snapshot_url" :key="ex.snapshot_url" :src="ex.snapshot_url" class="stats-snapshot-img" alt="Live Snapshot" />
+                          <img v-if="ex.snapshot_display_url" :key="ex.snapshot_display_url" :src="ex.snapshot_display_url" class="stats-snapshot-img" alt="Latest webcam snapshot" />
                           <div v-else class="stats-snapshot-placeholder">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                           </div>
@@ -1889,6 +1908,36 @@ const statsLoading = ref(false);
 const examStatsSets = ref([]);
 const examStatsExaminees = ref([]);
 let statsPollInterval = null;
+let statsFetchGeneration = 0;
+const statsSnapshotObjectUrls = new Map();
+
+function releaseStatsSnapshotUrls(keepSources = new Set()) {
+  for (const [source, objectUrl] of statsSnapshotObjectUrls) {
+    if (keepSources.has(source)) continue;
+    URL.revokeObjectURL(objectUrl);
+    statsSnapshotObjectUrls.delete(source);
+  }
+}
+
+async function attachStatsSnapshotUrls(examinees) {
+  const rows = examinees || [];
+  await Promise.all(rows.map(async (row) => {
+    const source = row.snapshot_url;
+    row.snapshot_display_url = source ? statsSnapshotObjectUrls.get(source) || null : null;
+    if (!source || row.snapshot_display_url) return;
+    try {
+      const response = await apiClient.get(source, { responseType: 'blob' });
+      if (response.data?.size > 0) {
+        const objectUrl = URL.createObjectURL(response.data);
+        statsSnapshotObjectUrls.set(source, objectUrl);
+        row.snapshot_display_url = objectUrl;
+      }
+    } catch {
+      row.snapshot_display_url = null;
+    }
+  }));
+  return rows;
+}
 
 // Cache flags: skip re-fetching on revisit
 const subjectsLoaded = ref(false);
@@ -2832,8 +2881,11 @@ async function addExamQuestion() {
 
 async function deleteExamQuestion(questionId) {
   if (!managingExam.value || !selectedSubjectId.value || examIsFinal.value) return;
+  message.value = "";
+  error.value = "";
   try {
     await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/${questionId}/`);
+    message.value = "Question deleted successfully.";
     await fetchExamQuestions();
   } catch (err) {
     error.value = "Failed to delete question.";
@@ -2945,10 +2997,15 @@ function getExamineeReportStatus(ex) {
 }
 
 async function fetchStatsData(exam, isBackground = false) {
+  const generation = ++statsFetchGeneration;
   try {
     const { data } = await apiClient.get(`/api/instructor/subjects/${exam.subject_id}/exam-sets/${exam.id}/stats/`);
+    const examinees = await attachStatsSnapshotUrls(data.examinees || []);
+    if (generation !== statsFetchGeneration || statsExam.value?.id !== exam.id) return;
+    const activeSources = new Set(examinees.map(row => row.snapshot_url).filter(Boolean));
+    releaseStatsSnapshotUrls(activeSources);
     examStatsSets.value = data.sets || [];
-    examStatsExaminees.value = data.examinees || [];
+    examStatsExaminees.value = examinees;
   } catch(err) {
     if (!isBackground) error.value = "Unable to load exam statistics.";
   }
@@ -2981,6 +3038,8 @@ async function openExamStats(exam) {
 }
 
 function closeExamStats() {
+  statsFetchGeneration += 1;
+  releaseStatsSnapshotUrls();
   statsExam.value = null;
   examStatsSets.value = [];
   examStatsExaminees.value = [];
@@ -3111,6 +3170,30 @@ onMounted(async () => {
 
 <style scoped>
 @import '@/assets/dashboard.css';
+
+.action-success-toast {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 1000002;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: min(390px, calc(100vw - 2rem));
+  padding: 0.9rem 1rem;
+  color: #14532d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #22c55e;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
+}
+.action-success-toast svg { flex: 0 0 auto; margin-top: 0.1rem; }
+.action-success-toast div { display: grid; gap: 0.15rem; }
+.action-success-toast strong { font-size: 0.82rem; }
+.action-success-toast span { font-size: 0.86rem; line-height: 1.35; }
+.action-toast-enter-active, .action-toast-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.action-toast-enter-from, .action-toast-leave-to { opacity: 0; transform: translateY(-10px); }
 
 /* Premium Proctoring Toggle UI */
 .premium-toggle-card {
@@ -3778,6 +3861,7 @@ onMounted(async () => {
 .stats-ex-email { font-size: 0.75rem; color: #64748b; }
 .stats-center { text-align: center !important; }
 .stats-warn-text { color: #ef4444; font-weight: 700; }
+.stats-violation-breakdown { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.15rem 0.3rem; font-size: 0.68rem; line-height: 1.25; color: #92400e; }
 .stats-badge { display: inline-flex; padding: 0.25rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 .stats-badge--green { background: #dcfce7; color: #16a34a; }
 .stats-badge--amber { background: #fef3c7; color: #d97706; }

@@ -34,9 +34,11 @@ ABOVE_VIOLATION_CONFIDENCE_THRESHOLD = 0.22
 _VIOLATION_OVER_NORMAL_MARGIN = 0.03
 
 # Geometric decision boundaries (calibrated against real webcam footage)
-# Sideways: combined head-yaw + iris position
-_SIDEWAYS_H = 0.045         # lowered from 0.055 — catch borderline lateral gazes
-_SIDEWAYS_YAW = 0.055       # lowered from 0.065 — catch partial head turns
+# Sideways: ignore ordinary eye/head jitter near the centre. A deliberate side
+# look still passes through either geometry agreement or a strong model score.
+_SIDEWAYS_H = 0.075
+_SIDEWAYS_YAW = 0.09
+_HORIZONTAL_MODEL_ONLY_CONFIDENCE = 0.70
 # Above: pitch + iris vertical position + blended vertical
 _ABOVE_PITCH = 0.04          # lowered: fires with smaller upward head tilt
 _ABOVE_IRIS_V = 0.020        # lowered from 0.025 — catch pure eye-up movement without head tilt
@@ -49,8 +51,8 @@ _BELOW_VERT = 0.16           # raised from 0.10: blended vertical must also be c
 _BELOW_PITCH_STRONG = 0.45  # Unused, pitch is too unreliable
 _BELOW_IRIS_V_STRONG = 0.20  # raised from 0.10: only fires on extremely obvious downward look
 _ABOVE_IRIS_V_STRONG = 0.05  # lowered: geometry-only fires with less iris movement upward
-# Strong-geometry-only sideways: eye-only movement
-_SIDEWAYS_IRIS_STRONG = 0.16 # iris movement large enough to guarantee sideways look
+# Strong-geometry-only sideways: both irises must agree on a clear movement.
+_SIDEWAYS_IRIS_STRONG = 0.10
 
 
 def prepare_image_batch(face_bgr: np.ndarray) -> np.ndarray:
@@ -207,6 +209,26 @@ def _confidence_threshold_for_class_name(name: str) -> float:
     return VIOLATION_CONFIDENCE_THRESHOLD
 
 
+def _horizontal_side_for_name(name: str) -> str | None:
+    nl = (name or '').lower()
+    if 'left' in nl and 'right' not in nl:
+        return 'left'
+    if 'right' in nl and 'left' not in nl:
+        return 'right'
+    return None
+
+
+def _horizontal_prediction_allowed(name: str, probability: float, geo: np.ndarray) -> bool:
+    """Reject a horizontal model label caused only by near-centre jitter."""
+    side = _horizontal_side_for_name(name)
+    if not side:
+        return True
+    return (
+        probability >= _HORIZONTAL_MODEL_ONLY_CONFIDENCE
+        or is_looking_sideways(geo, side)
+    )
+
+
 def is_looking_sideways(geo: np.ndarray, side: str) -> bool:
     h = float(geo[11])
     yaw = float(geo[0])
@@ -299,13 +321,16 @@ def _pick_sideways_from_geometry(
     right_geo = is_looking_sideways(geo, "right")
     
     # 1. Pure geometry override (extreme eye movement, even if CNN is unsure)
-    iris_h = max(abs(float(geo[5])), abs(float(geo[7])))
-    if iris_h > _SIDEWAYS_IRIS_STRONG:
-        # Negative X movement in image means looking to the user's RIGHT
-        if float(geo[5]) + float(geo[7]) < 0:
-            return right_idx, 1.0  
+    left_iris = float(geo[5])
+    right_iris = float(geo[7])
+    iris_h = (left_iris + right_iris) / 2.0
+    if (abs(iris_h) >= _SIDEWAYS_IRIS_STRONG
+            and left_iris * right_iris > 0):
+        # Geometry is in selfie coordinates: negative X is the student's left.
+        if iris_h < 0:
+            return left_idx, max(left_p, 0.50)
         else:
-            return left_idx, 1.0
+            return right_idx, max(right_p, 0.50)
 
     # 2. Require BOTH geometry AND model agreement to reduce false positives
     if left_geo and left_p >= LEFT_CONFIDENCE_THRESHOLD:
@@ -321,6 +346,25 @@ def _pick_sideways_from_geometry(
     if h > 0.065 and right_p >= RIGHT_CONFIDENCE_THRESHOLD and right_p >= left_p:
         return right_idx, right_p
 
+    return None
+
+
+def _strong_sideways_from_geometry(geo: np.ndarray) -> str | None:
+    """Return a student's-perspective side only for unambiguous geometry.
+
+    This is intentionally stricter than the normal geometry fallback. It is a
+    consistency check for the CNN: when a clear iris/head movement disagrees
+    with a horizontal CNN class, the camera geometry prevents a left/right
+    label inversion from reaching the user.
+    """
+    left_iris = float(geo[5])
+    right_iris = float(geo[7])
+    iris_h = (left_iris + right_iris) / 2.0
+    if (abs(iris_h) >= _SIDEWAYS_IRIS_STRONG
+            and left_iris * right_iris > 0):
+        return "left" if iris_h < 0 else "right"
+    if abs(float(geo[0])) >= 0.14:
+        return "left" if float(geo[0]) < 0 else "right"
     return None
 
 
@@ -351,10 +395,27 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     looking_center = is_looking_at_screen(geo)
     argmax_idx = int(np.argmax(probs))
 
+    # Use only very clear geometry to reconcile a horizontal CNN prediction.
+    # This corrects camera/model mirror mismatches while leaving normal and
+    # borderline frames to the confidence-based classifier below.
+    strong_side = _strong_sideways_from_geometry(geo)
+    if strong_side:
+        side_idx = _left_class_index(classes) if strong_side == "left" else _right_class_index(classes)
+        side_name = classes[side_idx].lower()
+        argmax_name = classes[argmax_idx].lower()
+        argmax_is_left = "left" in argmax_name and "right" not in argmax_name
+        argmax_is_right = "right" in argmax_name and "left" not in argmax_name
+        if ((strong_side == "left" and not argmax_is_left)
+                or (strong_side == "right" and not argmax_is_right)):
+            # Geometry also wins over a Normal argmax when the eye movement is
+            # unambiguous. Keep a conservative but valid confidence value.
+            return side_idx, max(float(probs[side_idx]), 0.50)
+
     if argmax_idx == normal_idx:
         return normal_idx, normal_conf
 
-    if looking_center and float(probs[argmax_idx]) < normal_conf + 0.08:
+    if (looking_center and float(probs[argmax_idx]) < normal_conf + 0.08
+            and not is_looking_above(geo) and not is_looking_below(geo)):
         return normal_idx, normal_conf
 
     def _below_blocked(name: str) -> bool:
@@ -367,6 +428,7 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     argmax_p = float(probs[argmax_idx])
     if (
         not _below_blocked(argmax_name)
+        and _horizontal_prediction_allowed(argmax_name, argmax_p, geo)
         and argmax_p >= _confidence_threshold_for_class_name(argmax_name)
     ):
         return argmax_idx, argmax_p
@@ -377,6 +439,8 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
             continue
         prob = float(probs[idx])
         if prob < _confidence_threshold_for_class_name(name):
+            continue
+        if not _horizontal_prediction_allowed(name, prob, geo):
             continue
         if _below_blocked(name):
             continue

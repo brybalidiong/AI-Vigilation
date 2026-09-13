@@ -291,6 +291,12 @@
         @confirm="onConfirmDialog"
         @cancel="clearPendingConfirm"
       />
+      <Transition name="action-toast">
+        <div v-if="actionSuccess" class="action-success-toast" role="status" aria-live="polite">
+          <span class="action-success-icon">✓</span>
+          <div><strong>Success</strong><span>{{ actionSuccess }}</span></div>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>
@@ -344,6 +350,14 @@ const showAddStudent = ref(false);
 const studentLoading = ref(false);
 const studentError = ref("");
 const studentSuccess = ref("");
+const actionSuccess = ref("");
+let actionSuccessTimer = null;
+
+function showActionSuccess(text) {
+  actionSuccess.value = text;
+  clearTimeout(actionSuccessTimer);
+  actionSuccessTimer = setTimeout(() => { actionSuccess.value = ""; }, 4000);
+}
 const studentSearch = ref("");
 const newStudent = ref({ email: "", first_name: "", last_name: "" });
 
@@ -415,6 +429,7 @@ async function registerInstructor() {
   try {
     const res = await axios.post(`${backendBaseUrl}/api/admin/instructors/`, newInstructor.value, { headers: getHeaders() });
     instructorSuccess.value = `Instructor "${res.data.email}" registered successfully!`;
+    showActionSuccess(`Instructor "${res.data.email}" registered successfully.`);
     instructors.value.unshift(res.data);
     clearInstructorForm();
     setTimeout(() => { instructorSuccess.value = ""; showAddInstructor.value = false; }, 2000);
@@ -433,6 +448,7 @@ function removeInstructor(ins) {
       try {
         await axios.delete(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { headers: getHeaders() });
         instructors.value = instructors.value.filter((i) => i.id !== ins.id);
+        showActionSuccess('Instructor removed successfully.');
       } catch (e) {
         alert(e?.response?.data?.error || "Failed to remove instructor.");
       }
@@ -451,6 +467,7 @@ async function enrollStudent() {
   try {
     const res = await axios.post(`${backendBaseUrl}/api/admin/students/`, newStudent.value, { headers: getHeaders() });
     studentSuccess.value = `Student "${res.data.email}" enrolled successfully!`;
+    showActionSuccess(`Student "${res.data.email}" enrolled successfully.`);
     const existing = students.value.find((s) => s.id === res.data.id);
     if (!existing) students.value.unshift(res.data);
     clearStudentForm();
@@ -470,6 +487,7 @@ function removeStudent(st) {
       try {
         await axios.delete(`${backendBaseUrl}/api/admin/students/${st.id}/`, { headers: getHeaders() });
         students.value = students.value.filter((s) => s.id !== st.id);
+        showActionSuccess('Student removed successfully.');
       } catch (e) {
         alert(e?.response?.data?.error || "Failed to remove student.");
       }
@@ -489,6 +507,7 @@ async function approveFace(st) {
     if (res.data.face_photo_url) st.face_photo_url = res.data.face_photo_url;
     st.face_pending_photo_url = null;
     st.face_reupload_allowed = false;
+    showActionSuccess('Face photo approved successfully.');
   } catch (e) {
     alert(e?.response?.data?.error || 'Failed to approve face photo.');
   } finally {
@@ -506,6 +525,7 @@ async function rejectFace(st) {
     );
     st.face_status = res.data.face_status;
     st.face_pending_photo_url = null;
+    showActionSuccess('Face photo rejected. The student may submit a new photo.');
   } catch (e) {
     alert(e?.response?.data?.error || 'Failed to reject face photo.');
   } finally {
@@ -523,6 +543,11 @@ async function toggleReupload(st) {
     );
     st.face_reupload_allowed = res.data.face_reupload_allowed;
     st.face_status = res.data.face_status;
+    showActionSuccess(
+      res.data.face_reupload_allowed
+        ? 'Face photo re-upload enabled.'
+        : 'Face photo re-upload disabled.'
+    );
   } catch (e) {
     alert(e?.response?.data?.error || 'Failed to toggle re-upload.');
   } finally {
@@ -581,6 +606,30 @@ onMounted(() => {
 
 <style scoped>
 @import '@/assets/dashboard.css';
+
+.action-success-toast {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 1000002;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: min(390px, calc(100vw - 2rem));
+  padding: 0.9rem 1rem;
+  color: #14532d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #22c55e;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
+}
+.action-success-icon { flex: 0 0 auto; font-size: 1rem; font-weight: 800; }
+.action-success-toast div { display: grid; gap: 0.15rem; }
+.action-success-toast strong { font-size: 0.82rem; }
+.action-success-toast span { font-size: 0.86rem; line-height: 1.35; }
+.action-toast-enter-active, .action-toast-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.action-toast-enter-from, .action-toast-leave-to { opacity: 0; transform: translateY(-10px); }
 
 /* Admin specific additions */
 .stats-grid {

@@ -21,9 +21,10 @@ from django.conf import settings
 # Setup local file logger for face debugging
 face_logger = logging.getLogger("face_debug")
 face_logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler("face_debug.log", mode="a")
-fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-face_logger.addHandler(fh)
+if not face_logger.handlers:
+    fh = logging.FileHandler("face_debug.log", mode="a")
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    face_logger.addHandler(fh)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,17 @@ def _load_image_bgr(image_path: str) -> np.ndarray | None:
     return img
 
 
+def _load_image_bytes(raw: bytes) -> np.ndarray | None:
+    """Decode an uploaded image in memory, avoiding temporary disk I/O."""
+    if not raw:
+        return None
+    try:
+        img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+    except Exception:
+        img = None
+    return img
+
+
 def _get_face_features(img, label="image"):
     """
     Detects the largest face using YuNet and extracts a 128-dim SFace embedding.
@@ -193,6 +205,16 @@ def verify_face(stored_encoding_json, webcam_image_path):
     Tries original and flipped version to account for potential mirroring.
     Uses cached singleton models — fast after the first call.
     """
+    img = _load_image_bgr(webcam_image_path)
+    return _verify_face_image(stored_encoding_json, img)
+
+
+def verify_face_bytes(stored_encoding_json, webcam_image_bytes):
+    """Compare a stored embedding with an uploaded image held in memory."""
+    return _verify_face_image(stored_encoding_json, _load_image_bytes(webcam_image_bytes))
+
+
+def _verify_face_image(stored_encoding_json, img):
     recognizer = _get_recognizer()
     if recognizer is None:
         return {"verified": False, "error": "Face recognition model unavailable."}
@@ -201,15 +223,13 @@ def verify_face(stored_encoding_json, webcam_image_path):
         stored_list = json.loads(stored_encoding_json)
         stored_features = np.array(stored_list, dtype=np.float32).reshape(1, -1)
 
-        img = _load_image_bgr(webcam_image_path)
         if img is None:
             return {"verified": False, "error": "Could not read webcam image."}
 
-        # Try original and horizontally flipped
-        images_to_try = [("original", img), ("flipped", cv2.flip(img, 1))]
-
+        # Browser canvas captures raw camera pixels. Use that normal orientation
+        # first and pay for a mirrored fallback only when it does not verify.
         best_score = -1.0
-        for label, img_data in images_to_try:
+        for label, img_data in (("original", img), ("flipped", cv2.flip(img, 1))):
             feats = _get_face_features(img_data, f"webcam_{label}")
             if feats is not None:
                 score = float(recognizer.match(
@@ -217,6 +237,8 @@ def verify_face(stored_encoding_json, webcam_image_path):
                 ))
                 face_logger.info(f"Comparison ({label}): score={score:.4f}")
                 best_score = max(best_score, score)
+                if best_score >= _MATCH_THRESHOLD:
+                    break
 
         if best_score == -1.0:
             return {

@@ -12,7 +12,7 @@ your-invigilator-project/
     inference.py
     requirements.txt
     assets/
-      gaze_model_float32.tflite
+      EfficientNetB0_gaze_float32.tflite
       class_names.json
       face_landmarker.task    # optional; downloads on first run if missing
 ```
@@ -75,8 +75,8 @@ tracker = GazeTracker(assets_dir="/path/to/models")
 
 ## Behaviour (already configured)
 
-- MobileNetV2 image preprocessing (matches training)
-- Mirrored webcam handling
+- EfficientNetB0 image preprocessing (matches the exported model)
+- Browser frames are analyzed in their original camera orientation; mirror the preview with CSS only
 - **Normal** when gaze is centered or when top class confidence is **below 80%**
 - `no_face` / `gaze_model_unavailable` labels for edge cases
 

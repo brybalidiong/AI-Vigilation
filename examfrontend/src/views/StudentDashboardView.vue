@@ -1,5 +1,5 @@
 <template>
-  <div class="app-wrapper">
+  <div class="app-wrapper dashboard-role dashboard-role--student">
 
     <!-- â”€â”€â”€ ROOT-LEVEL TERMINATED SCREEN (survives after exam closes) â”€â”€â”€ -->
     <ProctoringOverlay 
@@ -18,7 +18,11 @@
       <!-- LEFT SIDEBAR -->
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <span class="sidebar-brand-name">AI-Vigilation</span>
+          <span class="sidebar-brand-mark" aria-hidden="true">AI</span>
+          <span class="sidebar-brand-lockup">
+            <span class="sidebar-brand-name">AI-Vigilation</span>
+            <span class="sidebar-brand-context">Student workspace</span>
+          </span>
         </div>
         <nav class="sidebar-nav">
           <a href="#" class="nav-item" :class="{ active: activeNav === 'dashboard' }" @click.prevent="goStudentDashboard">
@@ -53,9 +57,10 @@
       </aside>
 
       <!-- CENTER CONTENT -->
-      <main class="main-content">
+      <main class="main-content" :class="{ 'main-content--dashboard': activeNav === 'dashboard' }">
          <header class="main-header" v-show="!(activeNav === 'courses' && isCourseDetailRoute)">
           <div class="header-titles">
+            <span class="dashboard-eyebrow">{{ currentDate }}</span>
             <h1>{{ pageTitle }}</h1>
             <p v-if="activeNav === 'settings'" class="header-sub">Manage your profile and account preferences.</p>
             <p v-else class="header-sub">Welcome back, {{ studentFullName }}!</p>
@@ -65,8 +70,21 @@
           </div>
         </header>
 
-        <div class="moodle-card" v-if="activeNav === 'dashboard'">
-          <h2 class="moodle-section-title">Timeline</h2>
+        <template v-if="activeNav === 'dashboard'">
+          <section class="dashboard-welcome">
+            <div class="dashboard-welcome__copy">
+              <span class="dashboard-welcome__eyebrow">Student overview</span>
+              <h2>Stay ready for your next assessment.</h2>
+              <p>Review upcoming schedules, open your courses, and start available exams from one place.</p>
+            </div>
+            <button type="button" class="dashboard-welcome__action" @click="goStudentCourses">
+              Browse courses
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+          </section>
+
+        <div class="moodle-card dashboard-agenda">
+          <h2 class="moodle-section-title">Exam timeline</h2>
           <div class="moodle-filters" style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-start; align-items: center;">
             <div class="select-wrapper">
               <select v-model="timelineWindowDays" class="moodle-select">
@@ -82,13 +100,6 @@
               <select v-model="timelineSort" class="moodle-select">
                 <option value="due_asc">Sort by dates</option>
                 <option value="title_asc">Sort by title</option>
-              </select>
-            </div>
-            <div class="select-wrapper">
-              <select class="moodle-select">
-                <option value="card">Card</option>
-                <option value="list">List</option>
-                <option value="summary">Summary</option>
               </select>
             </div>
           </div>
@@ -124,6 +135,7 @@
             </template>
           </div>
         </div>
+        </template>
 
         <div v-else-if="activeNav === 'settings'" style="width: 100%;">
           <div class="workspace-area">
@@ -265,7 +277,6 @@
     <FaceVerificationModal
       :show="fvShow"
       :step="fvStep"
-      :confidence="fvConfidence"
       :attemptsLeft="fvAttemptsLeft"
       :errorMessage="fvErrorMsg"
       @retry="_onFaceVerifyRetry"
@@ -332,7 +343,7 @@
         <div class="cam-pip-badge"><span class="perm-live-dot"></span> LIVE</div>
 
         <div v-if="takingExam" class="cam-pip-gaze">
-          <span class="cam-pip-gaze-label">AI gaze</span>
+          <span class="cam-pip-gaze-label">AI gaze<span v-if="gazeDetectionStatus"> · {{ gazeDetectionStatus }}</span></span>
           <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gazeCurrentDirection }">
             away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }}
           </span>
@@ -901,6 +912,7 @@ const SPLIT_SCREEN_THRESHOLD = 0.98; // flag if window is not completely maximiz
 const tabSwitchCount = ref(0);
 const gazeViolationCount = ref(0);
 const gazeNoFaceCount = ref(0);
+const gazeDetectionStatus = ref('');
 const terminateReason = ref('tab');
 const proctoringWarning = ref({ show: false, type: '', title: '', message: '' });
 
@@ -962,9 +974,10 @@ let _ignoreBlurUntil = 0;
 let _isAway = false; // true while student is away â€” prevents double-counting
 let _splitScreenActive = false;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
-const GAZE_CHECK_INTERVAL_MS = 3000;       // no-face + HTTP fallback logging when WS is down
+const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
-const GAZE_WS_INTERVAL_MS = 120;           // Fast UI updates via WebSockets (faster sampling = more accurate timer)
+const GAZE_WS_INTERVAL_MS = 80;           // next frame waits for the previous result
+const GAZE_FRAME_WIDTH = 480;              // sufficient for landmarks; reduces payload and inference time
 const GAZE_FIRST_CHECK_MS = 50;            // fire first check immediately
 const GAZE_CONFIDENCE_MIN = 0.85;          // general fallback
 const GAZE_ABOVE_CONFIDENCE_MIN = 0.80;    // was 0.90 — matched to lower backend threshold
@@ -1037,13 +1050,15 @@ function _isLeftRightLabel(label) {
 function _gazeConfidenceMet(label, confidence, thresholds = {}) {
   const general = thresholds.general ?? GAZE_CONFIDENCE_MIN;
   const above = thresholds.above ?? GAZE_ABOVE_CONFIDENCE_MIN;
-  const leftRight = thresholds.leftRight ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN;
+  const left = thresholds.left ?? thresholds.leftRight ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN;
+  const right = thresholds.right ?? thresholds.leftRight ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN;
   const below = thresholds.below ?? GAZE_BELOW_CONFIDENCE_MIN;
   if (!label) return confidence >= general;
   const l = String(label).toLowerCase();
   if (l.includes('above')) return confidence >= above;
   if (l.includes('below')) return confidence >= below;
-  if (_isLeftRightLabel(label)) return confidence >= leftRight;
+  if (l.includes('left')) return confidence >= left;
+  if (l.includes('right')) return confidence >= right;
   return confidence >= general;
 }
 
@@ -1191,6 +1206,7 @@ function _updateGazeBbox(data) {
 
 /** Computed: border color driven reactively by gazeCurrentDirection and face state. */
 const pipBorderColor = computed(() => {
+  if (gazeDetectionStatus.value) return '#f59e0b';
   if (!_gazeFaceDetected.value || _gazeRawLabel.value === 'no_face') return '#ef4444'; // red — no face
   if (gazeCurrentDirection.value) {
     const l = gazeCurrentDirection.value.toLowerCase();
@@ -1295,22 +1311,30 @@ async function _runGazeCheck() {
 
   _gazeCheckInFlight = true;
   try {
-    // 640px wide — enough for face detection, still fast over HTTP
-    const SEND_W = 640;
-    const SEND_H = Math.round((video.videoHeight / video.videoWidth) * SEND_W);
-    const canvas = document.createElement('canvas');
-    canvas.width = SEND_W;
-    canvas.height = SEND_H;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, SEND_W, SEND_H);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.75));
+    // While WS is healthy, reuse its exact analyzed frame. HTTP handles counts
+    // and absence policy without competing for another inference pass.
+    const analyzed = _gazeWsActive ? _wsLatestFrame : null;
+    if (_gazeWsActive && (!analyzed?.receipt || Date.now() - analyzed.receivedAt > 1500)) return;
+    let blob;
+    if (analyzed) {
+      blob = _gazeFrameBlob(analyzed.image);
+    } else {
+      const canvas = document.createElement('canvas');
+      canvas.width = GAZE_FRAME_WIDTH;
+      canvas.height = Math.round((video.videoHeight / video.videoWidth) * GAZE_FRAME_WIDTH);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.75));
+    }
     if (!blob) return;
-
     const form = new FormData();
     form.append('image', blob, `gaze_${Date.now()}.jpg`);
-    // Server tracks 3s continuous look-away; do not force strike from client after 1s.
     form.append('record_strike', 'false');
+    if (analyzed) {
+      form.append('frame_receipt', analyzed.receipt);
+      form.append('observe_only', 'true');
+    }
     const { data } = await api.post(
       `/api/student/exams/${takingExam.value.id}/proctoring/gaze/`,
       form,
@@ -1321,14 +1345,22 @@ async function _runGazeCheck() {
     const thresholds = {
       general: data.confidence_threshold ?? GAZE_CONFIDENCE_MIN,
       above: data.above_confidence_threshold ?? GAZE_ABOVE_CONFIDENCE_MIN,
-      leftRight: data.left_right_confidence_threshold ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN,
+      left: data.left_confidence_threshold ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN,
+      right: data.right_confidence_threshold ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN,
       below: data.below_confidence_threshold ?? GAZE_BELOW_CONFIDENCE_MIN,
     };
-    const isNoFace = !data.face_detected || data.label === 'no_face';
+    const normalizedLabel = String(data.label || '').toLowerCase();
+    const isNoFace = data.is_no_face === true
+      || !data.face_detected
+      || normalizedLabel === 'no_face'
+      || normalizedLabel.includes('multiple_people');
     const holdSeconds = data.no_face_hold_seconds ?? GAZE_NO_FACE_HOLD_SECONDS;
 
-    // Update canvas overlay bbox + confidence on every response
-    _updateGazeBbox(data);
+    // Do not let the slower HTTP observer overwrite a newer WS result.
+    if (!_gazeWsActive) {
+      gazeDetectionStatus.value = '';
+      _updateGazeBbox(data);
+    }
 
     if (isNoFace) {
       _notifyExamineeAbsent();
@@ -1376,7 +1408,7 @@ async function _runGazeCheck() {
           message: `Return to the camera now. Warning ${gazeNoFaceCount.value} of ${fLimit} (${remaining} remaining before termination). After ${holdSeconds} seconds without your face, the exam will pause.`,
         };
       }
-      _clearGazeViolationTimer(); // face not visible → no direction to display
+      if (!_gazeWsActive) _clearGazeViolationTimer(true); // face not visible → no direction
       return;
     }
 
@@ -1400,7 +1432,7 @@ async function _runGazeCheck() {
         _clearGazeViolationTimer();
       }
     }
-    if (data.logged_event) {
+    if (data.logged_event && !_gazeWsActive) {
       // Strike just fired — reset WS timer to prevent double-counting in UI
       _gazeViolationStartTime = Date.now();
       gazeElapsedSeconds.value = 0;
@@ -1462,17 +1494,8 @@ async function _runGazeCheck() {
       message: `Gaze: ${label}. Warning ${gazeViolationCount.value} of ${vLimit} (${vLimit - gazeViolationCount.value} remaining before termination).`,
     };
 
-    // ── 3-second post-caution cooldown ───────────────────────────────────────
-    // Pause gaze detection and clear the direction timer so the student has
-    // time to refocus without immediately re-triggering another violation.
-    _clearGazeViolationTimer();
-    _gazeLoopActive = false;
-    if (_gazeCheckTimer) { clearTimeout(_gazeCheckTimer); _gazeCheckTimer = null; }
-    _gazeCheckTimer = setTimeout(() => {
-      if (!takingExam.value || examTerminated.value) return;
-      _gazeLoopActive = true;
-      _gazeLoop();
-    }, 2000);
+    // Keep detection running while the warning is visible. The server-side
+    // cooldown prevents duplicate strikes without introducing a blind period.
   } catch (err) {
     const msg = err?.response?.data?.error || err?.message || 'Gaze check failed';
     console.warn('Gaze check failed:', msg);
@@ -1562,13 +1585,34 @@ function _stopGazeCheckTimer() {
 }
 
 // ── WebSocket Gaze Loop (Real-time UI + violation timing) ───────────────────
-// The WS loop runs at ~150ms and is used for:
+// The WS loop samples as soon as the previous inference result arrives
+// (normally about every 80ms) and is used for:
 //   1. Instant UI feedback (direction indicator, border color)
-//   2. Violation timing — after 3s of continuous suspicious frames, log to DB
+//   2. Violation timing — after 4s of continuous suspicious frames, log to DB
 // This avoids the slow HTTP-based timer (which added 7+ seconds of delay due
 // to AI processing time per HTTP call).
 let _gazeWs = null;
 let _gazeWsActive = false;
+let _wsPendingFrame = null;
+let _wsLatestFrame = null;
+let _wsFrameId = 0;
+let _wsHasResult = false;
+let _wsResponseTimeout = null;
+let _wsSendTimer = null;
+const WS_CONNECT_TIMEOUT_MS = 5000;
+const WS_FIRST_RESULT_TIMEOUT_MS = 20000;
+const WS_RESPONSE_TIMEOUT_MS = 5000;
+const WS_MAX_RESULT_AGE_MS = 2500;
+
+function _gazeFrameBlob(image) {
+  const bytes = Uint8Array.from(atob(image.split(',')[1]), c => c.charCodeAt(0));
+  return new Blob([bytes], { type: 'image/jpeg' });
+}
+
+function _scheduleWsFrame() {
+  clearTimeout(_wsSendTimer);
+  _wsSendTimer = setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+}
 
 // WS violation timing state
 let _wsViolationStartTime  = null;   // when current violation streak started (ms)
@@ -1576,11 +1620,8 @@ let _wsViolationLabel      = '';      // most recent suspicious label
 let _wsViolationFired      = false;   // prevent double-firing within same streak
 let _wsNormalStartTime     = null;    // when current normal streak started (ms)
 let _wsNormalConsecutive   = 0;       // consecutive Normal frames — require >=2 before resetting violation timer
-// Cached frame blob captured at the START of a gaze violation streak.
-// Used as evidence photo so the captured image matches the ACTUAL look-away
-// rather than a live frame taken seconds later when the student has already looked back.
-let _wsSuspiciousBlob      = null;   // Blob captured at violation start
-let _wsSuspiciousFrameCount = 0;     // frames seen since violation started (refreshes blob every N frames)
+// Exact classified JPEG and its signed result, retained for evidence.
+let _wsSuspiciousFrame = null;
 let _wsViolationCooldownEnd = 0;     // timestamp before which a new timer cannot start
 let _wsNeedNormalReset     = false;  // student must look at camera before next timer
 let _wsMultipleFacesStartTime = null; // timer for multiple-people detection
@@ -1589,19 +1630,20 @@ const WS_MULTIPLE_FACES_MS    = 3000;  // 3s of multiple faces before flagging
 const WS_NORMAL_CLEAR_MS      = 600;   // require ~600ms of sustained Normal before fully resetting timer
 const WS_NORMAL_GRACE_FRAMES  = 2;     // consecutive Normal frames before resetting violation timer (was 3)
 const WS_VIOLATION_COOLDOWN_MS = 3000; // hard cooldown after firing before timer can restart
-const WS_EVIDENCE_REFRESH_FRAMES = 8; // refresh cached evidence blob every N suspicious frames
 
 function _startGazeWsLoop() {
-  if (_gazeWsActive || !takingExam.value || examTerminated.value) return;
-  _gazeWsActive = true;
+  if (_gazeWsActive || (_gazeWs && _gazeWs.readyState < 2) || !takingExam.value || examTerminated.value || submitting.value) return;
+  gazeDetectionStatus.value = 'Connecting';
   _wsViolationStartTime   = null;
   _wsViolationLabel       = '';
   _wsViolationFired       = false;
   _wsNormalStartTime      = null;
   _wsNormalConsecutive    = 0;
   _wsViolationCooldownEnd = 0;
-  _wsSuspiciousBlob       = null;
-  _wsSuspiciousFrameCount = 0;
+  _wsNeedNormalReset = false;
+  _wsMultipleFacesStartTime = null;
+  _wsSuspiciousFrame       = null;
+  _wsHasResult = false;
 
   const examId = takingExam.value.id;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1610,18 +1652,44 @@ function _startGazeWsLoop() {
   
   _gazeWs = new WebSocket(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/?token=${token}`);
   
+  const socket = _gazeWs;
+  _wsResponseTimeout = setTimeout(() => socket.close(), WS_CONNECT_TIMEOUT_MS);
   _gazeWs.onopen = () => {
+    if (_gazeWs !== socket) return;
+    clearTimeout(_wsResponseTimeout);
+    _gazeWsActive = true;
+    gazeDetectionStatus.value = 'Starting AI';
     _sendWsFrame();
   };
   
   _gazeWs.onmessage = (event) => {
-    if (!_gazeWsActive) return;
+    if (!_gazeWsActive || _gazeWs !== socket) return;
+    clearTimeout(_wsResponseTimeout);
+    const analyzedFrame = _wsPendingFrame;
+    _wsPendingFrame = null;
     try {
       const data = JSON.parse(event.data);
+      const maxResultAge = _wsHasResult
+        ? WS_MAX_RESULT_AGE_MS
+        : WS_FIRST_RESULT_TIMEOUT_MS;
+      if (!analyzedFrame || data.frame_id !== analyzedFrame.id
+          || Date.now() - analyzedFrame.capturedAt > maxResultAge) {
+        _wsViolationStartTime = null;
+        _clearGazeViolationTimer(true);
+        socket.close();
+        return;
+      }
+      if (!data.frame_receipt) {
+        socket.close();
+        return;
+      }
+      gazeDetectionStatus.value = '';
+      _wsHasResult = true;
+      _wsLatestFrame = { ...analyzedFrame, receipt: data.frame_receipt, receivedAt: Date.now() };
 
       // Ignore error frames — they don't contain valid gaze state
       if (data.error) {
-        setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+        socket.close();
         return;
       }
 
@@ -1665,7 +1733,7 @@ function _startGazeWsLoop() {
           _wsMultipleFacesStartTime = null;
         }
 
-        setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+        _scheduleWsFrame();
         return;
       }
 
@@ -1676,23 +1744,14 @@ function _startGazeWsLoop() {
         // Block new timer if: in hard cooldown OR student hasn't looked at camera since last violation
         const inCooldown = now < _wsViolationCooldownEnd || _wsNeedNormalReset;
 
+        _startGazeViolationTimer(data.label, 4);
         if (!inCooldown) {
-          // Show direction indicator while counting
-          _startGazeViolationTimer(data.label, 4); // 4-second display bar
 
           if (!_wsViolationStartTime) {
             _wsViolationStartTime = now;
             _wsViolationFired = false;
-            _wsSuspiciousFrameCount = 0;
-            // Capture evidence blob immediately when violation streak starts
-            _captureEvidenceBlob();
-          } else {
-            _wsSuspiciousFrameCount++;
-            // Refresh blob every WS_EVIDENCE_REFRESH_FRAMES to stay representative
-            if (_wsSuspiciousFrameCount % WS_EVIDENCE_REFRESH_FRAMES === 0) {
-              _captureEvidenceBlob();
-            }
           }
+          _wsSuspiciousFrame = _wsLatestFrame;
           _wsViolationLabel = data.label;
 
           if (_wsViolationStartTime && !_wsViolationFired && (now - _wsViolationStartTime) >= WS_VIOLATION_MS) {
@@ -1703,8 +1762,7 @@ function _startGazeWsLoop() {
             const labelToRecord = _wsViolationLabel;
             _wsViolationLabel = '';
 
-            // Reset the border/indicator to green immediately (forceNow skips debounce)
-            _clearGazeViolationTimer(true);
+            // Keep showing the actual direction while the strike is saved.
 
             // Immediate popup — show before HTTP responds
             const estimatedCount = (gazeViolationCount.value || 0) + 1;
@@ -1718,9 +1776,7 @@ function _startGazeWsLoop() {
             _recordWsViolation(labelToRecord);
           }
         } else {
-          // In cooldown OR need-normal-reset: force-clear indicator immediately
-          // (no debounce) so the direction arrow disappears right away.
-          _clearGazeViolationTimer(true);
+          // Cooldown suppresses duplicate strikes, not the live direction.
           _wsViolationStartTime = null;
         }
 
@@ -1734,8 +1790,7 @@ function _startGazeWsLoop() {
           _clearGazeViolationTimer(true);
           _wsViolationStartTime = null;
           _wsViolationLabel = '';
-          _wsSuspiciousBlob = null;       // clear stale evidence blob
-          _wsSuspiciousFrameCount = 0;
+          _wsSuspiciousFrame = null;       // clear stale evidence blob
         }
 
         if (!_wsNormalStartTime) {
@@ -1750,22 +1805,37 @@ function _startGazeWsLoop() {
           _wsNeedNormalReset        = false;  // allow new violation timer
           _wsMultipleFacesStartTime = null;   // reset multiple-faces timer
           _wsViolationCooldownEnd   = 0;
-          _wsSuspiciousBlob         = null;   // clear stale evidence blob
-          _wsSuspiciousFrameCount   = 0;
+          _wsSuspiciousFrame         = null;   // clear stale evidence blob
         }
+      } else if (data.stabilizing) {
+        // Keep the current display/timer while a second horizontal frame is
+        // being confirmed. This avoids flicker without counting a lone frame.
+        _wsNormalStartTime = null;
+      } else {
+        _clearGazeViolationTimer(true);
+        _wsViolationStartTime = null;
+        _wsSuspiciousFrame = null;
       }
 
-      setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+      _scheduleWsFrame();
     } catch(e) {
       console.error('[GazeWS] handler error:', e);
-      setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+      _scheduleWsFrame();
 
     }
   };
   
   _gazeWs.onclose = () => {
+    if (_gazeWs !== socket) return;
+    clearTimeout(_wsResponseTimeout);
+    clearTimeout(_wsSendTimer);
+    _wsPendingFrame = null;
+    _wsLatestFrame = null;
+    _wsViolationStartTime = null;
+    _clearGazeViolationTimer(true);
     _gazeWsActive = false;
-    if (takingExam.value && !examTerminated.value) {
+    gazeDetectionStatus.value = 'Reconnecting';
+    if (takingExam.value && !examTerminated.value && !submitting.value) {
       setTimeout(() => {
         if (!_gazeWsActive && takingExam.value && !examTerminated.value) {
           _startGazeWsLoop();
@@ -1775,75 +1845,23 @@ function _startGazeWsLoop() {
   };
 
   _gazeWs.onerror = () => {
-    try { _gazeWs?.close(); } catch (_) { /* ignore */ }
+    try { socket.close(); } catch (_) { /* ignore */ }
   };
-}
-
-/**
- * Captures the current video frame into _wsSuspiciousBlob without blocking.
- * Called when the first suspicious WS frame arrives and periodically refreshed
- * so the evidence photo shows the student MID-look-away rather than after
- * they've already looked back at the screen.
- */
-function _captureEvidenceBlob() {
-  const video = examVideoEl.value;
-  if (!video || video.readyState < 2 || !video.videoWidth) return;
-  const SEND_W = 640;
-  const SEND_H = Math.round((video.videoHeight / video.videoWidth) * SEND_W);
-  const canvas = document.createElement('canvas');
-  canvas.width = SEND_W;
-  canvas.height = SEND_H;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.drawImage(video, 0, 0, SEND_W, SEND_H);
-  // Non-blocking — fires callback asynchronously but doesn't await
-  canvas.toBlob((blob) => { if (blob) _wsSuspiciousBlob = blob; }, 'image/jpeg', 0.78);
 }
 
 /** Called by the WS timer after 4s of suspicious frames — logs the violation via HTTP. */
 async function _recordWsViolation(label) {
   if (!takingExam.value || examTerminated.value) return;
 
-  const logWithoutFrame = async (reason) => {
-    const eventId = await _logProctoringEvent('gaze_violation', {
-      message: label,
-      source: 'gaze_ws',
-      severity: 'warning',
-      metadata: { label, recorded_via: reason },
-    });
-    gazeViolationCount.value = (gazeViolationCount.value || 0) + 1;
-    await _captureProctoringSnapshot(`Gaze violation: ${_formalGazeLabel(label)}`, { eventId });
-  };
-
   try {
-    // Prefer the cached blob captured at the START of the violation streak.
-    // This gives an accurate evidence image showing the student mid-look-away.
-    // Fall back to a live capture only if no cache is available.
-    let blob = _wsSuspiciousBlob;
-    _wsSuspiciousBlob = null; // consume the cache
-
-    if (!blob) {
-      const video2 = examVideoEl.value;
-      if (video2 && video2.readyState >= 2 && video2.videoWidth) {
-        const SEND_W2 = 640;
-        const SEND_H2 = Math.round((video2.videoHeight / video2.videoWidth) * SEND_W2);
-        const canvas2 = document.createElement('canvas');
-        canvas2.width = SEND_W2; canvas2.height = SEND_H2;
-        const ctx2 = canvas2.getContext('2d');
-        if (ctx2) {
-          ctx2.drawImage(video2, 0, 0, SEND_W2, SEND_H2);
-          blob = await new Promise((r) => canvas2.toBlob(r, 'image/jpeg', 0.75));
-        }
-      }
-    }
-
-    if (!blob) {
-      await logWithoutFrame('events_fallback_no_blob');
-      return;
-    }
-
+    // This is the JPEG that produced the WS label, not a later webcam frame.
+    const analyzed = _wsSuspiciousFrame;
+    _wsSuspiciousFrame = null;
+    if (!analyzed?.receipt) return;
+    const blob = _gazeFrameBlob(analyzed.image);
     const form = new FormData();
-    form.append('image', blob, `gaze_ws_${Date.now()}.jpg`);
+    form.append('image', blob, `gaze_ws_${analyzed.id}.jpg`);
+    form.append('frame_receipt', analyzed.receipt);
     form.append('record_strike', 'true');
     form.append('forced_label', label);
 
@@ -1887,20 +1905,21 @@ async function _recordWsViolation(label) {
     }
   } catch (err) {
     console.warn('WS violation record failed:', err?.response?.data || err);
-    await logWithoutFrame('events_fallback_error');
+    _wsNeedNormalReset = false;
+    _wsViolationFired = false;
   }
 }
 
 async function _sendWsFrame() {
-  if (!_gazeWsActive || !_gazeWs || _gazeWs.readyState !== WebSocket.OPEN || submitting.value) return;
+  if (!_gazeWsActive || !_gazeWs || _gazeWs.readyState !== WebSocket.OPEN || submitting.value || _wsPendingFrame) return;
   const video = examVideoEl.value;
   if (!video || video.readyState < 2 || !video.videoWidth) {
-    setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+    _scheduleWsFrame();
     return;
   }
   
   const canvas = document.createElement('canvas');
-  const SEND_W = 640;
+  const SEND_W = GAZE_FRAME_WIDTH;
   const SEND_H = Math.round((video.videoHeight / video.videoWidth) * SEND_W);
   canvas.width = SEND_W;
   canvas.height = SEND_H;
@@ -1910,21 +1929,32 @@ async function _sendWsFrame() {
   
   // Use canvas.toDataURL for base64 string
   const base64Image = canvas.toDataURL('image/jpeg', 0.6);
-  _gazeWs.send(JSON.stringify({ image: base64Image }));
+  const socket = _gazeWs;
+  _wsPendingFrame = { id: ++_wsFrameId, image: base64Image, capturedAt: Date.now() };
+  _wsResponseTimeout = setTimeout(() => {
+    if (_gazeWs === socket) socket.close();
+  }, _wsHasResult ? WS_RESPONSE_TIMEOUT_MS : WS_FIRST_RESULT_TIMEOUT_MS);
+  socket.send(JSON.stringify({ image: base64Image, frame_id: _wsPendingFrame.id }));
 }
 
 function _stopGazeWsLoop() {
+  gazeDetectionStatus.value = '';
+  clearTimeout(_wsResponseTimeout);
+  clearTimeout(_wsSendTimer);
+  _wsPendingFrame = null;
+  _wsLatestFrame = null;
+  _wsHasResult = false;
   _gazeWsActive = false;
   _wsViolationStartTime = null;
   _wsViolationLabel = '';
   _wsViolationFired = false;
   _wsNormalStartTime = null;
   _wsNormalConsecutive = 0;
-  _wsSuspiciousBlob = null;
-  _wsSuspiciousFrameCount = 0;
+  _wsSuspiciousFrame = null;
   if (_gazeWs) {
-    _gazeWs.close();
+    const socket = _gazeWs;
     _gazeWs = null;
+    socket.close();
   }
 }
 
@@ -1945,11 +1975,12 @@ const examVideoEl = ref(null);
 const precheckFaceVisible = ref(false);
 let _precheckWs = null;
 let _precheckWsTimer = null;
+let _precheckFramePending = false;
+let _precheckFrameId = 0;
 
 // --- Face Verification state ---
 const fvShow        = ref(false);
 const fvStep        = ref('verifying'); // 'verifying' | 'success' | 'failed' | 'no-photo'
-const fvConfidence  = ref(0);
 const fvAttemptsLeft = ref(2);
 const fvErrorMsg    = ref('');
 const FV_MAX_ATTEMPTS = 3;
@@ -2284,9 +2315,9 @@ async function requestMediaPermissions() {
 
 async function proceedFromPermissionModal() {
   if (!mediaStreamActive.value || !precheckFaceVisible.value) return;
-  _stopPrecheckWs();
   showPermissionModal.value = false;
-  // Run face verification before launching the exam.
+  // Keep the precheck socket alive while face verification runs. Its first
+  // inference warms the gaze model before the exam socket is opened.
   fvAttemptsLeft.value = FV_MAX_ATTEMPTS - 1;
   await _runFaceVerification();
 }
@@ -2301,47 +2332,39 @@ async function _runFaceVerification() {
 
   // Show the modal in 'verifying' state.
   fvStep.value = 'verifying';
-  fvConfidence.value = 0;
   fvErrorMsg.value = '';
   fvShow.value = true;
 
   try {
     // Grab a frame from whichever video element has pixels.
     const video = permVideoEl.value || examVideoEl.value;
-    console.log('[FV] Video element:', video, 'videoWidth:', video?.videoWidth, 'videoHeight:', video?.videoHeight);
     if (!video || !video.videoWidth) {
       throw new Error('Webcam not ready. Please try again.');
     }
 
-    // Capture the raw (unflipped) webcam frame.
-    // The backend's face_service.py will try BOTH the original and
-    // horizontally-flipped version automatically to handle mirrored webcams.
+    // Keep verification uploads small and consistent so YuNet can reuse its
+    // cached detector input size across devices and retry attempts.
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const captureWidth = Math.min(480, video.videoWidth);
+    canvas.width = captureWidth;
+    canvas.height = Math.round((video.videoHeight / video.videoWidth) * captureWidth);
     const captureCtx = canvas.getContext('2d');
-    captureCtx.drawImage(video, 0, 0);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    captureCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
     if (!blob) throw new Error('Could not capture webcam frame.');
-
-    console.log('[FV] Captured blob size:', blob.size, 'bytes, exam id:', exam.id);
 
     const form = new FormData();
     form.append('webcam_image', blob, `verify_${Date.now()}.jpg`);
 
-    console.log('[FV] Posting to:', `/api/student/exams/${exam.id}/verify-face/`);
     const { data } = await api.post(
       `/api/student/exams/${exam.id}/verify-face/`,
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
     );
 
-    console.log('[FV] Response data:', data);
-
     if (data.verified) {
-      fvConfidence.value = data.confidence ?? 100;
       fvStep.value = 'success';
-      // Auto-proceed after 2 seconds so the student sees the success screen.
+      // Briefly confirm success, then proceed without making the student wait.
       setTimeout(async () => {
         fvShow.value = false;
         pendingExam = null;
@@ -2350,7 +2373,7 @@ async function _runFaceVerification() {
         if (examVideoEl.value && activeMediaStream) {
           examVideoEl.value.srcObject = activeMediaStream;
         }
-      }, 2000);
+      }, 900);
     } else {
       // Verification failed.
       console.warn('[FV] Verification failed:', data);
@@ -2382,6 +2405,7 @@ function _onFaceVerifyRetry() {
 }
 
 function _onFaceVerifyCancel() {
+  _stopPrecheckWs();
   fvShow.value = false;
   pendingExam = null;
   // Stop the media stream since the student cancelled.
@@ -2413,12 +2437,14 @@ function _startPrecheckWs() {
 
   // Enable button immediately once camera is active — real check happens at SFace verification
   precheckFaceVisible.value = true;
+  _precheckFramePending = false;
 
   _precheckWs = new WebSocket(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/`);
   _precheckWs.onopen = () => {
     _sendPrecheckFrame();
   };
   _precheckWs.onmessage = (event) => {
+    _precheckFramePending = false;
     try {
       const data = JSON.parse(event.data);
       // Just keep track of face state for display — don't block the button
@@ -2429,9 +2455,12 @@ function _startPrecheckWs() {
       // The "Continue to Exam" button stays enabled once camera is active.
       // The actual face identity check happens at the SFace verification step.
     } catch {}
+    clearTimeout(_precheckWsTimer);
+    _precheckWsTimer = setTimeout(_sendPrecheckFrame, 250);
   };
   _precheckWs.onclose = () => {
     clearTimeout(_precheckWsTimer);
+    _precheckFramePending = false;
   };
   _precheckWs.onerror = () => {
     // If WS fails, still allow the student to proceed — SFace will do the real check
@@ -2440,7 +2469,7 @@ function _startPrecheckWs() {
 }
 
 function _sendPrecheckFrame() {
-  if (!_precheckWs || _precheckWs.readyState !== WebSocket.OPEN) return;
+  if (!_precheckWs || _precheckWs.readyState !== WebSocket.OPEN || _precheckFramePending) return;
   const video = permVideoEl.value;
   if (!video || video.readyState < 2 || !video.videoWidth) {
     _precheckWsTimer = setTimeout(_sendPrecheckFrame, 200);
@@ -2457,12 +2486,13 @@ function _sendPrecheckFrame() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
   
-  _precheckWs.send(JSON.stringify({ image: dataUrl }));
-  _precheckWsTimer = setTimeout(_sendPrecheckFrame, 200);
+  _precheckFramePending = true;
+  _precheckWs.send(JSON.stringify({ image: dataUrl, frame_id: ++_precheckFrameId }));
 }
 
 function _stopPrecheckWs() {
   clearTimeout(_precheckWsTimer);
+  _precheckFramePending = false;
   if (_precheckWs) {
     _precheckWs.close();
     _precheckWs = null;
@@ -2470,6 +2500,7 @@ function _stopPrecheckWs() {
 }
 
 async function _doOpenExam(exam) {
+  _stopPrecheckWs();
   takingExam.value = exam;
   takingLoading.value = true;
   examQuestions.value = [];

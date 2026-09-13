@@ -1,10 +1,14 @@
 import json
 import base64
-import numpy as np
-import cv2
+import asyncio
+import time
+from dataclasses import replace
+from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from accounts.gaze_service import get_gaze_tracker
+from accounts.gaze_service import (
+    GAZE_EXECUTOR, analyze_frame_bytes, schedule_live_snapshot, sign_gaze_result,
+)
 
 # ── Confidence gating (must match views.py and inference.py) ─────────────────
 # The tracker's raw is_suspicious can fire at lower internal thresholds.
@@ -15,6 +19,16 @@ _WS_RIGHT_CONFIDENCE   = 0.30
 _WS_LEFT_CONFIDENCE    = 0.28
 _WS_ABOVE_CONFIDENCE   = 0.22  # lowered from 0.26 to match inference.py ABOVE_VIOLATION_CONFIDENCE_THRESHOLD
 _WS_GENERAL_CONFIDENCE = 0.34
+_HORIZONTAL_CONFIRM_FRAMES = 2
+
+
+def _horizontal_direction(label: str) -> str:
+    value = (label or '').lower()
+    if 'left' in value and 'right' not in value:
+        return 'left'
+    if 'right' in value and 'left' not in value:
+        return 'right'
+    return ''
 
 
 def _ws_confidence_ok(label: str, confidence: float) -> bool:
@@ -35,12 +49,14 @@ class GazeConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.exam_id = self.scope['url_route']['kwargs']['exam_id']
         self.student_email = None
-        self._frame_count = 0
+        self._last_snapshot_at = 0
+        self._closed = False
+        self._horizontal_candidate = ''
+        self._horizontal_streak = 0
 
         # Extract student email from JWT token passed as query param
         query_string = self.scope.get('query_string', b'').decode()
-        params = dict(qp.split('=', 1) for qp in query_string.split('&') if '=' in qp)
-        token = params.get('token', '')
+        token = parse_qs(query_string).get('token', [''])[0]
         if token:
             try:
                 from rest_framework_simplejwt.tokens import AccessToken
@@ -52,14 +68,14 @@ class GazeConsumer(AsyncWebsocketConsumer):
                     User = get_user_model()
                     user = await sync_to_async(User.objects.filter(id=user_id).first)()
                     if user:
-                        self.student_email = user.email
+                        self.student_email = (user.email or '').lower()
             except Exception:
                 pass
 
         await self.accept()
 
     async def disconnect(self, close_code):
-        pass
+        self._closed = True
 
     async def receive(self, text_data=None, bytes_data=None):
         if not text_data:
@@ -72,17 +88,13 @@ class GazeConsumer(AsyncWebsocketConsumer):
             if image_data.startswith('data:image'):
                 image_data = image_data.split(',')[1]
 
-            img_bytes = base64.b64decode(image_data)
-            nparr = np.frombuffer(img_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-            if frame is None:
-                await self.send(text_data=json.dumps({"error": "Invalid image"}))
+            img_bytes = base64.b64decode(image_data, validate=True)
+            started = time.perf_counter()
+            result = await asyncio.get_running_loop().run_in_executor(
+                GAZE_EXECUTOR, analyze_frame_bytes, img_bytes,
+            )
+            if getattr(self, '_closed', False):
                 return
-
-            from asgiref.sync import sync_to_async
-            tracker = get_gaze_tracker()
-            result = await sync_to_async(tracker.analyze)(frame)
 
             label = result.label or ''
             label_l = label.lower()
@@ -95,41 +107,61 @@ class GazeConsumer(AsyncWebsocketConsumer):
             if is_suspicious and not is_no_face:
                 is_suspicious = _ws_confidence_ok(label, result.confidence)
 
+            # A single horizontal prediction is often ordinary eye jitter.
+            # Confirm the same side twice (normally well under half a second)
+            # before starting the browser's violation timer.
+            horizontal = _horizontal_direction(label)
+            stabilizing = False
+            if is_suspicious and horizontal:
+                if getattr(self, '_horizontal_candidate', '') == horizontal:
+                    self._horizontal_streak = getattr(self, '_horizontal_streak', 0) + 1
+                else:
+                    self._horizontal_candidate = horizontal
+                    self._horizontal_streak = 1
+                stabilizing = self._horizontal_streak < _HORIZONTAL_CONFIRM_FRAMES
+                if stabilizing:
+                    is_suspicious = False
+            else:
+                self._horizontal_candidate = ''
+                self._horizontal_streak = 0
+
+            # Sign the effective result after the same confidence gate returned
+            # to the browser. Evidence replay therefore uses exactly the state
+            # that drove the live timer.
+            signed_result = replace(
+                result,
+                is_suspicious=is_suspicious,
+                is_normal=bool(result.is_normal and not is_no_face),
+            )
             payload = {
                 "label": label,
                 "confidence": result.confidence,
                 "face_detected": result.face_detected,
+                "is_no_face": is_no_face,
                 "is_suspicious": is_suspicious,
                 "is_normal": result.is_normal and not is_no_face,
+                "stabilizing": stabilizing,
                 "face_bbox": result.face_bbox,
+                "frame_id": data.get('frame_id'),
+                "processing_ms": round((time.perf_counter() - started) * 1000, 1),
             }
+            if self.student_email:
+                payload['frame_receipt'] = sign_gaze_result(
+                    self.exam_id, self.student_email, img_bytes, signed_result,
+                )
             # Send gaze result to student immediately — no waiting
             await self.send(text_data=json.dumps(payload))
 
-            # Save snapshot after response (every 5 frames so instructor live view stays current)
-            self._frame_count += 1
-            if self.student_email and self._frame_count % 5 == 0:
-                import asyncio
-                _email = self.student_email
-                _exam_id = self.exam_id
-                _img_bytes = img_bytes
-
-                async def _bg_save():
-                    from asgiref.sync import sync_to_async
-                    from accounts.models import ExamSubmission
-
-                    @sync_to_async
-                    def do_save():
-                        from accounts.gaze_service import save_live_snapshot
-                        save_live_snapshot(_exam_id, _email, _img_bytes)
-
-                    await do_save()
-
-                asyncio.ensure_future(_bg_save())
+            # Slow remote storage cannot block inference or build a backlog.
+            if self.student_email and time.monotonic() - self._last_snapshot_at >= 3:
+                self._last_snapshot_at = time.monotonic()
+                schedule_live_snapshot(self.exam_id, self.student_email, img_bytes)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
+            if getattr(self, '_closed', False):
+                return
             await self.send(text_data=json.dumps({
                 "error": str(e),
                 "face_detected": True,

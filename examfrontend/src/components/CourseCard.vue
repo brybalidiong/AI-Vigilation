@@ -62,7 +62,7 @@ const photoStyle = computed(() => {
 <style scoped>
 .course-display-card {
   position: relative;
-  border-radius: 18px;
+  border-radius: 17px;
   background: #fff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
@@ -72,15 +72,15 @@ const photoStyle = computed(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 250px;
+  min-height: 232px;
   outline: none;
 }
 
 .course-display-card:hover,
 .course-display-card:focus-visible {
   transform: translateY(-5px);
-  box-shadow: 0 18px 36px rgba(29, 52, 97, 0.13);
-  border-color: #cbd5e1;
+  box-shadow: 0 18px 38px rgba(var(--dash-accent-rgb, 29, 52, 97), 0.14);
+  border-color: rgba(var(--dash-accent-rgb, 29, 52, 97), 0.22);
 }
 
 .course-display-card:focus-visible {
@@ -88,7 +88,7 @@ const photoStyle = computed(() => {
 }
 
 .course-banner {
-  height: 130px;
+  height: 116px;
   position: relative;
   padding: 1.15rem 1.25rem;
   overflow: hidden;
@@ -172,7 +172,7 @@ const photoStyle = computed(() => {
   font-family: 'Outfit', sans-serif;
   font-size: 0.88rem;
   font-weight: 700;
-  color: #1D3461;
+  color: var(--dash-accent, #1D3461);
   white-space: nowrap;
   transition: gap 0.2s ease;
 }

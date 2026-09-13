@@ -4,12 +4,85 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import hashlib
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from django.core import signing
+from django.db import close_old_connections
 from collections import deque
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
+# Inference must never queue behind database queries or remote image uploads.
+GAZE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gaze-inference')
+_snapshot_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='gaze-snapshot')
+_snapshot_slots = threading.BoundedSemaphore(2)
+_tracker_init_lock = threading.Lock()
+_GAZE_MODEL_FILENAMES = ('EfficientNetB0_gaze_float32.tflite', 'gaze_model_float32.tflite')
+
+
+def _has_gaze_model(path: Path) -> bool:
+    return any((path / filename).is_file() for filename in _GAZE_MODEL_FILENAMES)
+
+
+def analyze_frame_bytes(raw):
+    import cv2
+    frame = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        raise ValueError('Invalid image')
+    # lru_cache alone permits duplicate initialization on concurrent first calls.
+    with _tracker_init_lock:
+        tracker = get_gaze_tracker()
+    if not tracker.ready:
+        raise RuntimeError(tracker.error or 'Gaze model unavailable')
+    return tracker.analyze(frame)
+
+
+def sign_gaze_result(exam_id, email, raw, result):
+    """Bind an analyzed result to the exact evidence frame and student."""
+    return signing.dumps({
+        'exam_id': int(exam_id), 'email': email.lower(),
+        'image_sha256': hashlib.sha256(raw).hexdigest(), 'result': result.to_dict(),
+    }, salt='gaze-frame', compress=True)
+
+
+def read_gaze_result(receipt, exam_id, email, raw):
+    try:
+        data = signing.loads(receipt, salt='gaze-frame', max_age=15)
+        if (data['exam_id'] != int(exam_id) or data['email'] != email.lower()
+                or data['image_sha256'] != hashlib.sha256(raw).hexdigest()):
+            raise signing.BadSignature('Gaze frame does not match its receipt')
+        from gaze_tracker.tracker import GazeResult
+        return GazeResult(**data['result'])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise signing.BadSignature('Malformed gaze frame receipt') from exc
+
+
+def schedule_live_snapshot(exam_id, email, raw):
+    """Best-effort live preview: drop updates when storage is busy, never queue."""
+    if not _snapshot_slots.acquire(blocking=False):
+        return False
+
+    def save():
+        try:
+            close_old_connections()
+            save_live_snapshot(exam_id, email, raw)
+        except Exception:
+            logger.exception('Could not save live gaze snapshot')
+        finally:
+            close_old_connections()
+            _snapshot_slots.release()
+
+    try:
+        _snapshot_executor.submit(save)
+    except Exception:
+        _snapshot_slots.release()
+        raise
+    return True
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _BACKEND_DIR.parent
@@ -22,15 +95,15 @@ def resolve_gaze_assets_dir() -> str:
     env = os.environ.get("GAZE_ASSETS_DIR")
     if env:
         p = Path(env)
-        if p.is_dir() and (p / "gaze_model_float32.tflite").is_file():
+        if p.is_dir() and _has_gaze_model(p):
             return str(p)
 
     backend_assets = _BACKEND_DIR / "gaze_tracker" / "assets"
-    if (backend_assets / "gaze_model_float32.tflite").is_file():
+    if _has_gaze_model(backend_assets):
         return str(backend_assets)
 
     train_assets = _REPO_ROOT / "TrainModel" / "gaze_tracker" / "assets"
-    if (train_assets / "gaze_model_float32.tflite").is_file():
+    if _has_gaze_model(train_assets):
         return str(train_assets)
 
     return str(backend_assets)

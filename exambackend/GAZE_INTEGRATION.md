@@ -21,10 +21,11 @@ Staff API: `GET /api/gaze/status/` (JWT, staff user).
 
 ## During student exam
 
-- Webcam required; frames sent every **5s** to `POST /api/student/exams/<id>/proctoring/gaze/`
+- Webcam required; the browser streams one frame at a time over the gaze WebSocket and
+  falls back to the HTTP endpoint when the socket is unavailable
 - Strikes logged: `gaze_violation`, `gaze_no_face`
 - Auto-terminate at **8** look-away / **5** face-not-visible strikes
-- Violations save **screenshot evidence** linked to the event
+- Violations save **the classified webcam frame** as screenshot evidence linked to the event
 
 ## Instructor reports
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import urllib.request
 from collections import deque
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ from .inference import (
     RIGHT_CONFIDENCE_THRESHOLD,
     VIOLATION_CONFIDENCE_THRESHOLD,
     extract_geometric_features,
+    mirror_correct_geo,
     pick_gaze_label,
     prepare_image_batch,
 )
@@ -156,7 +158,8 @@ class GazeTracker:
     ----------
     assets_dir       : folder with gaze_model_float32.tflite, class_names.json,
                        face_landmarker.task (auto-downloaded if missing).
-    mirror_webcam    : True if the frame is already mirrored (typical browser webcam).
+    mirror_webcam    : Flip input pixels before inference. Browser canvas frames
+                       are unmirrored; CSS mirroring only affects the preview.
     smoothing_window : frames to average over for temporal smoothing (0 = off).
     use_hysteresis   : whether to apply exit-frame filter.
     """
@@ -164,7 +167,7 @@ class GazeTracker:
     def __init__(
         self,
         assets_dir: Optional[str] = None,
-        mirror_webcam: bool = True,
+        mirror_webcam: bool = False,
         smoothing_window: int = 0,
         use_hysteresis: bool = False,
     ):
@@ -172,16 +175,27 @@ class GazeTracker:
         self.mirror_webcam = mirror_webcam
         self._ready = False
         self._error: Optional[str] = None
+        self._lock = threading.Lock()
 
         class_path = os.path.join(self.assets_dir, "class_names.json")
-        tflite_path = os.path.join(self.assets_dir, "EfficientNetB0_gaze_float32.tflite")
+        tflite_path = next(
+            (
+                os.path.join(self.assets_dir, filename)
+                for filename in (
+                    "EfficientNetB0_gaze_float32.tflite",
+                    "gaze_model_float32.tflite",
+                )
+                if os.path.isfile(os.path.join(self.assets_dir, filename))
+            ),
+            None,
+        )
         landmarker_path = os.path.join(self.assets_dir, "face_landmarker.task")
 
         if not os.path.isfile(class_path):
             self._error = f"Missing {class_path}"
             return
-        if not os.path.isfile(tflite_path):
-            self._error = f"Missing {tflite_path}"
+        if tflite_path is None:
+            self._error = f"Missing gaze model in {self.assets_dir}"
             return
 
         with open(class_path, "r", encoding="utf-8") as f:
@@ -201,7 +215,9 @@ class GazeTracker:
         )
         self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
 
-        self._interpreter = tf.lite.Interpreter(model_path=tflite_path)
+        self._interpreter = tf.lite.Interpreter(
+            model_path=tflite_path, num_threads=2,
+        )
         self._interpreter.allocate_tensors()
         inputs = self._interpreter.get_input_details()
         outputs = self._interpreter.get_output_details()
@@ -230,8 +246,6 @@ class GazeTracker:
         )
         self._hysteresis = _HysteresisFilter(normal_idx=normal_idx) if use_hysteresis else None
 
-        import threading
-        self._lock = threading.Lock()
 
     @property
     def ready(self) -> bool:
@@ -356,9 +370,9 @@ class GazeTracker:
                     is_suspicious=True,
                 )
 
-            # Training crops were saved from a mirrored (selfie) webcam. Keep the
-            # crop and geometry in that same space — do not unmirror, or left/right
-            # (and often above/below) get swapped or suppressed.
+            # EfficientNetB0's processed-face training pipeline preserves source
+            # orientation. Canvas frames have that same orientation, even when
+            # the browser displays a mirrored selfie preview.
             batched_face = prepare_image_batch(processed_face)
             geo = extract_geometric_features(results, h, w)
             geo_batch = np.expand_dims(geo, axis=0).astype(np.float32)
@@ -374,7 +388,10 @@ class GazeTracker:
         predictions = self._smoother.update(raw_predictions) if getattr(self, '_smoother', None) else raw_predictions
 
         # ── Label selection ───────────────────────────────────────────────
-        class_idx, confidence = pick_gaze_label(predictions, geo, self.classes)
+        # Direction heuristics use the student's perspective (selfie coordinates).
+        # Keep the model's inputs untouched; convert only the heuristic geometry.
+        direction_geo = geo if self.mirror_webcam else mirror_correct_geo(geo)
+        class_idx, confidence = pick_gaze_label(predictions, direction_geo, self.classes)
 
         # ── Hysteresis filter ─────────────────────────────────────────────
         if getattr(self, '_hysteresis', None):

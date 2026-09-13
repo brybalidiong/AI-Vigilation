@@ -25,7 +25,6 @@
           </div>
           <h2 id="fv-title" class="fv-title">Identity Verified</h2>
           <p class="fv-sub">Your identity has been confirmed. Starting your exam...</p>
-          <div class="fv-confidence">Match: {{ confidence.toFixed(0) }}%</div>
         </template>
 
         <!-- ── STEP 3: Failed ── -->
@@ -81,7 +80,6 @@
 defineProps({
   show:         { type: Boolean, default: false },
   step:         { type: String,  default: 'verifying' }, // 'verifying' | 'success' | 'failed' | 'no-photo'
-  confidence:   { type: Number,  default: 0 },
   attemptsLeft: { type: Number,  default: 2 },
   errorMessage: { type: String,  default: '' },
 });
@@ -164,17 +162,6 @@ defineEmits(['cancel', 'retry']);
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-/* Confidence */
-.fv-confidence {
-  display: inline-block;
-  background: #f0fdf4;
-  color: #16a34a;
-  padding: 0.4rem 1rem;
-  border-radius: 99px;
-  font-weight: 600;
-  font-size: 0.9rem;
 }
 
 /* Error box */

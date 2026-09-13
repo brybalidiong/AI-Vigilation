@@ -3,7 +3,9 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from django.db.models import Count
+from django.http import FileResponse
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.utils.dateparse import parse_date, parse_datetime
 from datetime import datetime, time, timedelta
 import re
@@ -104,7 +106,7 @@ def _gaze_mark_suspicious(submission, now) -> None:
 
 def _gaze_normal_long_enough(submission, now, grace_seconds: float = 1.5) -> bool:
     """Return True only if we haven't seen a suspicious frame for grace_seconds.
-    Prevents a single flickering normal frame from resetting the 3-second timer.
+    Prevents a single flickering normal frame from resetting the continuous timer.
     """
     key = _gaze_pending_key(submission)
     last = _GAZE_LAST_SUSPICIOUS.get(key)
@@ -334,13 +336,13 @@ def _resolve_forced_gaze_label(forced_label: str, classes: list[str]) -> str:
 
 
 def _submission_snapshot_url(submission, request):
-    """Absolute snapshot URL with a cache-buster so live instructor view refreshes."""
+    """Authenticated API URL with a cache-buster for the instructor live view."""
     if not submission.latest_snapshot:
         return None
-    try:
-        url = request.build_absolute_uri(submission.latest_snapshot.url)
-    except Exception:
-        return None
+    url = request.build_absolute_uri(
+        f'/api/instructor/subjects/{submission.exam_set.subject_id}'
+        f'/exam-sets/{submission.exam_set_id}/submissions/{submission.pk}/snapshot/'
+    )
     version = int(submission.updated_at.timestamp()) if submission.updated_at else int(timezone.now().timestamp())
     sep = '&' if '?' in url else '?'
     return f'{url}{sep}v={version}'
@@ -1444,7 +1446,7 @@ def exam_set_stats(request, subject_id, exam_set_id):
         student_set__created_by=request.user,
     ).select_related('student_set')
     
-    submissions = ExamSubmission.objects.filter(exam_set=exam_set)
+    submissions = ExamSubmission.objects.filter(exam_set=exam_set).select_related('exam_set')
     submission_map = {sub.student_email.lower(): sub for sub in submissions}
 
     assigned_ids = set(exam_set.assigned_sets.values_list('id', flat=True)) if exam_set.assigned_sets.exists() else set()
@@ -1511,6 +1513,36 @@ def exam_set_stats(request, subject_id, exam_set_id):
         'sets': stats_list,
         'examinees': examinees
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def instructor_submission_snapshot(request, subject_id, exam_set_id, submission_id):
+    """Stream a live snapshot through the authenticated API.
+
+    This keeps object-storage credentials and signed storage URLs out of the
+    browser and works with both local media and remote storage backends.
+    """
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    submission = ExamSubmission.objects.filter(
+        pk=submission_id,
+        exam_set_id=exam_set_id,
+        exam_set__subject_id=subject_id,
+        exam_set__subject__instructor=request.user,
+    ).only('latest_snapshot').first()
+    if not submission or not submission.latest_snapshot:
+        return Response({'error': 'Snapshot not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        snapshot_file = submission.latest_snapshot.open('rb')
+    except Exception:
+        return Response({'error': 'Snapshot not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    response = FileResponse(snapshot_file, content_type='image/jpeg')
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @api_view(['GET', 'POST'])
@@ -2216,8 +2248,21 @@ def student_exam_questions(request, exam_id):
                 source='questions',
             )
 
-    qs = ExamQuestion.objects.filter(exam_set=exam_set)
-    questions = [_serialize_question(q, include_answer=False) for q in qs]
+    # A stable pseudorandom rank gives each student/attempt its own sequence,
+    # including across refreshes and server restarts. Keep stored question IDs
+    # and instructor ordering intact so answers continue to grade by ID.
+    qs = sorted(
+        ExamQuestion.objects.filter(exam_set=exam_set),
+        key=lambda q: salted_hmac(
+            'student-exam-question-order',
+            f'{submission.pk}:{submission.attempt_count}:{q.pk}',
+            algorithm='sha256',
+        ).digest(),
+    )
+    questions = [
+        {**_serialize_question(q, include_answer=False), 'order': position}
+        for position, q in enumerate(qs, start=1)
+    ]
     return Response({
         'questions': questions,
         'started_at': submission.started_at,
@@ -2616,83 +2661,25 @@ def student_analyze_gaze(request, exam_id):
     if not image:
         return Response({'error': 'image file is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        from .gaze_service import get_gaze_tracker
-        tracker = get_gaze_tracker()
-    except Exception as exc:
-        return Response(
-            {'error': f'Gaze model unavailable: {exc}'},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-
-    if not tracker.ready:
-        return Response(
-            {'error': tracker.error or 'Gaze model not loaded.'},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
+    from django.core import signing
+    from .gaze_service import analyze_frame_bytes, read_gaze_result, schedule_live_snapshot
 
     raw = image.read()
-    arr = np.frombuffer(raw, dtype=np.uint8)
-    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if frame is None:
-        return Response({'error': 'Could not decode image.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    import os
-    from django.conf import settings
-    from .gaze_service import save_live_snapshot
-    save_live_snapshot(exam_set.id, student_email, raw)
-
-    result = tracker.analyze(frame)
-
-    # ── Per-submission temporal smoothing + hysteresis ────────────────────────
-    # The tracker is a shared singleton; smoothing must be per-student/attempt.
-    if result.face_detected and result.probabilities:
-        normal_idx = next(
-            (i for i, n in enumerate(tracker.classes) if "normal" in n.lower()), 3
-        )
-        raw_class_idx = tracker.classes.index(result.label) if result.label in tracker.classes else normal_idx
-        from .gaze_service import smooth_gaze_probs
-        smoothed_idx, smoothed_conf = smooth_gaze_probs(
-            submission_id=submission.id,
-            raw_probs=result.probabilities,
-            class_idx=raw_class_idx,
-            confidence=result.confidence,
-            classes=tracker.classes,
-            normal_idx=normal_idx,
-        )
-        # Rebuild result with smoothed values
-        from gaze_tracker.tracker import GazeResult
-        from gaze_tracker.inference import (
-            LEFT_CONFIDENCE_THRESHOLD,
-            RIGHT_CONFIDENCE_THRESHOLD,
-            ABOVE_VIOLATION_CONFIDENCE_THRESHOLD,
-            BELOW_CONFIDENCE_THRESHOLD,
-            VIOLATION_CONFIDENCE_THRESHOLD,
-        )
-        s_label = tracker.classes[smoothed_idx]
-        s_label_l = s_label.lower()
-        s_is_normal = "normal" in s_label_l
-        if s_is_normal:
-            s_suspicious = False
-        elif "left" in s_label_l and "right" not in s_label_l:
-            s_suspicious = smoothed_conf >= LEFT_CONFIDENCE_THRESHOLD
-        elif "right" in s_label_l and "left" not in s_label_l:
-            s_suspicious = smoothed_conf >= RIGHT_CONFIDENCE_THRESHOLD
-        elif "above" in s_label_l:
-            s_suspicious = smoothed_conf >= ABOVE_VIOLATION_CONFIDENCE_THRESHOLD
-        elif "below" in s_label_l:
-            s_suspicious = smoothed_conf >= BELOW_CONFIDENCE_THRESHOLD
+    receipt = request.data.get('frame_receipt')
+    try:
+        if receipt:
+            # Reuse the server's signed WS result for this exact JPEG. No second
+            # model run and no live-preview upload before recording evidence.
+            result = read_gaze_result(receipt, exam_id, student_email, raw)
         else:
-            s_suspicious = smoothed_conf >= VIOLATION_CONFIDENCE_THRESHOLD
-        result = GazeResult(
-            label=s_label,
-            confidence=smoothed_conf,
-            face_detected=True,
-            is_normal=s_is_normal,
-            is_suspicious=s_suspicious,
-            probabilities=result.probabilities,
-            face_bbox=result.face_bbox,   # preserve the original bbox
-        )
+            result = analyze_frame_bytes(raw)
+            schedule_live_snapshot(exam_id, student_email, raw)
+    except signing.BadSignature:
+        return Response({'error': 'Gaze frame receipt is invalid or expired.'}, status=400)
+    except ValueError:
+        return Response({'error': 'Could not decode image.'}, status=400)
+    except Exception as exc:
+        return Response({'error': f'Gaze model unavailable: {exc}'}, status=503)
 
     payload = result.to_dict()
     payload['confidence_threshold'] = GAZE_CONFIDENCE_THRESHOLD
@@ -2710,7 +2697,7 @@ def student_analyze_gaze(request, exam_id):
     record_strike = str(request.data.get('record_strike', 'false')).lower() in ('1', 'true', 'yes')
     forced_label = _resolve_forced_gaze_label(
         request.data.get('forced_label', '').strip(),
-        getattr(tracker, 'classes', []) or [],
+        [result.label],
     )
     logged_event = None
     is_no_face = not result.face_detected or result.label in ('no_face', 'multiple_people')
@@ -2726,32 +2713,16 @@ def student_analyze_gaze(request, exam_id):
     is_normal_label = 'normal' in result.label.lower()
     should_log = False
 
-    # When the frontend has WS-timed 4s of suspicious frames and explicitly
-    # requests a strike with a confirmed label, ALWAYS log it — no re-analysis
-    # guard. The WS loop has already validated 4 continuous seconds of the
-    # violation; the `forced_label` is the trusted source of truth.
-    if record_strike and forced_label:
-        from gaze_tracker.tracker import GazeResult as _GR
-        result = _GR(
-            label=forced_label,
-            confidence=1.0,
-            face_detected=True,
-            is_normal=False,
-            is_suspicious=True,
-            probabilities=result.probabilities,
-            face_bbox=result.face_bbox,
-        )
-        # Override is_no_face — we've accepted this as a confirmed gaze violation.
-        # The original tracker result may have seen the student glancing back,
-        # giving face_detected=False or a normal label — but the WS proved 4s.
-        is_no_face = False
+    # The WS timer requests a strike using a server-verified frame result.
+    # Preserve its real confidence and label in the evidence metadata.
+    if record_strike and forced_label and gaze_conf_ok and not is_no_face:
         _gaze_mark_suspicious(submission, now_dt)
         _clear_gaze_pending(submission)
         should_log = not _gaze_in_violation_cooldown(submission, now_dt)
     elif is_no_face:
         _clear_gaze_pending(submission)
         should_log = absence_info['should_log_strike']
-    elif gaze_conf_ok:
+    elif gaze_conf_ok and not (receipt and request.data.get('observe_only') == 'true'):
         _gaze_mark_suspicious(submission, now_dt)
         # HTTP fallback: if WebSocket never records the strike, still log after
         # the continuous look-away window. Cooldown prevents double-counting
@@ -2760,8 +2731,7 @@ def student_analyze_gaze(request, exam_id):
             should_log = _gaze_continuous_strike_ready(submission, result.label)
     elif is_normal_label or not result.is_suspicious:
         # Only clear the timer after 1.5s of continuous normal frames.
-        # A single flickering normal result was previously resetting the
-        # 3-second timer from zero, causing violations to take 7+ seconds.
+        # A single flickering normal result must not reset the continuous timer.
         if _gaze_normal_long_enough(submission, now_dt, grace_seconds=0.35):
             _clear_gaze_pending(submission)
     # else: suspicious but low-confidence uncertain frame — keep the timer running
@@ -3018,8 +2988,6 @@ def student_verify_face(request, exam_id):
         403     — Student is not enrolled in this exam
         404     — No face photo registered for this student
     """
-    import os, json as json_module
-
     user = request.user
 
     # 1. Confirm the exam exists and the student is enrolled
@@ -3074,10 +3042,9 @@ def student_verify_face(request, exam_id):
         return Response({'error': 'No webcam_image file provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # 4. Run face verification
-    from .face_service import verify_face, save_temp_image
-    tmp_path = save_temp_image(webcam_file)
+    from .face_service import verify_face_bytes
     try:
-        result = verify_face(profile.face_encoding, tmp_path)
+        result = verify_face_bytes(profile.face_encoding, webcam_file.read())
         
         if result.get('error'):
             return Response({'error': result['error'], 'verified': False}, status=status.HTTP_400_BAD_REQUEST)
@@ -3089,9 +3056,6 @@ def student_verify_face(request, exam_id):
             {'error': 'Verification service error.', 'verified': False}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    finally:
-        os.unlink(tmp_path)
-
     # 5. Log the verification attempt as a proctoring event
     try:
         submission = ExamSubmission.objects.filter(
@@ -3105,14 +3069,9 @@ def student_verify_face(request, exam_id):
                 attempt_number=submission.attempt_count,
                 event_type=ExamProctoringEvent.EVENT_EXAM_STARTED if result['verified'] else ExamProctoringEvent.EVENT_EXAM_TERMINATED,
                 severity=ExamProctoringEvent.SEVERITY_INFO if result['verified'] else ExamProctoringEvent.SEVERITY_CRITICAL,
-                message=f"Face verification {'passed' if result['verified'] else 'FAILED'}. "
-                        f"Distance: {result.get('distance')}, Confidence: {result.get('confidence')}%",
+                message=f"Face verification {'passed' if result['verified'] else 'failed'}.",
                 source='face_verification',
-                metadata={
-                    'verified': result['verified'],
-                    'distance': result.get('distance'),
-                    'confidence': result.get('confidence'),
-                },
+                metadata={'verified': result['verified']},
             )
     except Exception:
         pass  # Don't let logging failure break the verification response
@@ -3122,7 +3081,6 @@ def student_verify_face(request, exam_id):
         return Response(
             {
                 'verified': False,
-                'confidence': 0.0,
                 'error': result['error'],
             },
             status=status.HTTP_400_BAD_REQUEST,
@@ -3131,8 +3089,6 @@ def student_verify_face(request, exam_id):
     return Response(
         {
             'verified': result['verified'],
-            'confidence': result.get('confidence', 0.0),
-            'distance': result.get('distance'),
             'message': (
                 'Face verified successfully. You may proceed.' if result['verified']
                 else 'Face verification failed. Your face does not match the registered photo.'
