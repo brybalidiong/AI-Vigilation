@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Count
 from django.http import FileResponse
 from django.utils import timezone
@@ -19,9 +19,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 import copy
 import csv
 import io
+from zipfile import BadZipFile
+
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 import accounts.firebase_admin  # noqa: F401
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from .grading import grade_question
 from .models import (
@@ -892,15 +896,74 @@ def bulk_enroll_students(request, set_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    raw = request.data.get('emails')
-    if isinstance(raw, list):
-        lines = [str(x).strip() for x in raw if str(x).strip()]
+    upload = request.FILES.get('file')
+    source_rows = []
+    if upload:
+        if not upload.name.lower().endswith('.xlsx'):
+            return Response(
+                {'error': 'Only .xlsx Excel files are supported.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if upload.size > 5 * 1024 * 1024:
+            return Response(
+                {'error': 'The Excel file must be 5 MB or smaller.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            workbook = load_workbook(upload, read_only=True, data_only=True)
+            worksheet = workbook.active
+            if worksheet is None:
+                raise ValueError('The Excel file does not contain a worksheet.')
+            if worksheet.max_row > 5001:
+                raise ValueError('The Excel file can contain at most 5,000 students.')
+            rows = worksheet.iter_rows(values_only=True)
+            headers = next(rows, None)
+            if not headers:
+                raise ValueError('The Excel file is empty.')
+
+            normalized_headers = [
+                re.sub(r'[^a-z]', '', str(value or '').strip().lower())
+                for value in headers
+            ]
+            accepted_headers = {'email', 'emailaddress', 'studentemail', 'studentemailaddress'}
+            email_column = next(
+                (index for index, header in enumerate(normalized_headers) if header in accepted_headers),
+                None,
+            )
+            if email_column is None:
+                raise ValueError(
+                    'No email column was found. Name the column "Email" or "Student Email".'
+                )
+
+            for row_number, row in enumerate(rows, start=2):
+                value = row[email_column] if email_column < len(row) else None
+                if value is None or not str(value).strip():
+                    continue
+                source_rows.append((row_number, str(value).strip().lower()))
+                if len(source_rows) > 5000:
+                    raise ValueError('The Excel file can contain at most 5,000 students.')
+        except (InvalidFileException, BadZipFile, OSError, EOFError):
+            return Response(
+                {'error': 'The uploaded file is not a valid .xlsx workbook.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        finally:
+            if 'workbook' in locals():
+                workbook.close()
+
+        lines = [email for _, email in source_rows]
     else:
-        lines = [
-            part.strip().lower()
-            for part in (raw or '').replace(',', '\n').splitlines()
-            if part.strip()
-        ]
+        raw = request.data.get('emails')
+        if isinstance(raw, list):
+            lines = [str(x).strip().lower() for x in raw if str(x).strip()]
+        else:
+            lines = [
+                part.strip().lower()
+                for part in (raw or '').replace(',', '\n').splitlines()
+                if part.strip()
+            ]
 
     if not lines:
         return Response({'error': 'No emails provided.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -910,13 +973,20 @@ def bulk_enroll_students(request, set_id):
     errors = []
     domain = f"@{settings.ALLOWED_SCHOOL_DOMAIN}"
 
-    for line in lines:
+    for index, line in enumerate(lines):
         email = line.strip().lower()
+        row_number = source_rows[index][0] if source_rows else None
         if not email.endswith(domain):
-            errors.append({'email': email, 'error': f'Not a {domain} address.'})
+            item = {'email': email, 'error': f'Not a {domain} address.'}
+            if row_number:
+                item['row'] = row_number
+            errors.append(item)
             continue
         if not UserProfile.objects.filter(user__email__iexact=email, role='student', is_enrolled=True).exists():
-            errors.append({'email': email, 'error': 'Not enrolled by admin.'})
+            item = {'email': email, 'error': 'Not enrolled by admin.'}
+            if row_number:
+                item['row'] = row_number
+            errors.append(item)
             continue
         if EnrolledStudent.objects.filter(email__iexact=email, student_set=roster).exists():
             skipped.append(email)
@@ -928,12 +998,15 @@ def bulk_enroll_students(request, set_id):
         except IntegrityError:
             skipped.append(email)
         except Exception as exc:
-            errors.append({'email': email, 'error': str(exc)})
+            item = {'email': email, 'error': str(exc)}
+            if row_number:
+                item['row'] = row_number
+            errors.append(item)
 
-    return Response(
-        {'added': added, 'skipped_duplicates': skipped, 'errors': errors},
-        status=status.HTTP_200_OK,
-    )
+    result = {'added': added, 'skipped_duplicates': skipped, 'errors': errors}
+    if upload:
+        result.update({'file_name': upload.name, 'rows_processed': len(lines)})
+    return Response(result, status=status.HTTP_200_OK)
 
 
 @api_view(['DELETE'])
@@ -1615,7 +1688,11 @@ def subject_exam_progress(request, subject_id):
         }
 
     student_emails = list(email_to_set.keys())
-    exams = list(ExamSet.objects.filter(subject=subject).prefetch_related('assigned_sets').order_by('due_at', '-created_at'))
+    exams = list(
+        ExamSet.objects.filter(subject=subject)
+        .prefetch_related('assigned_sets', 'questions', 'student_answers')
+        .order_by('due_at', '-created_at')
+    )
     submissions = ExamSubmission.objects.filter(exam_set__subject=subject)
     submission_map = {
         (row.exam_set_id, row.student_email.lower()): row
@@ -1625,6 +1702,11 @@ def subject_exam_progress(request, subject_id):
     rows = []
     for exam in exams:
         assigned_ids = set(exam.assigned_sets.values_list('id', flat=True)) if exam.assigned_sets.exists() else set()
+        subjective_question_ids = {
+            question.id
+            for question in exam.questions.all()
+            if question.question_type == ExamQuestion.TYPE_ESSAY
+        }
         
         for email in student_emails:
             set_info = email_to_set.get(email.lower(), {})
@@ -1641,6 +1723,19 @@ def subject_exam_progress(request, subject_id):
                 strikes = _gaze_strike_counts(sub, force_refresh=True)
                 gaze_v = strikes['gaze_violation_count']
                 gaze_nf = strikes['gaze_no_face_count']
+            graded_subjective_count = 0
+            if sub and subjective_question_ids:
+                graded_subjective_count = sum(
+                    1
+                    for answer in exam.student_answers.all()
+                    if answer.student_email.lower() == email
+                    and answer.question_id in subjective_question_ids
+                    and answer.awarded_points is not None
+                )
+            pending_subjective_count = max(
+                0,
+                len(subjective_question_ids) - graded_subjective_count,
+            ) if sub and sub.is_done else 0
             rows.append(
                 {
                     'exam_set_id': exam.id,
@@ -1658,6 +1753,9 @@ def subject_exam_progress(request, subject_id):
                     'tab_switches': sub.tab_switches if sub else 0,
                     'gaze_violation_count': gaze_v,
                     'gaze_no_face_count': gaze_nf,
+                    'subjective_count': len(subjective_question_ids),
+                    'pending_subjective_count': pending_subjective_count,
+                    'manual_grading_complete': bool(subjective_question_ids) and pending_subjective_count == 0,
                     'has_integrity_report': bool(
                         sub and sub.is_done and (
                             sub.integrity_score is not None
@@ -2820,10 +2918,46 @@ def gaze_model_status(request):
     return Response(gaze_tracker_status(), status=status.HTTP_200_OK)
 
 
-@api_view(['GET'])
+def _subjective_max_points(question):
+    return Decimal(question.points or 1)
+
+
+def _recalculate_submission_score(submission):
+    """Combine auto-graded credit and completed subjective grades."""
+    answers = StudentAnswer.objects.filter(
+        exam_set=submission.exam_set,
+        student_email__iexact=submission.student_email,
+    ).select_related('question')
+    earned = Decimal('0')
+    possible = Decimal('0')
+    for answer in answers:
+        question = answer.question
+        if question.question_type == ExamQuestion.TYPE_ESSAY:
+            if answer.awarded_points is None:
+                continue
+            possible += _subjective_max_points(question)
+            earned += answer.awarded_points
+            continue
+
+        is_correct, credit = grade_question(question, answer.answer_text)
+        if is_correct is None:
+            continue
+        weight = Decimal(question.points or 1)
+        possible += weight
+        earned += Decimal(str(credit)) * weight
+
+    score = None
+    if possible > 0:
+        score = ((earned / possible) * Decimal('100')).quantize(Decimal('0.01'))
+    submission.score = score
+    submission.save(update_fields=['score'])
+    return score
+
+
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def instructor_integrity_report(request, subject_id, exam_set_id):
-    """Instructor: full integrity report with event log and screenshot evidence."""
+    """Instructor: review a submission's grading and integrity evidence."""
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -2842,6 +2976,53 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
     submission = ExamSubmission.objects.filter(exam_set=exam_set, student_email=student_email).first()
     if not submission:
         return Response({'error': 'No submission found for this student.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'PATCH':
+        if not submission.is_done:
+            return Response({'error': 'Only submitted exams can be graded.'}, status=status.HTTP_400_BAD_REQUEST)
+        grades = request.data.get('grades')
+        if not isinstance(grades, list) or not grades:
+            return Response({'error': 'A non-empty grades list is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        subjective_answers = {
+            answer.id: answer
+            for answer in StudentAnswer.objects.filter(
+                exam_set=exam_set,
+                student_email__iexact=student_email,
+                question__question_type=ExamQuestion.TYPE_ESSAY,
+            ).select_related('question')
+        }
+        validated = []
+        for item in grades:
+            try:
+                answer_id = int(item.get('answer_id'))
+            except (AttributeError, TypeError, ValueError):
+                return Response({'error': 'Each grade must include a valid answer_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            answer = subjective_answers.get(answer_id)
+            if not answer:
+                return Response({'error': 'A subjective answer was not found for this submission.'}, status=status.HTTP_404_NOT_FOUND)
+            raw_points = item.get('awarded_points')
+            if raw_points in (None, ''):
+                points = None
+            else:
+                try:
+                    points = Decimal(str(raw_points))
+                except (InvalidOperation, TypeError, ValueError):
+                    return Response({'error': 'Awarded points must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+                maximum = _subjective_max_points(answer.question)
+                if not points.is_finite() or points < 0 or points > maximum:
+                    return Response(
+                        {'error': f'Awarded points must be between 0 and {maximum}.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                points = points.quantize(Decimal('0.01'))
+            validated.append((answer, points))
+
+        with transaction.atomic():
+            for answer, points in validated:
+                answer.awarded_points = points
+                answer.save(update_fields=['awarded_points'])
+            _recalculate_submission_score(submission)
 
     attempt_number = int(request.query_params.get('attempt_number') or submission.attempt_count)
     events = ExamProctoringEvent.objects.filter(
@@ -2866,6 +3047,26 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
     gaze_no_face_count = events.filter(
         event_type=ExamProctoringEvent.EVENT_GAZE_NO_FACE,
     ).count()
+
+    subjective_answers = StudentAnswer.objects.filter(
+        exam_set=exam_set,
+        student_email__iexact=student_email,
+        question__question_type=ExamQuestion.TYPE_ESSAY,
+    ).select_related('question').order_by('question__order', 'question__created_at')
+    subjective_answer_rows = [
+        {
+            'answer_id': answer.id,
+            'question_id': answer.question_id,
+            'order': answer.question.order,
+            'question_text': answer.question.question_text,
+            'answer_text': answer.answer_text,
+            'max_points': float(_subjective_max_points(answer.question)),
+            'awarded_points': (
+                float(answer.awarded_points) if answer.awarded_points is not None else None
+            ),
+        }
+        for answer in subjective_answers
+    ]
 
     return Response(
         {
@@ -2899,6 +3100,10 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
             },
             'events': [_serialize_proctoring_event(e) for e in events],
             'evidence': [_serialize_proctoring_evidence(e, request) for e in evidence],
+            'subjective_answers': subjective_answer_rows,
+            'manual_grading_complete': bool(subjective_answer_rows) and all(
+                answer['awarded_points'] is not None for answer in subjective_answer_rows
+            ),
         },
         status=status.HTTP_200_OK,
     )

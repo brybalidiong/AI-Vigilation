@@ -1,12 +1,100 @@
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
+from openpyxl import Workbook
 from rest_framework.test import APIClient
+from decimal import Decimal
+from io import BytesIO
 
 from accounts.grading import grade_question
 from accounts.models import (
     EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, StudentAnswer,
-    StudentSet, Subject,
+    StudentSet, Subject, UserProfile,
 )
+
+
+@override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+class ExcelEnrollmentImportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.instructor = User.objects.create_user(
+            username='excel-instructor', is_staff=True,
+        )
+        cls.subject = Subject.objects.create(
+            name='Excel Imports', code='XLSX', instructor=cls.instructor,
+        )
+        cls.roster = StudentSet.objects.create(
+            name='Section Excel', subject=cls.subject, created_by=cls.instructor,
+        )
+        for username in ('new.student', 'existing.student'):
+            user = User.objects.create_user(
+                username=username, email=f'{username}@dnsc.edu.ph',
+            )
+            UserProfile.objects.create(user=user, role='student', is_enrolled=True)
+        EnrolledStudent.objects.create(
+            email='existing.student@dnsc.edu.ph', student_set=cls.roster,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+        self.url = f'/api/instructor/sets/{self.roster.pk}/enroll-bulk/'
+
+    @staticmethod
+    def workbook_upload(rows, filename='students.xlsx'):
+        workbook = Workbook()
+        worksheet = workbook.active
+        for row in rows:
+            worksheet.append(row)
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        return SimpleUploadedFile(
+            filename,
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+    def test_imports_email_column_and_reports_row_results(self):
+        upload = self.workbook_upload([
+            ['Student Name', 'Student Email'],
+            ['New Student', 'NEW.STUDENT@DNSC.EDU.PH'],
+            ['Existing Student', 'existing.student@dnsc.edu.ph'],
+            ['Outside Domain', 'outsider@example.com'],
+            ['Unknown Student', 'unknown@dnsc.edu.ph'],
+        ])
+
+        response = self.client.post(self.url, {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['file_name'], 'students.xlsx')
+        self.assertEqual(response.data['rows_processed'], 4)
+        self.assertEqual(
+            response.data['added'],
+            [{'id': EnrolledStudent.objects.get(email='new.student@dnsc.edu.ph').id,
+              'email': 'new.student@dnsc.edu.ph'}],
+        )
+        self.assertEqual(
+            response.data['skipped_duplicates'],
+            ['existing.student@dnsc.edu.ph'],
+        )
+        self.assertEqual([item['row'] for item in response.data['errors']], [4, 5])
+
+    def test_rejects_workbook_without_email_header(self):
+        upload = self.workbook_upload([['Name', 'Student Number'], ['Test', '123']])
+
+        response = self.client.post(self.url, {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('No email column', response.data['error'])
+
+    def test_rejects_non_xlsx_upload(self):
+        upload = SimpleUploadedFile('students.csv', b'Email\nstudent@dnsc.edu.ph')
+
+        response = self.client.post(self.url, {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Only .xlsx Excel files are supported.')
 
 
 @override_settings(SECRET_KEY='exam-question-order-test-key')
@@ -114,6 +202,118 @@ class ExamQuestionOrderTests(TestCase):
         self.assertEqual(questions[0]['order'], 1)
         self.exam.questions.all().delete()
         self.assertEqual(self.fetch_questions(), [])
+
+
+class InstructorSubjectiveGradingTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.instructor = User.objects.create_user(username='grading-instructor', is_staff=True)
+        cls.other_instructor = User.objects.create_user(username='other-instructor', is_staff=True)
+        cls.subject = Subject.objects.create(
+            name='Writing', code='WRITE', instructor=cls.instructor,
+        )
+        cls.roster = StudentSet.objects.create(
+            name='Section A', subject=cls.subject, created_by=cls.instructor,
+        )
+        cls.student_email = 'writer@example.com'
+        EnrolledStudent.objects.create(email=cls.student_email, student_set=cls.roster)
+        cls.exam = ExamSet.objects.create(subject=cls.subject, title='Written Exam', is_final=True)
+        cls.auto_question = ExamQuestion.objects.create(
+            exam_set=cls.exam,
+            order=1,
+            question_type=ExamQuestion.TYPE_MULTIPLE_CHOICE,
+            question_text='Pick A',
+            choices=['A', 'B'],
+            correct_answer='A',
+        )
+        cls.essay_question = ExamQuestion.objects.create(
+            exam_set=cls.exam,
+            order=2,
+            question_type=ExamQuestion.TYPE_ESSAY,
+            question_text='Explain your answer.',
+            points=5,
+        )
+        cls.submission = ExamSubmission.objects.create(
+            exam_set=cls.exam,
+            student_email=cls.student_email,
+            is_done=True,
+            score=100,
+        )
+        StudentAnswer.objects.create(
+            exam_set=cls.exam,
+            question=cls.auto_question,
+            student_email=cls.student_email,
+            answer_text='A',
+            is_correct=True,
+        )
+        cls.essay_answer = StudentAnswer.objects.create(
+            exam_set=cls.exam,
+            question=cls.essay_question,
+            student_email=cls.student_email,
+            answer_text='A thoughtful long-form response.',
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+        self.url = (
+            f'/api/instructor/subjects/{self.subject.pk}/exam-sets/'
+            f'{self.exam.pk}/integrity-report/?student_email={self.student_email}'
+        )
+
+    def test_instructor_can_view_and_score_subjective_answer(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['manual_grading_complete'])
+        self.assertEqual(response.data['subjective_answers'], [{
+            'answer_id': self.essay_answer.pk,
+            'question_id': self.essay_question.pk,
+            'order': 2,
+            'question_text': 'Explain your answer.',
+            'answer_text': 'A thoughtful long-form response.',
+            'max_points': 5.0,
+            'awarded_points': None,
+        }])
+
+        response = self.client.patch(
+            self.url,
+            {'grades': [{'answer_id': self.essay_answer.pk, 'awarded_points': 4}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['manual_grading_complete'])
+        self.assertEqual(response.data['subjective_answers'][0]['awarded_points'], 4.0)
+        self.assertEqual(response.data['submission']['score'], 83.33)
+        self.essay_answer.refresh_from_db()
+        self.submission.refresh_from_db()
+        self.assertEqual(self.essay_answer.awarded_points, 4)
+        self.assertEqual(self.submission.score, Decimal('83.33'))
+
+    def test_grade_must_be_within_question_points(self):
+        response = self.client.patch(
+            self.url,
+            {'grades': [{'answer_id': self.essay_answer.pk, 'awarded_points': 6}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('between 0 and 5', response.data['error'])
+        self.essay_answer.refresh_from_db()
+        self.assertIsNone(self.essay_answer.awarded_points)
+
+    def test_other_instructor_cannot_review_submission(self):
+        self.client.force_authenticate(self.other_instructor)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_progress_marks_subjective_answer_as_pending(self):
+        response = self.client.get(
+            f'/api/instructor/subjects/{self.subject.pk}/exam-progress/'
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        row = response.data['progress'][0]
+        self.assertEqual(row['subjective_count'], 1)
+        self.assertEqual(row['pending_subjective_count'], 1)
+        self.assertFalse(row['manual_grading_complete'])
 
 
 class _Q:

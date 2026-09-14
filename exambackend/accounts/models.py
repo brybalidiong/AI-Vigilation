@@ -260,6 +260,14 @@ class StudentAnswer(models.Model):
     answer_text = models.TextField(blank=True, default='')
     # True/False for MC (auto-graded), None for open-ended types (manual grading)
     is_correct = models.BooleanField(null=True, blank=True)
+    # Points assigned by the instructor for a subjective answer. A null value
+    # means that the answer is still waiting for manual grading.
+    awarded_points = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

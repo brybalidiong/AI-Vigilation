@@ -600,18 +600,28 @@
                         <textarea v-model="bulkEnrollEmails" rows="3" placeholder="Paste comma-separated emails: john@dnsc.edu.ph, jane@dnsc.edu.ph"></textarea>
                         <div class="enroll-batch-actions">
                           <label class="file-pick-label" style="flex: 1; margin: 0; padding: 0.4rem 0.75rem;">
-                            <input type="file" accept=".csv" @change="onCsvUpload" class="file-pick-input" />
+                            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="onXlsxUpload" class="file-pick-input" :disabled="bulkEnrollLoading" />
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
-                            <span class="file-pick-text">Upload CSV</span>
+                            <span class="file-pick-text">{{ bulkEnrollLoading ? 'Uploading…' : 'Upload Excel (.xlsx)' }}</span>
                           </label>
                           <button type="submit" class="primary-btn" :disabled="bulkEnrollLoading">{{ bulkEnrollLoading ? 'Processing…' : 'Enroll list' }}</button>
                         </div>
+                        <p class="enroll-upload-hint">Excel files need an <strong>Email</strong> or <strong>Student Email</strong> column. Uploading starts enrollment immediately.</p>
                       </form>
                       <p class="enroll-result" v-if="bulkEnrollResult">
                         <span class="result-ok">&#10003; {{ bulkEnrollResult.added?.length || 0 }} added</span>
                         <span class="result-skip">{{ bulkEnrollResult.skipped_duplicates?.length || 0 }} skipped</span>
                         <span class="result-err" v-if="bulkEnrollResult.errors?.length">{{ bulkEnrollResult.errors.length }} errors</span>
                       </p>
+                      <ul v-if="bulkEnrollResult?.errors?.length" class="enroll-import-errors">
+                        <li v-for="item in bulkEnrollResult.errors.slice(0, 5)" :key="`${item.row || 'manual'}-${item.email}`">
+                          <strong v-if="item.row">Row {{ item.row }}:</strong>
+                          {{ item.email }} — {{ item.error }}
+                        </li>
+                        <li v-if="bulkEnrollResult.errors.length > 5">
+                          …and {{ bulkEnrollResult.errors.length - 5 }} more error(s).
+                        </li>
+                      </ul>
                     </div>
                   </transition>
 
@@ -665,6 +675,39 @@
               icon='<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
             />
             <template v-else>
+              <div class="ep-view-toolbar">
+                <div class="ep-view-control">
+                  <span class="ep-control-label">View by</span>
+                  <div class="ep-view-toggle" role="group" aria-label="Organize exam progress">
+                    <button
+                      type="button"
+                      :class="{ active: progressView === 'student' }"
+                      :aria-pressed="progressView === 'student'"
+                      @click="progressView = 'student'"
+                    >Student</button>
+                    <button
+                      type="button"
+                      :class="{ active: progressView === 'exam' }"
+                      :aria-pressed="progressView === 'exam'"
+                      @click="progressView = 'exam'"
+                    >Exam / quiz</button>
+                  </div>
+                </div>
+                <label class="ep-sort-control">
+                  <span class="ep-control-label">Sort by</span>
+                  <select v-model="progressSort" class="courses-sort-select" aria-label="Sort exam progress">
+                    <option value="student_asc">Student (A–Z)</option>
+                    <option value="student_desc">Student (Z–A)</option>
+                    <template v-if="progressView === 'exam'">
+                      <option value="score_desc">Actual score (highest first)</option>
+                      <option value="score_asc">Actual score (lowest first)</option>
+                      <option value="integrity_desc">Integrity score (highest first)</option>
+                      <option value="integrity_asc">Integrity score (lowest first)</option>
+                    </template>
+                  </select>
+                </label>
+              </div>
+
               <div class="panel-toolbar">
                 <div class="filter-chips" role="group" aria-label="Filter by section">
                   <button
@@ -679,13 +722,13 @@
                     <span class="filter-chip__count">{{ setItem.studentCount }}</span>
                   </button>
                 </div>
-                <div v-if="selectedProgressSetId" class="courses-search-wrap panel-search">
+                <div v-if="selectedProgressSetId && progressView === 'student'" class="courses-search-wrap panel-search">
                   <svg class="courses-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   <input v-model.trim="progressStudentSearch" type="search" class="courses-search-input" placeholder="Search students" aria-label="Search progress students" />
                 </div>
               </div>
 
-              <div v-if="selectedProgressSetId" class="ep-split">
+              <div v-if="selectedProgressSetId && progressView === 'student'" class="ep-split">
                 <aside class="ep-student-panel">
                   <div class="ep-student-panel__header">
                     <h4 class="ep-student-panel__title">Students</h4>
@@ -796,9 +839,10 @@
                           v-if="row.is_done"
                           type="button"
                           class="ep-report-btn"
+                          :class="{ 'ep-report-btn--grade': row.pending_subjective_count > 0 }"
                           @click="openIntegrityReport(row)"
                         >
-                          Report
+                          {{ row.pending_subjective_count > 0 ? `Grade ${row.pending_subjective_count}` : 'Review' }}
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                         </button>
                         <span v-else class="ep-dash">—</span>
@@ -809,6 +853,118 @@
                     </tr>
                   </tbody>
                 </table>
+                </div>
+              </div>
+
+              <div v-if="selectedProgressSetId && progressView === 'exam'" class="ep-split">
+                <aside class="ep-student-panel">
+                  <div class="ep-student-panel__header">
+                    <h4 class="ep-student-panel__title">Exams / quizzes</h4>
+                    <span class="ep-student-panel__count">{{ progressExamsForSelectedSet.length }}</span>
+                  </div>
+                  <div class="ep-student-list">
+                    <button
+                      v-for="exam in progressExamsForSelectedSet"
+                      :key="exam.id"
+                      type="button"
+                      class="ep-student-row"
+                      :class="{ active: selectedProgressExamId === exam.id }"
+                      @click="selectedProgressExamId = exam.id"
+                    >
+                      <div class="ep-student-row__avatar">{{ formatDisplayTitle(exam.title).charAt(0).toUpperCase() }}</div>
+                      <div class="ep-student-row__info">
+                        <div class="ep-student-row__name">{{ formatDisplayTitle(exam.title) }}</div>
+                        <div class="ep-student-row__email">{{ exam.studentCount }} {{ exam.studentCount === 1 ? 'student' : 'students' }}</div>
+                      </div>
+                    </button>
+                  </div>
+                </aside>
+
+                <div class="ep-results-panel ep-assessment-panel">
+                  <div class="ep-results-header">
+                    <h4 class="ep-results-header__title">{{ selectedProgressExamTitle }}</h4>
+                    <p class="ep-results-header__sub">Student results for this exam or quiz</p>
+                  </div>
+                  <div class="ep-table-scroll">
+                  <table class="data-table ep-table ep-assessment-table">
+                    <thead>
+                      <tr>
+                        <th>Student</th>
+                        <th>Status</th>
+                        <th style="text-align:center">Actual score</th>
+                        <th style="text-align:center">Integrity score</th>
+                        <th>Flags</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="row in sortedSelectedSetExamRows"
+                        :key="`${row.exam_set_id}-${row.student_email}`"
+                        :class="{ 'ep-row-terminated': row.terminated }"
+                      >
+                        <td>
+                          <div class="student-row">
+                            <div class="student-avatar">{{ progressStudentName(row.student_email).charAt(0).toUpperCase() }}</div>
+                            <div class="ep-student-row__info">
+                              <div class="ep-student-row__name">{{ progressStudentName(row.student_email) }}</div>
+                              <div class="ep-student-row__email">{{ row.student_email }}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span class="status-badge" :class="row.is_done ? (row.terminated ? 'badge-terminated' : 'badge-done') : (row.due_at && new Date() > new Date(row.due_at) ? 'badge-not-taken' : 'badge-pending')">
+                            {{ row.is_done ? (row.terminated ? 'Terminated' : 'Done') : (row.due_at && new Date() > new Date(row.due_at) ? 'Not Taken' : 'Pending') }}
+                          </span>
+                        </td>
+                        <td style="text-align:center">
+                          <span class="ep-score" :class="{ 'ep-score--zero': !row.is_done && row.due_at && new Date() > new Date(row.due_at) }">
+                            {{ row.is_done && row.score != null ? row.score : (row.due_at && new Date() > new Date(row.due_at) ? '0' : '—') }}
+                          </span>
+                        </td>
+                        <td style="text-align:center">
+                          <span
+                            v-if="row.is_done && row.integrity_score != null"
+                            class="ep-integrity"
+                            :class="row.integrity_score < 50 ? 'ep-integrity--bad' : row.integrity_score < 80 ? 'ep-integrity--warn' : 'ep-integrity--good'"
+                          >{{ row.integrity_score }}%</span>
+                          <span v-else class="ep-dash">—</span>
+                        </td>
+                        <td>
+                          <div v-if="!row.is_done" class="ep-dash">—</div>
+                          <div v-else-if="row.terminated" class="ep-flags">
+                            <span class="ep-flag ep-flag--critical">Auto-terminated</span>
+                          </div>
+                          <div v-else-if="row.tab_switches > 0 || row.gaze_violation_count > 0 || row.gaze_no_face_count > 0" class="ep-flags">
+                            <span v-if="row.tab_switches" class="ep-flag ep-flag--warn">{{ row.tab_switches }} tab{{ row.tab_switches !== 1 ? 's' : '' }}</span>
+                            <span v-if="row.gaze_violation_count" class="ep-flag ep-flag--warn">{{ row.gaze_violation_count }} gaze</span>
+                            <span v-if="row.gaze_no_face_count" class="ep-flag ep-flag--warn">{{ row.gaze_no_face_count }} hidden</span>
+                          </div>
+                          <div v-else class="ep-clean">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                            Clean
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            v-if="row.is_done"
+                            type="button"
+                            class="ep-report-btn"
+                            :class="{ 'ep-report-btn--grade': row.pending_subjective_count > 0 }"
+                            @click="openIntegrityReport(row)"
+                          >
+                            {{ row.pending_subjective_count > 0 ? `Grade ${row.pending_subjective_count}` : 'Review' }}
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                          </button>
+                          <span v-else class="ep-dash">—</span>
+                        </td>
+                      </tr>
+                      <tr v-if="sortedSelectedSetExamRows.length === 0">
+                        <td colspan="6" class="ep-table-empty">No student results are available for this exam or quiz.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  </div>
                 </div>
               </div>
             </template>
@@ -1344,7 +1500,7 @@
             <div class="ir-dh-content">
               <span class="ir-dh-eyebrow">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Proctoring Report
+                Submission Review
               </span>
               <h2 id="ir-title" class="ir-dh-title">{{ formatDisplayTitle(integrityReportData.exam_title) || 'Exam' }}</h2>
               <div class="ir-dh-meta">
@@ -1407,7 +1563,7 @@
                 <!-- Top row: score + status -->
                 <div class="ir-top-row">
                   <div class="ir-score-block">
-                    <span class="ir-score-num">{{ integrityReportData._student_score != null ? integrityReportData._student_score : '—' }}</span>
+                    <span class="ir-score-num">{{ integrityReportData.submission?.score != null ? integrityReportData.submission.score : (integrityReportData._student_score ?? '—') }}</span>
                     <span class="ir-score-lbl">Exam Score</span>
                   </div>
                   <div class="ir-top-divider"></div>
@@ -1452,6 +1608,11 @@
 
             <!-- DETAIL TABS -->
             <div class="ir-tab-bar">
+              <button class="ir-tab-btn" :class="{ 'ir-tab-btn--active': activeIrTab === 'answers' }" @click="activeIrTab = 'answers'">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Answers &amp; grading
+                <span class="ir-tab-count">{{ (integrityReportData.subjective_answers || []).length }}</span>
+              </button>
               <button class="ir-tab-btn" :class="{ 'ir-tab-btn--active': activeIrTab === 'log' }" @click="activeIrTab = 'log'">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 Action Log
@@ -1467,6 +1628,52 @@
                 Snapshots
                 <span class="ir-tab-count" v-if="snapshotImages.length">{{ snapshotImages.length }}</span>
               </button>
+            </div>
+
+            <!-- TAB: SUBJECTIVE ANSWERS -->
+            <div v-if="activeIrTab === 'answers'" class="ir-tab-panel">
+              <div v-if="(integrityReportData.subjective_answers || []).length" class="ir-grading-list">
+                <div class="ir-grading-summary" :class="integrityReportData.manual_grading_complete ? 'ir-grading-summary--done' : ''">
+                  <div>
+                    <strong>{{ integrityReportData.manual_grading_complete ? 'Grading complete' : 'Manual grading required' }}</strong>
+                    <p>Read each response, enter the awarded points, then save the grades.</p>
+                  </div>
+                  <span>{{ gradedSubjectiveCount }} / {{ integrityReportData.subjective_answers.length }} graded</span>
+                </div>
+                <article v-for="answer in integrityReportData.subjective_answers" :key="answer.answer_id" class="ir-answer-card">
+                  <div class="ir-answer-heading">
+                    <span class="ir-answer-number">Question {{ answer.order }}</span>
+                    <label class="ir-points-field">
+                      <span>Score</span>
+                      <input
+                        v-model="answer._grade"
+                        type="number"
+                        min="0"
+                        :max="answer.max_points"
+                        step="0.25"
+                        :aria-label="`Score for question ${answer.order}`"
+                      />
+                      <b>/ {{ answer.max_points }}</b>
+                    </label>
+                  </div>
+                  <h4>{{ answer.question_text }}</h4>
+                  <div class="ir-student-answer">
+                    <span>Student answer</span>
+                    <p>{{ answer.answer_text || 'No answer provided.' }}</p>
+                  </div>
+                </article>
+                <div class="ir-grading-actions">
+                  <p v-if="gradingError" class="ir-grading-error">{{ gradingError }}</p>
+                  <p v-else-if="gradingMessage" class="ir-grading-success">{{ gradingMessage }}</p>
+                  <button type="button" class="primary-btn" :disabled="gradingSaving" @click="saveSubjectiveGrades">
+                    {{ gradingSaving ? 'Saving…' : 'Save grades' }}
+                  </button>
+                </div>
+              </div>
+              <div v-else class="ir-empty">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <p>This exam has no subjective answers to grade.</p>
+              </div>
             </div>
 
             <!-- TAB: ACTION LOG -->
@@ -1861,10 +2068,18 @@ const examProgressRows = ref([]);
 const examProgressLoading = ref(false);
 const examProgressError = ref("");
 const selectedProgressStudentEmail = ref("");
+const progressView = ref("student");
+const progressSort = ref("student_asc");
 const integrityReportOpen = ref(false);
 const integrityReportLoading = ref(false);
 const integrityReportError = ref("");
 const integrityReportData = ref({});
+const gradingSaving = ref(false);
+const gradingError = ref("");
+const gradingMessage = ref("");
+const gradedSubjectiveCount = computed(() => (
+  integrityReportData.value.subjective_answers || []
+).filter(answer => answer._grade !== '' && answer._grade != null).length);
 const evidenceImages = computed(() => (integrityReportData.value.evidence || []).filter(s => !String(s.caption || '').toLowerCase().includes('scheduled')));
 const snapshotImages = computed(() => (integrityReportData.value.evidence || []).filter(s => String(s.caption || '').toLowerCase().includes('scheduled')));
 const activeIrTab = ref('log');
@@ -2115,18 +2330,23 @@ const displayedCourses = computed(() => {
   return rows;
 });
 
+function progressStudentName(rawEmail) {
+  const email = String(rawEmail || "").toLowerCase();
+  const local = email.includes("@") ? email.split("@")[0] : email;
+  const pretty = local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+  return pretty || email;
+}
+
 const examProgressStudents = computed(() => {
   const map = new Map();
   for (const row of examProgressRows.value || []) {
     const email = String(row.student_email || "").toLowerCase();
     if (!email || map.has(email)) continue;
-    const local = email.includes("@") ? email.split("@")[0] : email;
-    const pretty = local
-      .split(/[._-]+/)
-      .filter(Boolean)
-      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(" ");
-    map.set(email, { email, name: pretty || email });
+    map.set(email, { email, name: progressStudentName(email) });
   }
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 });
@@ -2153,7 +2373,27 @@ const progressExams = computed(() => {
       map.set(row.exam_set_id, { id: row.exam_set_id, title: row.exam_title });
     }
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+});
+
+const progressExamsForSelectedSet = computed(() => {
+  if (!selectedProgressSetId.value) return [];
+  const studentCounts = new Map();
+  for (const row of examProgressRows.value || []) {
+    if (row.student_set_id !== selectedProgressSetId.value) continue;
+    if (!studentCounts.has(row.exam_set_id)) studentCounts.set(row.exam_set_id, new Set());
+    studentCounts.get(row.exam_set_id).add(String(row.student_email || "").toLowerCase());
+  }
+  return progressExams.value
+    .filter((exam) => studentCounts.has(exam.id))
+    .map((exam) => ({ ...exam, studentCount: studentCounts.get(exam.id).size }));
+});
+
+const selectedProgressExamTitle = computed(() => {
+  const exam = progressExamsForSelectedSet.value.find(
+    (item) => item.id === selectedProgressExamId.value,
+  );
+  return exam ? formatDisplayTitle(exam.title) : "Select an exam or quiz";
 });
 
 const selectedSetExamRows = computed(() => {
@@ -2163,6 +2403,31 @@ const selectedSetExamRows = computed(() => {
       row.student_set_id === selectedProgressSetId.value &&
       row.exam_set_id === selectedProgressExamId.value
   );
+});
+
+function compareProgressValues(a, b, field, direction) {
+  const aValue = a[field];
+  const bValue = b[field];
+  const aMissing = aValue === null || aValue === undefined || aValue === "";
+  const bMissing = bValue === null || bValue === undefined || bValue === "";
+  if (aMissing !== bMissing) return aMissing ? 1 : -1;
+  if (!aMissing && Number(aValue) !== Number(bValue)) {
+    return direction * (Number(aValue) - Number(bValue));
+  }
+  return progressStudentName(a.student_email).localeCompare(progressStudentName(b.student_email));
+}
+
+const sortedSelectedSetExamRows = computed(() => {
+  const rows = [...selectedSetExamRows.value];
+  const [field, direction] = progressSort.value.split("_");
+  if (field === "score" || field === "integrity") {
+    const dataField = field === "integrity" ? "integrity_score" : "score";
+    return rows.sort((a, b) => compareProgressValues(a, b, dataField, direction === "asc" ? 1 : -1));
+  }
+  return rows.sort((a, b) => {
+    const comparison = progressStudentName(a.student_email).localeCompare(progressStudentName(b.student_email));
+    return direction === "desc" ? -comparison : comparison;
+  });
 });
 
 const selectedSetProgressRows = computed(() => {
@@ -2178,11 +2443,10 @@ function progressStudentsBySet(setId) {
     if (row.student_set_id !== setId) continue;
     const email = String(row.student_email || '').toLowerCase();
     if (!email || map.has(email)) continue;
-    const local = email.includes('@') ? email.split('@')[0] : email;
-    const pretty = local.split(/[._-]+/).filter(Boolean).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
-    map.set(email, { email, name: pretty || email });
+    map.set(email, { email, name: progressStudentName(email) });
   }
-  const rows = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const direction = progressSort.value === "student_desc" ? -1 : 1;
+  const rows = Array.from(map.values()).sort((a, b) => direction * a.name.localeCompare(b.name));
   const query = progressStudentSearch.value.toLowerCase();
   if (!query) return rows;
   return rows.filter(
@@ -2191,9 +2455,10 @@ function progressStudentsBySet(setId) {
 }
 
 const selectedStudentProgressRows = computed(() => {
-  if (!selectedProgressStudentEmail.value) return [];
+  if (!selectedProgressStudentEmail.value || !selectedProgressSetId.value) return [];
   return (examProgressRows.value || []).filter(
-    (row) => String(row.student_email || "").toLowerCase() === selectedProgressStudentEmail.value,
+    (row) => row.student_set_id === selectedProgressSetId.value
+      && String(row.student_email || "").toLowerCase() === selectedProgressStudentEmail.value,
   );
 });
 
@@ -2410,14 +2675,28 @@ async function openIntegrityReport(row) {
   integrityReportOpen.value = true;
   integrityReportLoading.value = true;
   integrityReportError.value = '';
-  integrityReportData.value = { _student_score: row.score ?? null, _student_email: row.student_email };
-  activeIrTab.value = 'log';
+  integrityReportData.value = { _student_score: row.score ?? null, _student_email: row.student_email, _subject_id: subjectId };
+  gradingError.value = '';
+  gradingMessage.value = '';
+  activeIrTab.value = row.pending_subjective_count > 0 ? 'answers' : 'log';
   try {
     const { data } = await apiClient.get(
       `/api/instructor/subjects/${subjectId}/exam-sets/${row.exam_set_id}/integrity-report/`,
       { params: { student_email: row.student_email } },
     );
-    integrityReportData.value = { ...data, _student_score: row.score ?? null };
+    const subjectiveAnswers = (data.subjective_answers || []).map(answer => ({
+      ...answer,
+      _grade: answer.awarded_points ?? '',
+    }));
+    integrityReportData.value = {
+      ...data,
+      subjective_answers: subjectiveAnswers,
+      _student_score: row.score ?? null,
+      _subject_id: subjectId,
+    };
+    if (subjectiveAnswers.length && (row.pending_subjective_count > 0 || row.pending_subjective_count == null)) {
+      activeIrTab.value = 'answers';
+    }
   } catch (err) {
     integrityReportError.value = err?.response?.data?.error || 'Unable to load integrity report.';
   } finally {
@@ -2598,35 +2877,74 @@ async function bulkEnrollToSet() {
   }
 }
 
-function onCsvUpload(event) {
+async function onXlsxUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
+  if (!selectedSubjectSetId.value) {
+    error.value = "Please select a set first.";
+    event.target.value = "";
+    return;
+  }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const text = e.target.result;
-    // Extract all emails using regex regardless of CSV structure
-    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-    const foundEmails = text.match(emailRegex) || [];
-    
-    if (foundEmails.length > 0) {
-      // Deduplicate emails
-      const uniqueEmails = [...new Set(foundEmails)];
-      // Append to existing emails in textarea
-      const existing = bulkEnrollEmails.value 
-        ? bulkEnrollEmails.value.split(',').map(e => e.trim()).filter(e => e) 
-        : [];
-      const combined = [...new Set([...existing, ...uniqueEmails])];
-      bulkEnrollEmails.value = combined.join(', ');
-      message.value = `Extracted ${uniqueEmails.length} unique email(s) from CSV.`;
-      error.value = "";
-    } else {
-      error.value = "No valid email addresses found in the CSV file.";
-    }
-    // Reset the input so the same file can be selected again
-    event.target.value = null;
-  };
-  reader.readAsText(file);
+  bulkEnrollLoading.value = true;
+  bulkEnrollResult.value = null;
+  error.value = "";
+  message.value = "";
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await apiClient.post(
+      `/api/instructor/sets/${selectedSubjectSetId.value}/enroll-bulk/`,
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+    bulkEnrollResult.value = data;
+    message.value = `Excel import finished: ${data.added?.length || 0} student(s) enrolled.`;
+    await fetchSubjects();
+    await refreshSetsView();
+  } catch (err) {
+    error.value = err?.response?.data?.error || "Unable to import the Excel file.";
+  } finally {
+    bulkEnrollLoading.value = false;
+    event.target.value = "";
+  }
+}
+
+async function saveSubjectiveGrades() {
+  const report = integrityReportData.value;
+  if (!report?._subject_id || !report?.exam_set_id || !report?.student_email) return;
+  gradingSaving.value = true;
+  gradingError.value = '';
+  gradingMessage.value = '';
+  try {
+    const grades = (report.subjective_answers || []).map(answer => ({
+      answer_id: answer.answer_id,
+      awarded_points: answer._grade === '' ? null : answer._grade,
+    }));
+    const { data } = await apiClient.patch(
+      `/api/instructor/subjects/${report._subject_id}/exam-sets/${report.exam_set_id}/integrity-report/`,
+      { grades },
+      { params: { student_email: report.student_email } },
+    );
+    const subjectiveAnswers = (data.subjective_answers || []).map(answer => ({
+      ...answer,
+      _grade: answer.awarded_points ?? '',
+    }));
+    integrityReportData.value = {
+      ...data,
+      subjective_answers: subjectiveAnswers,
+      _subject_id: report._subject_id,
+      _student_score: data.submission?.score ?? report._student_score,
+    };
+    gradingMessage.value = data.manual_grading_complete
+      ? 'All subjective answers are graded and the exam score has been updated.'
+      : 'Grades saved. Unscored answers remain pending.';
+    await fetchExamProgress();
+  } catch (err) {
+    gradingError.value = err?.response?.data?.error || 'Unable to save the grades.';
+  } finally {
+    gradingSaving.value = false;
+  }
 }
 
 async function createSubjectSet() {
@@ -3154,6 +3472,22 @@ watch(progressSets, (sets) => {
   if (!sets.some((s) => s.id === selectedProgressSetId.value)) {
     selectedProgressSetId.value = sets[0].id;
     selectedProgressStudentEmail.value = "";
+  }
+});
+
+watch(progressView, (view) => {
+  if (view === "student" && !progressSort.value.startsWith("student_")) {
+    progressSort.value = "student_asc";
+  }
+});
+
+watch(progressExamsForSelectedSet, (exams) => {
+  if (!exams.length) {
+    selectedProgressExamId.value = null;
+    return;
+  }
+  if (!exams.some((exam) => exam.id === selectedProgressExamId.value)) {
+    selectedProgressExamId.value = exams[0].id;
   }
 });
 
@@ -3833,6 +4167,48 @@ onMounted(async () => {
   text-align: center; font-size: 0.88rem;
 }
 .ir-empty p { margin: 0; }
+
+/* ---- Subjective-answer grading ---- */
+.ir-grading-list { display: flex; flex-direction: column; gap: 0.85rem; }
+.ir-grading-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.9rem 1rem; border: 1px solid #fde68a; border-radius: 12px;
+  background: #fffbeb; color: #92400e;
+}
+.ir-grading-summary--done { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
+.ir-grading-summary strong { display: block; font-size: 0.88rem; }
+.ir-grading-summary p { margin: 0.2rem 0 0; font-size: 0.75rem; line-height: 1.4; }
+.ir-grading-summary > span { flex-shrink: 0; font-size: 0.72rem; font-weight: 800; }
+.ir-answer-card {
+  padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px;
+  background: #fff;
+}
+.ir-answer-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.ir-answer-number {
+  font-size: 0.66rem; font-weight: 800; color: #6366f1;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.ir-answer-card h4 { margin: 0.65rem 0; color: #0f172a; font-size: 0.92rem; line-height: 1.45; }
+.ir-points-field { display: flex; align-items: center; gap: 0.4rem; color: #64748b; font-size: 0.72rem; font-weight: 700; }
+.ir-points-field input {
+  width: 70px; padding: 0.38rem 0.45rem; border: 1px solid #cbd5e1;
+  border-radius: 7px; color: #0f172a; font: inherit; text-align: right;
+}
+.ir-points-field input:focus { outline: 2px solid #c7d2fe; border-color: #6366f1; }
+.ir-student-answer { padding: 0.8rem; border-radius: 9px; background: #f8fafc; border: 1px solid #eef2f7; }
+.ir-student-answer > span { font-size: 0.62rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; }
+.ir-student-answer p { margin: 0.4rem 0 0; color: #334155; font-size: 0.86rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ir-grading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; position: sticky; bottom: 0; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 10px; background: rgba(255,255,255,0.96); }
+.ir-grading-actions p { flex: 1; margin: 0; font-size: 0.76rem; }
+.ir-grading-error { color: #dc2626; }
+.ir-grading-success { color: #047857; }
+.ep-report-btn--grade { background: #fff7ed; border-color: #fdba74; color: #c2410c; }
+.ep-report-btn--grade:hover { background: #ffedd5; border-color: #fb923c; color: #9a3412; }
+
+@media (max-width: 640px) {
+  .ir-grading-summary, .ir-answer-heading { align-items: flex-start; flex-direction: column; }
+  .ir-points-field { align-self: stretch; justify-content: flex-end; }
+}
 
 /* ---- Instructor-specific (unchanged) ---- */
 .q-list { display: flex; flex-direction: column; gap: 0.85rem; }

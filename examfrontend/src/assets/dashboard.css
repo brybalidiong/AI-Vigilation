@@ -941,6 +941,22 @@
 .result-ok { color: var(--status-success); }
 .result-skip { color: var(--text-muted); }
 .result-err { color: var(--status-danger); }
+.enroll-upload-hint {
+  margin: -0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.enroll-import-errors {
+  margin: 0;
+  padding: 0.7rem 0.9rem 0.7rem 1.8rem;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  background: #fff7f7;
+  color: var(--status-danger);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
 .empty-state-box {
   display: flex; flex-direction: column; align-items: center; gap: 1rem;
   padding: 4rem; background: var(--bg-surface); border: 2px dashed var(--border-medium);
@@ -2247,6 +2263,69 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+.ep-view-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+}
+.ep-view-control,
+.ep-sort-control,
+.ep-exam-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ep-control-label {
+  color: var(--text-secondary);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ep-view-toggle {
+  display: inline-flex;
+  padding: 0.22rem;
+  border: 1px solid var(--border-medium);
+  border-radius: 10px;
+  background: #f1f5f9;
+}
+.ep-view-toggle button {
+  padding: 0.48rem 0.9rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.ep-view-toggle button.active {
+  background: #1D3461;
+  color: #fff;
+  box-shadow: 0 2px 7px rgba(29, 52, 97, 0.2);
+}
+.ep-sort-control .courses-sort-select { min-width: 240px; }
+.ep-assessment-panel { min-width: 0; }
+.ep-table-scroll { overflow-x: auto; }
+.ep-assessment-table { min-width: 760px; }
+.ep-assessment-table .student-row { min-width: 190px; }
+@media (max-width: 640px) {
+  .ep-view-toolbar { align-items: stretch; }
+  .ep-view-control,
+  .ep-sort-control { width: 100%; }
+  .ep-view-toggle { display: flex; }
+  .ep-view-toggle button { flex: 1; }
+  .ep-sort-control .courses-sort-select { width: 100%; min-width: 0; }
 }
 .ep-section-card {
   background: #fff;
