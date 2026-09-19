@@ -88,7 +88,6 @@ watch(
 
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 .confirm-overlay {
   position: fixed; inset: 0; z-index: 9999;
@@ -111,7 +110,7 @@ watch(
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.15);
   padding: 2.5rem;
   color: #1e293b;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   animation: dialogIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .confirm-dialog.neutral { border-color: rgba(29, 52, 97, 0.25); }
@@ -135,7 +134,7 @@ watch(
   margin: 0 0 0.75rem;
   font-size: 1.25rem; font-weight: 800;
   letter-spacing: -0.02em; color: #1e293b;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 .confirm-message {
@@ -153,7 +152,7 @@ watch(
   border-radius: 12px; padding: 0.75rem 1.5rem;
   font-weight: 700; font-size: 0.9rem;
   cursor: pointer; border: 1px solid transparent;
-  font-family: 'Outfit', sans-serif; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-family: 'Poppins', sans-serif; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .confirm-btn.cancel {

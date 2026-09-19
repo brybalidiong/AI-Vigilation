@@ -29,7 +29,6 @@ defineEmits(["click"]);
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
 
 .turo-list-card {
   display: flex;
@@ -80,7 +79,7 @@ defineEmits(["click"]);
   min-width: 0;
 }
 .turo-list-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 1.15rem;
   font-weight: 700;
   color: #1e293b;
@@ -93,7 +92,7 @@ defineEmits(["click"]);
   background: #f1f5f9;
   color: #64748b;
   border-radius: 6px;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
 }

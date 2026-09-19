@@ -204,6 +204,89 @@ class ExamQuestionOrderTests(TestCase):
         self.assertEqual(self.fetch_questions(), [])
 
 
+class ExamProctoringRestrictionTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.instructor = User.objects.create_user(
+            username='restriction-instructor',
+            is_staff=True,
+        )
+        cls.subject = Subject.objects.create(
+            name='Writing',
+            code='WRITE',
+            instructor=cls.instructor,
+        )
+        cls.exam = ExamSet.objects.create(
+            subject=cls.subject,
+            title='Flexible assessment',
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+        self.detail_url = (
+            f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{self.exam.pk}/'
+        )
+        self.questions_url = f'{self.detail_url}questions/'
+
+    def test_essay_only_exam_can_disable_quiz_wide_restrictions(self):
+        ExamQuestion.objects.create(
+            exam_set=self.exam,
+            order=1,
+            question_type=ExamQuestion.TYPE_ESSAY,
+            question_text='Explain your answer.',
+        )
+        response = self.client.patch(
+            self.detail_url,
+            {'proctoring_restrictions': {
+                'gaze_above': False,
+                'gaze_below': False,
+                'gaze_left': False,
+                'gaze_right': True,
+            }},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.exam.refresh_from_db()
+        self.assertFalse(self.exam.detect_gaze_above)
+        self.assertFalse(self.exam.detect_gaze_below)
+        self.assertFalse(self.exam.detect_gaze_left)
+        self.assertTrue(self.exam.detect_gaze_right)
+
+    def test_non_essay_question_enables_and_locks_all_restrictions(self):
+        ExamSet.objects.filter(pk=self.exam.pk).update(
+            detect_gaze_above=False,
+            detect_gaze_below=False,
+            detect_gaze_left=False,
+            detect_gaze_right=False,
+        )
+        create_response = self.client.post(
+            self.questions_url,
+            {
+                'question_type': ExamQuestion.TYPE_IDENTIFICATION,
+                'question_text': 'Identify the concept.',
+                'correct_answer': 'Concept',
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        self.exam.refresh_from_db()
+        self.assertTrue(all([
+            self.exam.detect_gaze_above,
+            self.exam.detect_gaze_below,
+            self.exam.detect_gaze_left,
+            self.exam.detect_gaze_right,
+        ]))
+
+        disable_response = self.client.patch(
+            self.detail_url,
+            {'proctoring_restrictions': {'gaze_left': False}},
+            format='json',
+        )
+        self.assertEqual(disable_response.status_code, 400, disable_response.data)
+        self.assertIn('only essay-only exams', disable_response.data['error'].lower())
+
+
 class InstructorSubjectiveGradingTests(TestCase):
     @classmethod
     def setUpTestData(cls):

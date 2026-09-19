@@ -699,10 +699,10 @@
                     <option value="student_asc">Student (A–Z)</option>
                     <option value="student_desc">Student (Z–A)</option>
                     <template v-if="progressView === 'exam'">
-                      <option value="score_desc">Actual score (highest first)</option>
-                      <option value="score_asc">Actual score (lowest first)</option>
-                      <option value="integrity_desc">Integrity score (highest first)</option>
-                      <option value="integrity_asc">Integrity score (lowest first)</option>
+                      <option value="score_desc">Actual score (descending)</option>
+                      <option value="score_asc">Actual score (ascending)</option>
+                      <option value="integrity_desc">Integrity score (descending)</option>
+                      <option value="integrity_asc">Integrity score (ascending)</option>
                     </template>
                   </select>
                 </label>
@@ -1080,63 +1080,69 @@
                 <div style="flex: 1;">
                   <h4 style="font-size: 1.15rem; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 0.5rem; font-weight: 700;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a457c" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3" stroke="#4a457c" stroke-width="2.5"/></svg>
-                    Proctoring AI Sensitivity
+                    Quiz-wide Proctoring Restrictions
                   </h4>
-                  <p style="font-size: 0.85rem; color: #64748b; margin: 0.25rem 0 0 0;">Configure which suspicious gaze movements will trigger an integrity flag during this exam.</p>
+                  <p style="font-size: 0.85rem; color: #64748b; margin: 0.25rem 0 0 0;">
+                    {{ examRequiresAllRestrictions
+                      ? 'Only essay-only exams can customize these settings. All other exam types require every gaze restriction.'
+                      : 'These settings apply once to the entire essay quiz, including every essay question.' }}
+                  </p>
                 </div>
-                <span style="flex-shrink: 0; white-space: nowrap; background: #e0e7ff; color: #4338ca; font-size: 0.7rem; font-weight: 800; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;">Preview Mode</span>
+                <span style="flex-shrink: 0; white-space: nowrap; background: #e0e7ff; color: #4338ca; font-size: 0.7rem; font-weight: 800; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;">
+                  {{ restrictionsSaving ? 'Saving…' : (examRequiresAllRestrictions ? 'Required' : 'Entire quiz') }}
+                </span>
               </div>
               
               <div style="padding: 1.5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem;">
                 
                 <!-- Toggle 1: Above -->
-                <label class="premium-toggle-card">
+                <label class="premium-toggle-card" :class="{ 'premium-toggle-card--locked': examIsFinal || examRequiresAllRestrictions }">
                   <div class="ptc-icon" style="background: #e0f2fe; color: #0369a1;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg></div>
                   <div class="ptc-info">
                     <span class="ptc-title">Looking Above</span>
                     <span class="ptc-desc">Detect upward glances</span>
                   </div>
                   <div class="premium-switch">
-                    <input type="checkbox" checked />
+                    <input v-model="examRestrictions.gaze_above" type="checkbox" :disabled="examIsFinal || examRequiresAllRestrictions || restrictionsSaving" @change="saveExamRestrictions" />
                     <span class="premium-slider"></span>
                   </div>
                 </label>
 
                 <!-- Toggle 2: Below -->
-                <label class="premium-toggle-card">
+                <label class="premium-toggle-card" :class="{ 'premium-toggle-card--locked': examIsFinal || examRequiresAllRestrictions }">
                   <div class="ptc-icon" style="background: #fce7f3; color: #be185d;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></div>
                   <div class="ptc-info">
                     <span class="ptc-title">Looking Below</span>
                     <span class="ptc-desc">Detect downward focus</span>
                   </div>
                   <div class="premium-switch">
-                    <input type="checkbox" checked />
+                    <input v-model="examRestrictions.gaze_below" type="checkbox" :disabled="examIsFinal || examRequiresAllRestrictions || restrictionsSaving" @change="saveExamRestrictions" />
                     <span class="premium-slider"></span>
                   </div>
                 </label>
 
                 <!-- Toggle 3: Left -->
-                <label class="premium-toggle-card">
+                <label class="premium-toggle-card" :class="{ 'premium-toggle-card--locked': examIsFinal || examRequiresAllRestrictions }">
                   <div class="ptc-icon" style="background: #fef3c7; color: #b45309;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></div>
                   <div class="ptc-info">
                     <span class="ptc-title">Looking Left</span>
                     <span class="ptc-desc">Detect leftward off-screen</span>
                   </div>
                   <div class="premium-switch">
-                    <input type="checkbox" checked />
+                    <input v-model="examRestrictions.gaze_left" type="checkbox" :disabled="examIsFinal || examRequiresAllRestrictions || restrictionsSaving" @change="saveExamRestrictions" />
                     <span class="premium-slider"></span>
                   </div>
                 </label>
 
                 <!-- Toggle 4: Right -->
-                <label class="premium-toggle-card">
+                <label class="premium-toggle-card" :class="{ 'premium-toggle-card--locked': examIsFinal || examRequiresAllRestrictions }">
                   <div class="ptc-icon" style="background: #dcfce7; color: #15803d;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>
                   <div class="ptc-info">
                     <span class="ptc-title">Looking Right</span>
                     <span class="ptc-desc">Detect rightward off-screen</span>
                   </div>
                   <div class="premium-switch">
-                    <input type="checkbox" checked />
+                    <input v-model="examRestrictions.gaze_right" type="checkbox" :disabled="examIsFinal || examRequiresAllRestrictions || restrictionsSaving" @change="saveExamRestrictions" />
                     <span class="premium-slider"></span>
                   </div>
                 </label>
@@ -2114,6 +2120,17 @@ const managingExam = ref(null);
 const examQuestions = ref([]);
 const examIsFinal = ref(false);
 const questionsLoading = ref(false);
+const restrictionsSaving = ref(false);
+const examRestrictions = ref({
+  gaze_above: true,
+  gaze_below: true,
+  gaze_left: true,
+  gaze_right: true,
+});
+const examRequiresAllRestrictions = computed(() =>
+  examQuestions.value.length === 0
+  || examQuestions.value.some(question => question.question_type !== 'essay'),
+);
 const newQ = ref({ type: 'multiple_choice', text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: false });
 const bulkText = ref("");
 const aikenFileName = ref("");
@@ -3120,6 +3137,12 @@ function openManageQuestions(exam) {
 function closeManageQuestions() {
   managingExam.value = null;
   examQuestions.value = [];
+  examRestrictions.value = {
+    gaze_above: true,
+    gaze_below: true,
+    gaze_left: true,
+    gaze_right: true,
+  };
 }
 
 function addChoice() {
@@ -3149,10 +3172,46 @@ async function fetchExamQuestions() {
     const { data } = await apiClient.get(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/`);
     examQuestions.value = data.questions || [];
     examIsFinal.value = data.is_final || false;
+    examRestrictions.value = {
+      gaze_above: data.proctoring_restrictions?.gaze_above ?? true,
+      gaze_below: data.proctoring_restrictions?.gaze_below ?? true,
+      gaze_left: data.proctoring_restrictions?.gaze_left ?? true,
+      gaze_right: data.proctoring_restrictions?.gaze_right ?? true,
+    };
   } catch (err) {
     error.value = "Failed to load questions.";
   } finally {
     questionsLoading.value = false;
+  }
+}
+
+async function saveExamRestrictions() {
+  if (!managingExam.value || !selectedSubjectId.value || examIsFinal.value) return;
+  if (examRequiresAllRestrictions.value) {
+    examRestrictions.value = {
+      gaze_above: true,
+      gaze_below: true,
+      gaze_left: true,
+      gaze_right: true,
+    };
+    return;
+  }
+
+  restrictionsSaving.value = true;
+  message.value = '';
+  error.value = '';
+  try {
+    const { data } = await apiClient.patch(
+      `/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/`,
+      { proctoring_restrictions: { ...examRestrictions.value } },
+    );
+    examRestrictions.value = { ...data.proctoring_restrictions };
+    message.value = 'Proctoring restrictions saved.';
+  } catch (err) {
+    error.value = err?.response?.data?.error || 'Failed to save proctoring restrictions.';
+    await fetchExamQuestions();
+  } finally {
+    restrictionsSaving.value = false;
   }
 }
 
@@ -3547,6 +3606,19 @@ onMounted(async () => {
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
   transform: translateY(-1px);
 }
+.premium-toggle-card--locked {
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+.premium-toggle-card--locked:hover {
+  border-color: #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+  transform: none;
+}
+.premium-toggle-card--locked .premium-slider {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
 .ptc-icon {
   width: 40px;
   height: 40px;
@@ -3691,7 +3763,7 @@ onMounted(async () => {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 800;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   letter-spacing: -0.01em;
   line-height: 1.2;
 }
@@ -3921,7 +3993,7 @@ onMounted(async () => {
 }
 .ir-dh-title {
   margin: 0; font-size: 1.25rem; font-weight: 800;
-  font-family: 'Outfit', sans-serif; color: #1e293b;
+  font-family: 'Poppins', sans-serif; color: #1e293b;
   letter-spacing: -0.02em; line-height: 1.2;
 }
 .ir-dh-meta { display: flex; flex-wrap: wrap; gap: 0.45rem 0.75rem; margin-top: 0.5rem; }
@@ -3975,7 +4047,7 @@ onMounted(async () => {
 }
 .ir-dial-val {
   font-size: 1.6rem; font-weight: 900; line-height: 1;
-  color: var(--dial-text, #0f172a); font-family: 'Outfit', sans-serif;
+  color: var(--dial-text, #0f172a); font-family: 'Poppins', sans-serif;
   letter-spacing: -0.03em;
 }
 .ir-dial-unit { font-size: 0.7rem; font-weight: 700; color: var(--dial-text, #64748b); line-height: 1; margin-top: 1px; }
@@ -3999,7 +4071,7 @@ onMounted(async () => {
 .ir-score-block { display: flex; flex-direction: column; padding-right: 1.25rem; }
 .ir-score-num {
   font-size: 2rem; font-weight: 900; color: #0f172a;
-  font-family: 'Outfit', sans-serif; line-height: 1; letter-spacing: -0.04em;
+  font-family: 'Poppins', sans-serif; line-height: 1; letter-spacing: -0.04em;
 }
 .ir-score-lbl {
   font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em;
@@ -4028,7 +4100,7 @@ onMounted(async () => {
 .ir-metric:first-child { padding-left: 0; }
 .ir-metric-num {
   font-size: 1.35rem; font-weight: 800; color: #475569;
-  font-family: 'Outfit', sans-serif; line-height: 1; letter-spacing: -0.02em;
+  font-family: 'Poppins', sans-serif; line-height: 1; letter-spacing: -0.02em;
 }
 .ir-metric-lbl {
   font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
@@ -4054,7 +4126,7 @@ onMounted(async () => {
   color: #94a3b8; background: none; border: none;
   border-bottom: 2px solid transparent; margin-bottom: -2px;
   cursor: pointer; transition: color 0.18s, border-color 0.18s;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 .ir-tab-btn:hover { color: #4338ca; }
 .ir-tab-btn--active { color: #4338ca; border-bottom-color: #6366f1; }
@@ -4104,7 +4176,7 @@ onMounted(async () => {
 .ir-log-top { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
 .ir-log-type {
   font-weight: 700; font-size: 0.86rem; color: #0f172a;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 .ir-log-time { margin-left: auto; font-size: 0.68rem; color: #94a3b8; white-space: nowrap; }
 .ir-log-msg { margin: 0; font-size: 0.8rem; color: #64748b; line-height: 1.5; }

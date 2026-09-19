@@ -1,11 +1,12 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/firebase";
-import LoginView from "@/views/LoginView.vue";
-import StudentDashboardView from "@/views/StudentDashboardView.vue";
-import AdminLoginView from "@/views/AdminLoginView.vue";
-import AdminDashboardView from "@/views/AdminDashboardView.vue";
-import InstructorDashboardView from "@/views/InstructorDashboardView.vue";
+
+const LoginView = () => import("@/views/LoginView.vue");
+const StudentDashboardView = () => import("@/views/StudentDashboardView.vue");
+const AdminLoginView = () => import("@/views/AdminLoginView.vue");
+const AdminDashboardView = () => import("@/views/AdminDashboardView.vue");
+const InstructorDashboardView = () => import("@/views/InstructorDashboardView.vue");
 
 const routes = [
   { path: "/", component: LoginView },

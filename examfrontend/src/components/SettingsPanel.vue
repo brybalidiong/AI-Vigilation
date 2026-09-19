@@ -204,12 +204,11 @@ async function saveSettings() {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 
 .settings-panel {
   display: flex;
   flex-direction: column;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   animation: fadeIn 0.3s ease forwards;
   width: 100%;
 }

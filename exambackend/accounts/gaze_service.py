@@ -22,6 +22,8 @@ GAZE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gaze-infer
 _snapshot_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='gaze-snapshot')
 _snapshot_slots = threading.BoundedSemaphore(2)
 _tracker_init_lock = threading.Lock()
+_tracker_warmup_lock = threading.Lock()
+_tracker_warmup_future = None
 _GAZE_MODEL_FILENAMES = ('EfficientNetB0_gaze_float32.tflite', 'gaze_model_float32.tflite')
 
 
@@ -40,6 +42,29 @@ def analyze_frame_bytes(raw):
     if not tracker.ready:
         raise RuntimeError(tracker.error or 'Gaze model unavailable')
     return tracker.analyze(frame)
+
+
+def warm_gaze_tracker() -> bool:
+    """Queue model initialization after Django is running, without blocking HTTP."""
+    global _tracker_warmup_future
+    if get_gaze_tracker.cache_info().currsize:
+        return False
+    with _tracker_warmup_lock:
+        if get_gaze_tracker.cache_info().currsize:
+            return False
+        if _tracker_warmup_future and not _tracker_warmup_future.done():
+            return False
+
+        def initialize():
+            try:
+                with _tracker_init_lock:
+                    return get_gaze_tracker()
+            except Exception:
+                logger.exception('Could not warm the gaze tracker')
+                raise
+
+        _tracker_warmup_future = GAZE_EXECUTOR.submit(initialize)
+        return True
 
 
 def sign_gaze_result(exam_id, email, raw, result):

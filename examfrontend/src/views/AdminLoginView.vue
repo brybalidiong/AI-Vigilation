@@ -153,7 +153,6 @@ async function loginAdmin() {
 <style scoped>
 @import '@/assets/login-shared.css';
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 .login-page {
   height: 100vh;
@@ -161,7 +160,7 @@ async function loginAdmin() {
   display: flex;
   flex-direction: column;
   background: #f4f7f9;
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: 'Poppins', -apple-system, sans-serif;
 }
 
 /* Header */
@@ -179,7 +178,7 @@ async function loginAdmin() {
   gap: 0.75rem;
 }
 .brand-name {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #1D3461;
   font-weight: 900;
   font-size: 1.8rem;
@@ -281,7 +280,7 @@ async function loginAdmin() {
 }
 
 .hero-content h1 {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: #1D3461;
   font-size: 3.8rem;
   font-weight: 900;
@@ -324,7 +323,7 @@ async function loginAdmin() {
 }
 
 .login-card-header h2 {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 1.9rem;
   font-weight: 800;
   color: #1D3461;
@@ -456,7 +455,7 @@ async function loginAdmin() {
   font-weight: 700;
   font-size: 0.95rem;
   margin: 0 0 0.2rem 0;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 .feature-item p {
   color: #64748b;

@@ -3,6 +3,7 @@ import base64
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import numpy as np
@@ -10,6 +11,7 @@ from django.core import signing
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.contrib.auth.models import User
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts import gaze_service
@@ -22,6 +24,29 @@ from gaze_tracker.tracker import GazeResult, GazeTracker
 
 def suspicious_result():
     return GazeResult('Looking at the left', 0.82, True, False, True)
+
+
+class GazeWarmupTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='warmup-student',
+            email='warmup@example.com',
+        )
+        self.client = APIClient()
+
+    def test_authenticated_student_can_queue_non_blocking_warmup(self):
+        self.client.force_authenticate(self.user)
+        with patch('accounts.gaze_service.warm_gaze_tracker', return_value=True) as warm, \
+                patch('accounts.gadget_service.warm_gadget_detector', return_value=True) as gadget_warm:
+            response = self.client.post('/api/gaze/warmup/')
+        self.assertEqual(response.status_code, 202)
+        self.assertTrue(response.data['warming'])
+        warm.assert_called_once_with()
+        gadget_warm.assert_called_once_with()
+
+    def test_warmup_requires_authentication(self):
+        response = self.client.post('/api/gaze/warmup/')
+        self.assertEqual(response.status_code, 401)
 
 
 class GazeFrameTests(SimpleTestCase):
@@ -79,6 +104,36 @@ class GazeFrameTests(SimpleTestCase):
         finally:
             release.set()
             executor.shutdown(wait=True)
+
+    async def test_websocket_treats_disabled_below_direction_as_normal(self):
+        from accounts.consumers import GazeConsumer
+
+        consumer = GazeConsumer()
+        consumer.exam_id = 1
+        consumer.student_email = None
+        consumer._last_snapshot_at = 0
+        consumer._closed = False
+        consumer._horizontal_candidate = ''
+        consumer._horizontal_streak = 0
+        consumer._restrictions = {
+            'gaze_above': True,
+            'gaze_below': False,
+            'gaze_left': True,
+            'gaze_right': True,
+        }
+        consumer.send = AsyncMock()
+        below_result = GazeResult('Looking below', 0.82, True, False, True)
+
+        with patch('accounts.consumers.analyze_frame_bytes', return_value=below_result):
+            await consumer.receive(text_data=json.dumps({
+                'image': base64.b64encode(b'jpeg').decode(),
+                'frame_id': 1,
+            }))
+
+        payload = json.loads(consumer.send.call_args.kwargs['text_data'])
+        self.assertFalse(payload['direction_enabled'])
+        self.assertFalse(payload['is_suspicious'])
+        self.assertTrue(payload['is_normal'])
 
     async def test_websocket_confirms_horizontal_direction_twice(self):
         from accounts.consumers import GazeConsumer
@@ -184,7 +239,8 @@ class GazeEvidenceTests(TestCase):
         )
         from accounts import views
         for cache in (views._GAZE_STRIKE_CACHE, views._GAZE_LAST_LOGGED,
-                      views._GAZE_PENDING_STRIKES, views._GAZE_NO_FACE_ABSENCE):
+                      views._GAZE_PENDING_STRIKES, views._GAZE_NO_FACE_ABSENCE,
+                      views._GADGET_DETECTION_STATE):
             cache.clear()
 
     def post_frame(self, **fields):
@@ -212,6 +268,23 @@ class GazeEvidenceTests(TestCase):
         timer.assert_not_called()
         self.assertFalse(ExamProctoringEvidence.objects.exists())
 
+    def test_disabled_below_direction_cannot_record_a_strike(self):
+        self.exam.detect_gaze_below = False
+        self.exam.save(update_fields=['detect_gaze_below'])
+        below_result = GazeResult('Looking below', 0.82, True, False, True)
+        self.receipt = gaze_service.sign_gaze_result(
+            self.exam.pk, self.student.email, self.raw, below_result,
+        )
+
+        response = self.post_frame(record_strike='true', forced_label='Looking below')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['direction_enabled'])
+        self.assertFalse(response.data['is_suspicious'])
+        self.assertTrue(response.data['is_normal'])
+        self.assertNotIn('logged_event', response.data)
+        self.assertFalse(ExamProctoringEvidence.objects.exists())
+
     def test_tampered_frame_is_rejected_without_inference(self):
         self.raw = b'different image'
         with patch.object(gaze_service, 'analyze_frame_bytes') as analyze:
@@ -219,6 +292,38 @@ class GazeEvidenceTests(TestCase):
         self.assertEqual(response.status_code, 400)
         analyze.assert_not_called()
         self.assertFalse(ExamProctoringEvidence.objects.exists())
+
+    def test_gadget_requires_three_continuous_seconds_then_logs_evidence(self):
+        detection = [{'label': 'cell phone', 'confidence': 0.91, 'box': [1, 2, 30, 40]}]
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+        started = timezone.now()
+        check_times = [
+            (started + timedelta(seconds=offset)).timestamp()
+            for offset in range(4)
+        ]
+
+        with patch('accounts.gadget_service.detect_gadgets', return_value=detection), \
+                patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
+            responses = [
+                self.client.post(url, {
+                    'image': SimpleUploadedFile(
+                        f'gadget-{index}.jpg', self.raw, content_type='image/jpeg',
+                    ),
+                })
+                for index in range(4)
+            ]
+
+        self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
+        self.assertFalse(responses[0].data['confirmed'])
+        self.assertFalse(responses[1].data['confirmed'])
+        self.assertFalse(responses[2].data['confirmed'])
+        self.assertTrue(responses[3].data['confirmed'])
+        self.assertEqual(responses[3].data['continuous_seconds'], 3.0)
+        self.assertIsNotNone(responses[3].data['logged_event'])
+        self.assertEqual(
+            ExamProctoringEvidence.objects.get().event.event_type,
+            'gadget_detected',
+        )
 
 
 @override_settings(STORAGES={'default': {'BACKEND': 'django.core.files.storage.InMemoryStorage'}})

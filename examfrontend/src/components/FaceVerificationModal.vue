@@ -88,7 +88,6 @@ defineEmits(['cancel', 'retry']);
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 .fv-overlay {
   position: fixed;
@@ -99,7 +98,7 @@ defineEmits(['cancel', 'retry']);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 .fv-fade-enter-active, .fv-fade-leave-active {

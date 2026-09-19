@@ -50,7 +50,6 @@ defineEmits(["dismiss"]);
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 
 .premium-terminated-overlay {
   position: fixed;
@@ -61,7 +60,7 @@ defineEmits(["dismiss"]);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 

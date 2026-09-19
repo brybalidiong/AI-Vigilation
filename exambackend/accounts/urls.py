@@ -15,6 +15,7 @@ from .views import (
     exam_set_stats,
     finalize_exam,
     gaze_model_status,
+    gaze_model_warmup,
     google_login,
     instructor_subject_detail,
     instructor_subjects,
@@ -26,6 +27,7 @@ from .views import (
     instructor_submission_snapshot,
     student_exam_questions,
     student_analyze_gaze,
+    student_detect_gadgets,
     student_log_proctoring_events,
     student_my_answers,
     student_submit_answers,
@@ -48,6 +50,7 @@ urlpatterns = [
     path('auth/google/', google_login),
     path('auth/me/update/', update_profile),
     path('gaze/status/', gaze_model_status),
+    path('gaze/warmup/', gaze_model_warmup),
     path('auth/admin/login/', admin_login),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # Admin management
@@ -85,6 +88,7 @@ urlpatterns = [
     path('student/exams/<int:exam_id>/proctoring/events/', student_log_proctoring_events),
     path('student/exams/<int:exam_id>/proctoring/evidence/', student_upload_proctoring_evidence),
     path('student/exams/<int:exam_id>/proctoring/gaze/', student_analyze_gaze),
+    path('student/exams/<int:exam_id>/proctoring/gadgets/', student_detect_gadgets),
     path('student/exams/<int:exam_id>/my-answers/', student_my_answers),
     # Face verification
     path('admin/students/<int:student_id>/face-photo/', admin_upload_face_photo),

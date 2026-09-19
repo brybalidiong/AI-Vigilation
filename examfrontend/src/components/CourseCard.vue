@@ -119,7 +119,7 @@ const photoStyle = computed(() => {
   color: #fff;
   padding: 0.4rem 0.85rem;
   border-radius: 9px;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -133,7 +133,7 @@ const photoStyle = computed(() => {
 }
 
 .course-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 1.22rem;
   font-weight: 700;
   color: #0f172a;
@@ -169,7 +169,7 @@ const photoStyle = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.88rem;
   font-weight: 700;
   color: var(--dash-accent, #1D3461);

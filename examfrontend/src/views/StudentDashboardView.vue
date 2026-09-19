@@ -903,6 +903,12 @@ const examQuestions = ref([]);
 const studentAnswers = ref({});
 const examResult = ref(null);
 const submitError = ref("");
+const activeExamRestrictions = ref({
+  gaze_above: true,
+  gaze_below: true,
+  gaze_left: true,
+  gaze_right: true,
+});
 
 // â”€â”€â”€ Proctoring state â”€â”€â”€
 const TAB_SWITCH_LIMIT = 5;
@@ -976,7 +982,7 @@ let _splitScreenActive = false;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
-const GAZE_WS_INTERVAL_MS = 80;           // next frame waits for the previous result
+const GAZE_WS_INTERVAL_MS = 120;          // balance responsive detection with CPU/network load
 const GAZE_FRAME_WIDTH = 480;              // sufficient for landmarks; reduces payload and inference time
 const GAZE_FIRST_CHECK_MS = 50;            // fire first check immediately
 const GAZE_CONFIDENCE_MIN = 0.85;          // general fallback
@@ -989,6 +995,9 @@ const absenceAlert = ref({ show: false, message: 'Return to your webcam view so 
 const examFaceHold = ref(false);
 const faceAbsentSeconds = ref(0);
 let _proctoringCaptureTimer = null;
+let _gadgetDetectionTimer = null;
+let _gadgetDetectionInFlight = false;
+let _gadgetUnavailableNotified = false;
 let _gazeCheckTimer = null;
 let _lastGazeWarningAt = 0;
 let _gazeCheckInFlight = false;
@@ -1073,6 +1082,19 @@ function _formalGazeLabel(label) {
   if (l.includes('below'))                          return 'Looking Down';
   if (l.includes('normal'))                         return 'Looking at Screen';
   return 'Gaze Violation';
+}
+
+function _isGazeDirectionEnabled(label) {
+  const normalized = String(label || '').toLowerCase();
+  if (normalized.includes('above')) return activeExamRestrictions.value.gaze_above;
+  if (normalized.includes('below')) return activeExamRestrictions.value.gaze_below;
+  if (normalized.includes('left') && !normalized.includes('right')) {
+    return activeExamRestrictions.value.gaze_left;
+  }
+  if (normalized.includes('right') && !normalized.includes('left')) {
+    return activeExamRestrictions.value.gaze_right;
+  }
+  return true;
 }
 
 function _gazePendingMatches(kind, label) {
@@ -1304,6 +1326,64 @@ function _stopProctoringCaptureTimer() {
   }
 }
 
+async function _runGadgetDetection() {
+  if (!takingExam.value || examTerminated.value || submitting.value || _gadgetDetectionInFlight) return;
+  const video = examVideoEl.value;
+  if (!video || video.readyState < 2 || !video.videoWidth) return;
+
+  _gadgetDetectionInFlight = true;
+  try {
+    const canvas = document.createElement('canvas');
+    const width = Math.min(640, video.videoWidth);
+    canvas.width = width;
+    canvas.height = Math.round((video.videoHeight / video.videoWidth) * width);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.68));
+    if (!blob) return;
+
+    const form = new FormData();
+    form.append('image', blob, `gadget_${Date.now()}.jpg`);
+    const { data } = await api.post(
+      `/api/student/exams/${takingExam.value.id}/proctoring/gadgets/`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    if (data.logged_event) {
+      const labels = [...new Set((data.detections || []).map(item => item.label))];
+      proctoringWarning.value = {
+        show: true,
+        type: 'gadget',
+        title: 'Prohibited Gadget Detected',
+        message: `${labels.join(' and ') || 'A prohibited device'} was continuously detected for 3 seconds. Remove it from the camera view. This incident has been saved for instructor review.`,
+      };
+    }
+  } catch (err) {
+    if (err?.response?.status === 503 && !_gadgetUnavailableNotified) {
+      _gadgetUnavailableNotified = true;
+      showToastMessage('Gadget detection is temporarily unavailable; other proctoring checks remain active.');
+    }
+  } finally {
+    _gadgetDetectionInFlight = false;
+  }
+}
+
+function _startGadgetDetectionTimer() {
+  _stopGadgetDetectionTimer();
+  _gadgetUnavailableNotified = false;
+  _runGadgetDetection();
+  _gadgetDetectionTimer = setInterval(_runGadgetDetection, 1000);
+}
+
+function _stopGadgetDetectionTimer() {
+  if (_gadgetDetectionTimer) {
+    clearInterval(_gadgetDetectionTimer);
+    _gadgetDetectionTimer = null;
+  }
+  _gadgetDetectionInFlight = false;
+}
+
 async function _runGazeCheck() {
   if (!takingExam.value || examTerminated.value || submitting.value || _gazeCheckInFlight) return;
   const video = examVideoEl.value;
@@ -1354,12 +1434,18 @@ async function _runGazeCheck() {
       || !data.face_detected
       || normalizedLabel === 'no_face'
       || normalizedLabel.includes('multiple_people');
+    const directionEnabled = data.direction_enabled !== false
+      && _isGazeDirectionEnabled(data.label);
     const holdSeconds = data.no_face_hold_seconds ?? GAZE_NO_FACE_HOLD_SECONDS;
 
     // Do not let the slower HTTP observer overwrite a newer WS result.
     if (!_gazeWsActive) {
       gazeDetectionStatus.value = '';
-      _updateGazeBbox(data);
+      _updateGazeBbox(
+        !isNoFace && !directionEnabled
+          ? { ...data, label: 'Normal', is_suspicious: false, is_normal: true }
+          : data,
+      );
     }
 
     if (isNoFace) {
@@ -1409,6 +1495,12 @@ async function _runGazeCheck() {
         };
       }
       if (!_gazeWsActive) _clearGazeViolationTimer(true); // face not visible → no direction
+      return;
+    }
+
+    if (!directionEnabled) {
+      _clearGazePending();
+      _clearGazeViolationTimer(true);
       return;
     }
 
@@ -1582,6 +1674,7 @@ function _stopGazeCheckTimer() {
   faceAbsentSeconds.value = 0;
   _faceHoldSnapshotted = false;
   _clearAbsenceAlert();
+  _stopGadgetDetectionTimer();
 }
 
 // ── WebSocket Gaze Loop (Real-time UI + violation timing) ───────────────────
@@ -1693,10 +1786,6 @@ function _startGazeWsLoop() {
         return;
       }
 
-      // Update face/border state
-      _updateGazeBbox(data);
-      const now = Date.now();
-
       // ── (A) No face / Multiple faces ──────────────────────────────────
       // Check both is_no_face flag AND label directly (in case flag is missing)
       const wsLabel = (data.label || '').toLowerCase();
@@ -1704,6 +1793,14 @@ function _startGazeWsLoop() {
         || !data.face_detected
         || wsLabel === 'no_face'
         || wsLabel.includes('multiple_people');
+      const directionEnabled = data.direction_enabled !== false
+        && _isGazeDirectionEnabled(data.label);
+      _updateGazeBbox(
+        !isAbsenceFrame && !directionEnabled
+          ? { ...data, label: 'Normal', is_suspicious: false, is_normal: true }
+          : data,
+      );
+      const now = Date.now();
 
       if (isAbsenceFrame) {
         _wsNormalStartTime    = null;
@@ -1733,6 +1830,19 @@ function _startGazeWsLoop() {
           _wsMultipleFacesStartTime = null;
         }
 
+        _scheduleWsFrame();
+        return;
+      }
+
+      // Restrictions are quiz-wide. A disabled direction must never start a
+      // browser timer even if a stale socket result marks it suspicious.
+      if (!directionEnabled) {
+        _wsNormalConsecutive = WS_NORMAL_GRACE_FRAMES;
+        _wsNormalStartTime = now;
+        _wsViolationStartTime = null;
+        _wsViolationLabel = '';
+        _wsSuspiciousFrame = null;
+        _clearGazeViolationTimer(true);
         _scheduleWsFrame();
         return;
       }
@@ -1851,7 +1961,7 @@ function _startGazeWsLoop() {
 
 /** Called by the WS timer after 4s of suspicious frames — logs the violation via HTTP. */
 async function _recordWsViolation(label) {
-  if (!takingExam.value || examTerminated.value) return;
+  if (!takingExam.value || examTerminated.value || !_isGazeDirectionEnabled(label)) return;
 
   try {
     // This is the JPEG that produced the WS label, not a later webcam frame.
@@ -2160,8 +2270,15 @@ const selectedCourse = computed(() => {
   return subjects.value.find((s) => Number(s.id) === Number(selectedSubjectId.value)) || null;
 });
 
+function examCreatedTimestamp(exam) {
+  const createdAt = new Date(exam?.created_at || 0).getTime();
+  return Number.isNaN(createdAt) ? Number(exam?.id || 0) : createdAt;
+}
+
 const selectedCourseExams = computed(() =>
-  exams.value.filter((exam) => Number(exam.subject_id) === Number(selectedSubjectId.value)),
+  exams.value
+    .filter((exam) => Number(exam.subject_id) === Number(selectedSubjectId.value))
+    .sort((a, b) => examCreatedTimestamp(b) - examCreatedTimestamp(a)),
 );
 
 const groupedFilteredDueExamTimeline = computed(() =>
@@ -2169,9 +2286,12 @@ const groupedFilteredDueExamTimeline = computed(() =>
 );
 
 const groupedCourseExams = computed(() =>
-  groupExamsByTimelineDay(
-    [...selectedCourseExams.value].sort((a, b) => examAnchorTimestamp(a) - examAnchorTimestamp(b)),
-  ),
+  groupExamsByTimelineDay(selectedCourseExams.value)
+    .sort((a, b) => {
+      const newestInA = Math.max(...a.exams.map(examCreatedTimestamp));
+      const newestInB = Math.max(...b.exams.map(examCreatedTimestamp));
+      return newestInB - newestInA;
+    }),
 );
 
 function formatTimeOnly(raw) {
@@ -2258,6 +2378,7 @@ function statusClass(exam) {
 }
 
 async function openTakeExam(exam) {
+  _warmGazeModel();
   if (getExamStatus(exam) === "Not yet open") {
     showToastMessage("This exam is not yet open to be taken.");
     return;
@@ -2490,6 +2611,14 @@ function _sendPrecheckFrame() {
   _precheckWs.send(JSON.stringify({ image: dataUrl, frame_id: ++_precheckFrameId }));
 }
 
+function _warmGazeModel() {
+  // Fire-and-forget: dashboard rendering and camera permission stay responsive
+  // while the server loads TensorFlow, TFLite, and MediaPipe in the background.
+  api.post('/api/gaze/warmup/').catch(() => {
+    // The regular exam socket can still initialize the model as a fallback.
+  });
+}
+
 function _stopPrecheckWs() {
   clearTimeout(_precheckWsTimer);
   _precheckFramePending = false;
@@ -2521,6 +2650,12 @@ async function _doOpenExam(exam) {
   try {
     const qRes = await getWithRetry(`/api/student/exams/${exam.id}/questions/`);
     examQuestions.value = qRes.data.questions || [];
+    activeExamRestrictions.value = {
+      gaze_above: qRes.data.proctoring_restrictions?.gaze_above ?? true,
+      gaze_below: qRes.data.proctoring_restrictions?.gaze_below ?? true,
+      gaze_left: qRes.data.proctoring_restrictions?.gaze_left ?? true,
+      gaze_right: qRes.data.proctoring_restrictions?.gaze_right ?? true,
+    };
     for (const q of examQuestions.value) {
       studentAnswers.value[q.id] = "";
     }
@@ -2566,6 +2701,7 @@ async function _doOpenExam(exam) {
   }
   _startProctoringCaptureTimer();
   _startGazeCheckTimer();
+  _startGadgetDetectionTimer();
 }
 
 function _attachProctoringListeners() {
@@ -2636,6 +2772,12 @@ function _attachProctoringListeners() {
 
 function closeTakeExam() {
   takingExam.value = null;
+  activeExamRestrictions.value = {
+    gaze_above: true,
+    gaze_below: true,
+    gaze_left: true,
+    gaze_right: true,
+  };
   _stopProctoringCaptureTimer();
   _stopGazeCheckTimer();
   // Remove ALL proctoring listeners
@@ -2955,6 +3097,7 @@ async function submitExam() {
     submitError.value = err?.response?.data?.error || "Failed to submit exam.";
     if (takingExam.value && !examTerminated.value) {
       _startGazeCheckTimer();
+      _startGadgetDetectionTimer();
     }
   } finally {
     submitting.value = false;
@@ -3049,6 +3192,7 @@ function syncStudentCourseFromRoute() {
 onMounted(async () => {
   updateTime();
   timeInterval = setInterval(updateTime, 1000);
+  _warmGazeModel();
   await Promise.all([fetchMySubjects(), fetchMyExams()]);
   syncStudentCourseFromRoute();
 });

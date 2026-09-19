@@ -25,6 +25,7 @@ opencv-python>=4.8.0
 mediapipe>=0.10.0
 tensorflow>=2.15.0
 numpy>=1.24.0
+ultralytics>=8.3.0,<9.0
 
 # Face verification now uses Microsoft Azure Face API
 # (deepface and tf-keras removed)

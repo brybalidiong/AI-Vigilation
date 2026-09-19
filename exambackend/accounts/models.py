@@ -157,6 +157,10 @@ class ExamSet(models.Model):
     is_final = models.BooleanField(default=False)
     max_attempts = models.PositiveIntegerField(default=1)
     time_limit = models.PositiveIntegerField(default=60)  # Time limit in minutes, 0 for unlimited
+    detect_gaze_above = models.BooleanField(default=True)
+    detect_gaze_below = models.BooleanField(default=True)
+    detect_gaze_left = models.BooleanField(default=True)
+    detect_gaze_right = models.BooleanField(default=True)
     assigned_sets = models.ManyToManyField('StudentSet', related_name='assigned_exams', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -272,6 +276,12 @@ class StudentAnswer(models.Model):
 
     class Meta:
         ordering = ['question__order', 'question__created_at']
+        indexes = [
+            models.Index(
+                fields=['exam_set', 'student_email'],
+                name='acct_answer_exam_email_idx',
+            ),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=['exam_set', 'question', 'student_email'],
@@ -312,6 +322,7 @@ class ExamProctoringEvent(models.Model):
     EVENT_PERIODIC_CAPTURE = 'periodic_capture'
     EVENT_GAZE_VIOLATION = 'gaze_violation'
     EVENT_GAZE_NO_FACE = 'gaze_no_face'
+    EVENT_GADGET_DETECTED = 'gadget_detected'
     EVENT_TYPES = [
         (EVENT_TAB_SWITCH, 'Tab switch'),
         (EVENT_WINDOW_BLUR, 'Window blur'),
@@ -330,6 +341,7 @@ class ExamProctoringEvent(models.Model):
         (EVENT_PERIODIC_CAPTURE, 'Periodic capture'),
         (EVENT_GAZE_VIOLATION, 'Gaze away from screen'),
         (EVENT_GAZE_NO_FACE, 'Face not visible'),
+        (EVENT_GADGET_DETECTED, 'Prohibited gadget detected'),
     ]
 
     submission = models.ForeignKey(

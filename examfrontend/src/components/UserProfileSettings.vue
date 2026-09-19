@@ -471,7 +471,6 @@ function saveFacePhoto() {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;800;900&family=Inter:wght@400;500;600;700&display=swap');
 
 /* ─── Root ──────────────────────────────────────────────── */
 .profile-page {
@@ -479,7 +478,7 @@ function saveFacePhoto() {
   width: 100%;
   margin: 0 auto;
   padding-bottom: 5rem;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 /* ─── Hero ──────────────────────────────────────────────── */
@@ -529,7 +528,7 @@ function saveFacePhoto() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 2.8rem;
   font-weight: 900;
   color: #fff;
@@ -568,7 +567,7 @@ function saveFacePhoto() {
 .hero-info { flex: 1; min-width: 0; }
 
 .hero-name {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 2.1rem;
   font-weight: 900;
   color: #fff;
@@ -616,7 +615,7 @@ function saveFacePhoto() {
   background: rgba(255,255,255,0.14);
   color: #fff;
   border: 1px solid rgba(255,255,255,0.28);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
@@ -638,7 +637,7 @@ function saveFacePhoto() {
   background: transparent;
   color: rgba(255,255,255,0.75);
   border: 1px solid rgba(255,255,255,0.22);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
@@ -659,7 +658,7 @@ function saveFacePhoto() {
   background: #fff;
   color: #1D3461;
   border: none;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-weight: 700;
   font-size: 0.9rem;
   cursor: pointer;
@@ -721,7 +720,7 @@ function saveFacePhoto() {
 .card-header-text { flex: 1; min-width: 0; }
 
 .card-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
   color: #0f172a;
@@ -815,7 +814,7 @@ function saveFacePhoto() {
   flex: 1;
   border: none;
   background: transparent;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.92rem;
   color: #0f172a;
   outline: none;
@@ -1117,7 +1116,7 @@ function saveFacePhoto() {
   background: #1D3461;
   color: #fff;
   border: none;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;

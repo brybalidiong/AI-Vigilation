@@ -45,6 +45,19 @@ def _ws_confidence_ok(label: str, confidence: float) -> bool:
     return confidence >= _WS_GENERAL_CONFIDENCE
 
 
+def _ws_direction_enabled(label: str, restrictions: dict) -> bool:
+    value = (label or '').lower()
+    if 'above' in value:
+        return restrictions.get('gaze_above', True)
+    if 'below' in value:
+        return restrictions.get('gaze_below', True)
+    if 'left' in value and 'right' not in value:
+        return restrictions.get('gaze_left', True)
+    if 'right' in value and 'left' not in value:
+        return restrictions.get('gaze_right', True)
+    return True
+
+
 class GazeConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.exam_id = self.scope['url_route']['kwargs']['exam_id']
@@ -53,6 +66,31 @@ class GazeConsumer(AsyncWebsocketConsumer):
         self._closed = False
         self._horizontal_candidate = ''
         self._horizontal_streak = 0
+        self._restrictions = {
+            'gaze_above': True,
+            'gaze_below': True,
+            'gaze_left': True,
+            'gaze_right': True,
+        }
+
+        from asgiref.sync import sync_to_async
+        from accounts.models import ExamSet
+        restriction_values = await sync_to_async(
+            lambda: ExamSet.objects.filter(pk=self.exam_id).values(
+                'detect_gaze_above',
+                'detect_gaze_below',
+                'detect_gaze_left',
+                'detect_gaze_right',
+            ).first(),
+            thread_sensitive=True,
+        )()
+        if restriction_values:
+            self._restrictions = {
+                'gaze_above': restriction_values['detect_gaze_above'],
+                'gaze_below': restriction_values['detect_gaze_below'],
+                'gaze_left': restriction_values['detect_gaze_left'],
+                'gaze_right': restriction_values['detect_gaze_right'],
+            }
 
         # Extract student email from JWT token passed as query param
         query_string = self.scope.get('query_string', b'').decode()
@@ -103,7 +141,11 @@ class GazeConsumer(AsyncWebsocketConsumer):
             # Apply confidence gating: don't count as suspicious unless the model
             # is sufficiently confident. This prevents low-confidence below/right
             # frames from starting the violation timer.
-            is_suspicious = result.is_suspicious
+            direction_enabled = _ws_direction_enabled(
+                label,
+                getattr(self, '_restrictions', {}),
+            )
+            is_suspicious = result.is_suspicious and direction_enabled
             if is_suspicious and not is_no_face:
                 is_suspicious = _ws_confidence_ok(label, result.confidence)
 
@@ -128,10 +170,14 @@ class GazeConsumer(AsyncWebsocketConsumer):
             # Sign the effective result after the same confidence gate returned
             # to the browser. Evidence replay therefore uses exactly the state
             # that drove the live timer.
+            effective_normal = bool(
+                (result.is_normal or (result.is_suspicious and not direction_enabled))
+                and not is_no_face
+            )
             signed_result = replace(
                 result,
                 is_suspicious=is_suspicious,
-                is_normal=bool(result.is_normal and not is_no_face),
+                is_normal=effective_normal,
             )
             payload = {
                 "label": label,
@@ -139,7 +185,8 @@ class GazeConsumer(AsyncWebsocketConsumer):
                 "face_detected": result.face_detected,
                 "is_no_face": is_no_face,
                 "is_suspicious": is_suspicious,
-                "is_normal": result.is_normal and not is_no_face,
+                "is_normal": effective_normal,
+                "direction_enabled": direction_enabled,
                 "stabilizing": stabilizing,
                 "face_bbox": result.face_bbox,
                 "frame_id": data.get('frame_id'),

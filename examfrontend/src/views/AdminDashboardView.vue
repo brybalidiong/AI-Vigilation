@@ -660,7 +660,7 @@ onMounted(() => {
   font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
 }
 .stat-value {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 2.2rem; font-weight: 900; color: var(--text-primary);
   margin: 0; letter-spacing: -0.04em; line-height: 1;
 }

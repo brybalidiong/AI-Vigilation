@@ -2,7 +2,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
@@ -63,6 +63,7 @@ PROCTORING_EVENT_PENALTIES = {
     ExamProctoringEvent.EVENT_RIGHT_CLICK: 3,
     ExamProctoringEvent.EVENT_GAZE_VIOLATION: 6,
     ExamProctoringEvent.EVENT_GAZE_NO_FACE: 8,
+    ExamProctoringEvent.EVENT_GADGET_DETECTED: 15,
     ExamProctoringEvent.EVENT_EXAM_TERMINATED: 25,
 }
 
@@ -88,6 +89,12 @@ _GAZE_NO_FACE_ABSENCE: dict[tuple[int, int], dict] = {}
 _GAZE_STRIKE_CACHE: dict[tuple[int, int], dict] = {}
 # Tracks when we last saw a suspicious frame — used for grace-period-based clearing.
 _GAZE_LAST_SUSPICIOUS: dict[tuple[int, int], object] = {}
+# A continuous three-second detection confirms a device; evidence is rate-limited.
+_GADGET_DETECTION_STATE: dict[tuple[int, int], dict] = {}
+
+
+def _gadget_now_timestamp() -> float:
+    return timezone.now().timestamp()
 # Tracks when each submission last logged a gaze violation — enforces server-side cooldown.
 _GAZE_LAST_LOGGED: dict[tuple[int, int], object] = {}
 GAZE_VIOLATION_COOLDOWN_SECONDS = 6.0  # match WS_VIOLATION_COOLDOWN_MS on the frontend
@@ -267,6 +274,45 @@ def _gaze_strike_counts(submission, force_refresh: bool = False):
     return counts
 
 
+def _bulk_gaze_strike_counts(submissions):
+    """Load current-attempt gaze counts for many submissions in one query."""
+    submissions = list(submissions)
+    attempts = {submission.id: submission.attempt_count for submission in submissions}
+    counts = {
+        submission.id: {
+            'gaze_violation_count': 0,
+            'gaze_no_face_count': 0,
+        }
+        for submission in submissions
+    }
+    if not attempts:
+        return counts
+
+    rows = (
+        ExamProctoringEvent.objects.filter(
+            submission_id__in=attempts,
+            event_type__in=(
+                ExamProctoringEvent.EVENT_GAZE_VIOLATION,
+                ExamProctoringEvent.EVENT_GAZE_NO_FACE,
+            ),
+        )
+        .values('submission_id', 'attempt_number', 'event_type')
+        .annotate(total=Count('id'))
+    )
+    for row in rows:
+        submission_id = row['submission_id']
+        if row['attempt_number'] != attempts.get(submission_id):
+            continue
+        key = (
+            'gaze_violation_count'
+            if row['event_type'] == ExamProctoringEvent.EVENT_GAZE_VIOLATION
+            else 'gaze_no_face_count'
+        )
+        counts[submission_id][key] = row['total']
+        _GAZE_STRIKE_CACHE[(submission_id, row['attempt_number'])] = counts[submission_id]
+    return counts
+
+
 def _clear_proctoring_for_attempt(submission):
     """Remove logs/evidence/reports when a student starts a fresh attempt."""
     attempt = submission.attempt_count
@@ -275,6 +321,7 @@ def _clear_proctoring_for_attempt(submission):
     ExamIntegrityReport.objects.filter(submission=submission, attempt_number=attempt).delete()
     # Clear strike count cache for this attempt
     _GAZE_STRIKE_CACHE.pop((submission.pk, attempt), None)
+    _GADGET_DETECTION_STATE.pop((submission.pk, attempt), None)
 
 
 def _log_proctoring_event(submission, event_type, *, severity=None, message='', source='', metadata=None):
@@ -415,6 +462,7 @@ def _build_integrity_report(submission):
     tab_switch_count = counts.get(ExamProctoringEvent.EVENT_TAB_SWITCH, submission.tab_switches)
     gaze_violations = counts.get(ExamProctoringEvent.EVENT_GAZE_VIOLATION, 0)
     gaze_no_face = counts.get(ExamProctoringEvent.EVENT_GAZE_NO_FACE, 0)
+    gadget_detections = counts.get(ExamProctoringEvent.EVENT_GADGET_DETECTED, 0)
 
     narrative_parts = [
         f'Integrity score: {score}%.',
@@ -423,6 +471,7 @@ def _build_integrity_report(submission):
         f'Tab switches: {tab_switch_count}.',
         f'Gaze away from screen: {gaze_violations}.',
         f'Face not visible (gaze): {gaze_no_face}.',
+        f'Confirmed prohibited gadgets: {gadget_detections}.',
         f'Screenshots/evidence captured: {evidence_qs.count()}.',
     ]
     if submission.terminated:
@@ -434,6 +483,7 @@ def _build_integrity_report(submission):
         'tab_switches': submission.tab_switches,
         'gaze_violation_count': gaze_violations,
         'gaze_no_face_count': gaze_no_face,
+        'gadget_detection_count': gadget_detections,
     }
 
     report, _ = ExamIntegrityReport.objects.update_or_create(
@@ -1315,7 +1365,22 @@ def subject_exam_sets(request, subject_id):
 
     if request.method == 'GET':
         rows = []
-        for exam in ExamSet.objects.filter(subject=subject).order_by('due_at', '-created_at'):
+        exams = (
+            ExamSet.objects.filter(subject=subject)
+            .annotate(
+                question_count=Count('questions', distinct=True),
+                non_essay_question_count=Count(
+                    'questions',
+                    filter=(
+                        Q(questions__isnull=False)
+                        & ~Q(questions__question_type=ExamQuestion.TYPE_ESSAY)
+                    ),
+                    distinct=True,
+                ),
+            )
+            .order_by('due_at', '-created_at')
+        )
+        for exam in exams:
             rows.append(
                 {
                     'id': exam.id,
@@ -1329,6 +1394,8 @@ def subject_exam_sets(request, subject_id):
                     'time_limit': exam.time_limit,
                     'max_attempts': exam.max_attempts,
                     'is_final': exam.is_final,
+                    'proctoring_restrictions': _serialize_proctoring_restrictions(exam),
+                    'requires_all_restrictions': _exam_requires_all_restrictions(exam),
                     'created_at': exam.created_at,
                     'exam_file': exam.exam_file.url if exam.exam_file else None,
                     'exam_file_name': exam.exam_file.name.split('/')[-1] if exam.exam_file else None,
@@ -1474,6 +1541,8 @@ def subject_exam_sets(request, subject_id):
             'description': exam_set.description,
             'available_from': exam_set.available_from,
             'due_at': exam_set.due_at,
+            'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
+            'requires_all_restrictions': _exam_requires_all_restrictions(exam_set),
             'created_at': exam_set.created_at,
             'exam_file': exam_set.exam_file.url if exam_set.exam_file else None,
             'exam_file_name': exam_set.exam_file.name.split('/')[-1] if exam_set.exam_file else None,
@@ -1482,7 +1551,7 @@ def subject_exam_sets(request, subject_id):
     )
 
 
-@api_view(['DELETE'])
+@api_view(['DELETE', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def subject_exam_set_detail(request, subject_id, exam_set_id):
     if not _is_instructor(request.user):
@@ -1495,6 +1564,43 @@ def subject_exam_set_detail(request, subject_id, exam_set_id):
     ).first()
     if not exam_set:
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'PATCH':
+        if exam_set.is_final:
+            return Response(
+                {'error': 'A finalized exam cannot be changed.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        restrictions = request.data.get('proctoring_restrictions')
+        if not isinstance(restrictions, dict):
+            return Response(
+                {'error': 'proctoring_restrictions must be an object.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            requested = {
+                key: _request_boolean(restrictions.get(key, getattr(exam_set, field)))
+                for key, field in PROCTORING_RESTRICTION_FIELDS.items()
+            }
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        requires_all = _exam_requires_all_restrictions(exam_set)
+        if requires_all and not all(requested.values()):
+            _enable_all_proctoring_restrictions(exam_set)
+            return Response(
+                {'error': 'Only essay-only exams can customize proctoring restrictions. All other exam types require every restriction.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for key, field in PROCTORING_RESTRICTION_FIELDS.items():
+            setattr(exam_set, field, requested[key])
+        exam_set.save(update_fields=list(PROCTORING_RESTRICTION_FIELDS.values()))
+        return Response({
+            'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
+            'requires_all_restrictions': requires_all,
+        })
+
     exam_set.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1506,11 +1612,15 @@ def exam_set_stats(request, subject_id, exam_set_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    exam_set = ExamSet.objects.filter(
-        id=exam_set_id,
-        subject_id=subject_id,
-        subject__instructor=request.user,
-    ).first()
+    exam_set = (
+        ExamSet.objects.filter(
+            id=exam_set_id,
+            subject_id=subject_id,
+            subject__instructor=request.user,
+        )
+        .prefetch_related('assigned_sets')
+        .first()
+    )
     if not exam_set:
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1519,10 +1629,13 @@ def exam_set_stats(request, subject_id, exam_set_id):
         student_set__created_by=request.user,
     ).select_related('student_set')
     
-    submissions = ExamSubmission.objects.filter(exam_set=exam_set).select_related('exam_set')
+    submissions = list(
+        ExamSubmission.objects.filter(exam_set=exam_set).select_related('exam_set')
+    )
     submission_map = {sub.student_email.lower(): sub for sub in submissions}
+    gaze_counts = _bulk_gaze_strike_counts(submissions)
 
-    assigned_ids = set(exam_set.assigned_sets.values_list('id', flat=True)) if exam_set.assigned_sets.exists() else set()
+    assigned_ids = {assigned_set.id for assigned_set in exam_set.assigned_sets.all()}
 
     now = timezone.now()
     is_overdue = bool(exam_set.due_at and now > exam_set.due_at)
@@ -1560,7 +1673,7 @@ def exam_set_stats(request, subject_id, exam_set_id):
             
             terminated = sub.terminated
             tab_switches = sub.tab_switches
-            strikes = _gaze_strike_counts(sub, force_refresh=True)
+            strikes = gaze_counts[sub.id]
             gaze_v = strikes['gaze_violation_count']
             gaze_nf = strikes['gaze_no_face_count']
             snapshot_url = _submission_snapshot_url(sub, request)
@@ -1690,18 +1803,32 @@ def subject_exam_progress(request, subject_id):
     student_emails = list(email_to_set.keys())
     exams = list(
         ExamSet.objects.filter(subject=subject)
-        .prefetch_related('assigned_sets', 'questions', 'student_answers')
+        .prefetch_related('assigned_sets', 'questions')
         .order_by('due_at', '-created_at')
     )
-    submissions = ExamSubmission.objects.filter(exam_set__subject=subject)
+    submissions = list(ExamSubmission.objects.filter(exam_set__subject=subject))
     submission_map = {
         (row.exam_set_id, row.student_email.lower()): row
         for row in submissions
     }
+    gaze_counts = _bulk_gaze_strike_counts(submissions)
+    integrity_report_keys = set(
+        ExamIntegrityReport.objects.filter(submission__exam_set__subject=subject)
+        .values_list('submission_id', 'attempt_number')
+    )
+    graded_subjective_counts = {}
+    graded_answers = StudentAnswer.objects.filter(
+        exam_set__subject=subject,
+        question__question_type=ExamQuestion.TYPE_ESSAY,
+        awarded_points__isnull=False,
+    ).values_list('exam_set_id', 'student_email')
+    for exam_id, email in graded_answers:
+        key = (exam_id, email.lower())
+        graded_subjective_counts[key] = graded_subjective_counts.get(key, 0) + 1
 
     rows = []
     for exam in exams:
-        assigned_ids = set(exam.assigned_sets.values_list('id', flat=True)) if exam.assigned_sets.exists() else set()
+        assigned_ids = {assigned_set.id for assigned_set in exam.assigned_sets.all()}
         subjective_question_ids = {
             question.id
             for question in exam.questions.all()
@@ -1720,18 +1847,10 @@ def subject_exam_progress(request, subject_id):
             gaze_v = 0
             gaze_nf = 0
             if sub:
-                strikes = _gaze_strike_counts(sub, force_refresh=True)
+                strikes = gaze_counts[sub.id]
                 gaze_v = strikes['gaze_violation_count']
                 gaze_nf = strikes['gaze_no_face_count']
-            graded_subjective_count = 0
-            if sub and subjective_question_ids:
-                graded_subjective_count = sum(
-                    1
-                    for answer in exam.student_answers.all()
-                    if answer.student_email.lower() == email
-                    and answer.question_id in subjective_question_ids
-                    and answer.awarded_points is not None
-                )
+            graded_subjective_count = graded_subjective_counts.get((exam.id, email), 0)
             pending_subjective_count = max(
                 0,
                 len(subjective_question_ids) - graded_subjective_count,
@@ -1759,7 +1878,7 @@ def subject_exam_progress(request, subject_id):
                     'has_integrity_report': bool(
                         sub and sub.is_done and (
                             sub.integrity_score is not None
-                            or sub.integrity_reports.filter(attempt_number=sub.attempt_count).exists()
+                            or (sub.id, sub.attempt_count) in integrity_report_keys
                         )
                     ),
                 }
@@ -1829,32 +1948,29 @@ def my_subjects(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_exam_sets(request):
+    student_email = request.user.email
     subject_exams = (
-        ExamSet.objects.filter(subject__student_sets__students__email__iexact=request.user.email)
+        ExamSet.objects.filter(
+            subject__student_sets__students__email__iexact=student_email,
+            is_final=True,
+        )
+        .filter(
+            Q(assigned_sets__isnull=True)
+            | Q(assigned_sets__students__email__iexact=student_email)
+        )
         .select_related('subject')
-        .prefetch_related('assigned_sets__students')
         .distinct()
-        .order_by('due_at', '-created_at')
+        .order_by('-created_at')
     )
-    
-    rows = []
-    for exam in subject_exams:
-        if exam.assigned_sets.exists():
-            in_set = exam.assigned_sets.filter(students__email__iexact=request.user.email).exists()
-            if not in_set:
-                continue
-        rows.append(exam)
-    
+
     submissions = ExamSubmission.objects.filter(
-        student_email__iexact=request.user.email,
+        student_email__iexact=student_email,
         is_done=True
     ).values('exam_set_id', 'score')
     done_exam_dict = {s['exam_set_id']: s['score'] for s in submissions}
 
     exams = []
-    for exam in rows:
-        if not exam.is_final:
-            continue
+    for exam in subject_exams:
         exams.append(
             {
                 'id': exam.id,
@@ -1999,6 +2115,67 @@ def _get_profile_photo_url(request, profile):
         return request.build_absolute_uri(profile.custom_photo.url)
     return profile.google_photo
 
+
+PROCTORING_RESTRICTION_FIELDS = {
+    'gaze_above': 'detect_gaze_above',
+    'gaze_below': 'detect_gaze_below',
+    'gaze_left': 'detect_gaze_left',
+    'gaze_right': 'detect_gaze_right',
+}
+
+
+def _serialize_proctoring_restrictions(exam_set):
+    return {
+        key: bool(getattr(exam_set, field))
+        for key, field in PROCTORING_RESTRICTION_FIELDS.items()
+    }
+
+
+def _exam_requires_all_restrictions(exam_set):
+    if hasattr(exam_set, 'question_count') and hasattr(exam_set, 'non_essay_question_count'):
+        return exam_set.question_count == 0 or exam_set.non_essay_question_count > 0
+    questions = exam_set.questions.all()
+    return (
+        not questions.exists()
+        or questions.exclude(question_type=ExamQuestion.TYPE_ESSAY).exists()
+    )
+
+
+def _enable_all_proctoring_restrictions(exam_set):
+    update_fields = []
+    for field in PROCTORING_RESTRICTION_FIELDS.values():
+        if not getattr(exam_set, field):
+            setattr(exam_set, field, True)
+            update_fields.append(field)
+    if update_fields:
+        exam_set.save(update_fields=update_fields)
+
+
+def _request_boolean(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in ('true', '1', 'yes', 'on'):
+        return True
+    if normalized in ('false', '0', 'no', 'off'):
+        return False
+    raise ValueError('Restriction values must be booleans.')
+
+
+def _gaze_direction_enabled(exam_set, label):
+    normalized = str(label or '').lower()
+    if 'above' in normalized:
+        return exam_set.detect_gaze_above
+    if 'below' in normalized:
+        return exam_set.detect_gaze_below
+    if 'left' in normalized and 'right' not in normalized:
+        return exam_set.detect_gaze_left
+    if 'right' in normalized and 'left' not in normalized:
+        return exam_set.detect_gaze_right
+    return True
+
 # ---------------------------------------------------------------------------
 # PROFILE SETTINGS
 # ---------------------------------------------------------------------------
@@ -2129,9 +2306,13 @@ def exam_questions(request, subject_id, exam_set_id):
 
     if request.method == 'GET':
         qs = ExamQuestion.objects.filter(exam_set=exam_set)
+        if _exam_requires_all_restrictions(exam_set):
+            _enable_all_proctoring_restrictions(exam_set)
         return Response(
             {
                 'is_final': exam_set.is_final,
+                'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
+                'requires_all_restrictions': _exam_requires_all_restrictions(exam_set),
                 'questions': [_serialize_question(q) for q in qs]
             },
             status=status.HTTP_200_OK,
@@ -2217,6 +2398,8 @@ def exam_questions(request, subject_id, exam_set_id):
         points=points,
         case_sensitive=case_sensitive,
     )
+    if question_type != ExamQuestion.TYPE_ESSAY:
+        _enable_all_proctoring_restrictions(exam_set)
     return Response(_serialize_question(q), status=status.HTTP_201_CREATED)
 
 
@@ -2261,8 +2444,10 @@ def finalize_exam(request, subject_id, exam_set_id):
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if not exam_set.is_final:
+        if _exam_requires_all_restrictions(exam_set):
+            _enable_all_proctoring_restrictions(exam_set)
         exam_set.is_final = True
-        exam_set.save()
+        exam_set.save(update_fields=['is_final'])
     
     return Response({'message': 'Exam finalized successfully.'}, status=status.HTTP_200_OK)
 
@@ -2361,10 +2546,13 @@ def student_exam_questions(request, exam_id):
         {**_serialize_question(q, include_answer=False), 'order': position}
         for position, q in enumerate(qs, start=1)
     ]
+    if _exam_requires_all_restrictions(exam_set):
+        _enable_all_proctoring_restrictions(exam_set)
     return Response({
         'questions': questions,
         'started_at': submission.started_at,
-        'time_limit': exam_set.time_limit
+        'time_limit': exam_set.time_limit,
+        'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
     }, status=status.HTTP_200_OK)
 
 
@@ -2799,7 +2987,13 @@ def student_analyze_gaze(request, exam_id):
     )
     logged_event = None
     is_no_face = not result.face_detected or result.label in ('no_face', 'multiple_people')
-    gaze_conf_ok = result.is_suspicious and _gaze_violation_confidence_ok(
+    direction_enabled = _gaze_direction_enabled(exam_set, result.label)
+    if not direction_enabled:
+        forced_label = None
+        payload['is_suspicious'] = False
+        payload['is_normal'] = True
+    payload['direction_enabled'] = direction_enabled
+    gaze_conf_ok = direction_enabled and result.is_suspicious and _gaze_violation_confidence_ok(
         result.label, result.confidence
     )
 
@@ -2908,6 +3102,103 @@ def student_analyze_gaze(request, exam_id):
     return Response(payload, status=status.HTTP_200_OK)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def student_detect_gadgets(request, exam_id):
+    """Detect phones/laptops and confirm them across consecutive webcam frames."""
+    exam_set = ExamSet.objects.filter(id=exam_id).first()
+    if not exam_set:
+        return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    student_email = request.user.email.lower()
+    if not _student_can_access_exam(student_email, exam_set):
+        return Response({'error': 'You are not enrolled in this exam.'}, status=status.HTTP_403_FORBIDDEN)
+
+    now_dt = timezone.now()
+    submission, _ = ExamSubmission.objects.get_or_create(
+        exam_set=exam_set,
+        student_email=student_email,
+        defaults={'started_at': now_dt},
+    )
+    if submission.is_done:
+        return Response({'error': 'No active exam attempt.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    image = request.FILES.get('image')
+    if not image:
+        return Response({'error': 'image file is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    raw = image.read()
+
+    try:
+        from .gadget_service import GADGET_EXECUTOR, detect_gadgets
+        detections = GADGET_EXECUTOR.submit(detect_gadgets, raw).result(timeout=30)
+    except ValueError:
+        return Response({'error': 'Could not decode image.'}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:
+        return Response({'error': f'Gadget model unavailable: {exc}'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    key = (submission.id, submission.attempt_count)
+    now_ts = _gadget_now_timestamp()
+    state = _GADGET_DETECTION_STATE.setdefault(key, {
+        'streak': 0,
+        'first_seen': 0.0,
+        'last_seen': 0.0,
+        'last_logged': 0.0,
+    })
+    if detections:
+        if not state['first_seen'] or now_ts - state['last_seen'] > 2:
+            state['first_seen'] = now_ts
+            state['streak'] = 0
+        state['streak'] += 1
+        state['last_seen'] = now_ts
+    else:
+        state['streak'] = 0
+        state['first_seen'] = 0.0
+
+    detection_seconds = (
+        max(0.0, now_ts - state['first_seen'])
+        if detections and state['first_seen']
+        else 0.0
+    )
+    confirmed = bool(detections and detection_seconds >= 3.0)
+    logged_event = None
+    evidence = None
+    if confirmed and now_ts - state['last_logged'] >= 30:
+        labels = sorted({item['label'] for item in detections})
+        logged_event = _log_proctoring_event(
+            submission,
+            ExamProctoringEvent.EVENT_GADGET_DETECTED,
+            severity=ExamProctoringEvent.SEVERITY_WARNING,
+            message=f"Prohibited gadget detected: {', '.join(labels)}",
+            source='yolo_gadget_ai',
+            metadata={
+                'detections': detections,
+                'confirmation_frames': state['streak'],
+                'continuous_seconds': round(detection_seconds, 2),
+                'model': 'yolo11n',
+            },
+        )
+        evidence = ExamProctoringEvidence.objects.create(
+            submission=submission,
+            attempt_number=submission.attempt_count,
+            event=logged_event,
+            evidence_type=ExamProctoringEvidence.TYPE_WEBCAM,
+            image=ContentFile(raw, name=f'gadget_{logged_event.id}.jpg'),
+            caption=f"Gadget AI: {', '.join(labels)}",
+        )
+        state['last_logged'] = now_ts
+
+    return Response({
+        'detections': detections,
+        'detected': bool(detections),
+        'confirmation_count': state['streak'],
+        'continuous_seconds': round(detection_seconds, 2),
+        'required_seconds': 3,
+        'confirmed': confirmed,
+        'logged_event': _serialize_proctoring_event(logged_event) if logged_event else None,
+        'evidence': _serialize_proctoring_evidence(evidence, request) if evidence else None,
+    }, status=status.HTTP_200_OK)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def gaze_model_status(request):
@@ -2916,6 +3207,21 @@ def gaze_model_status(request):
         return Response({'error': 'Staff access required.'}, status=status.HTTP_403_FORBIDDEN)
     from .gaze_service import gaze_tracker_status
     return Response(gaze_tracker_status(), status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gaze_model_warmup(request):
+    """Begin loading proctoring AI before a student opens an exam."""
+    from .gaze_service import warm_gaze_tracker
+    from .gadget_service import warm_gadget_detector
+    gaze_queued = warm_gaze_tracker()
+    gadget_queued = warm_gadget_detector()
+    return Response({
+        'warming': gaze_queued or gadget_queued,
+        'gaze_warming': gaze_queued,
+        'gadget_warming': gadget_queued,
+    }, status=status.HTTP_202_ACCEPTED)
 
 
 def _subjective_max_points(question):

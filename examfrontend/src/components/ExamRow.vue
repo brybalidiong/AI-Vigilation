@@ -94,7 +94,7 @@ const timeMeridiem = computed(() => {
   padding-left: 0.25rem;
 }
 .timeline-time-clock {
-  font-family: "Outfit", sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.92rem;
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -155,7 +155,7 @@ const timeMeridiem = computed(() => {
 }
 .timeline-title {
   margin: 0;
-  font-family: "Outfit", sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: -0.01em;
