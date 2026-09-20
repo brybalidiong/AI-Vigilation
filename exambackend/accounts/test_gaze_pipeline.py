@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 
 from accounts import gaze_service
 from accounts.models import (
-    EnrolledStudent, ExamProctoringEvidence, ExamSet, ExamSubmission,
+    EnrolledStudent, ExamProctoringEvidence, ExamQuestion, ExamSet, ExamSubmission,
     StudentSet, Subject,
 )
 from gaze_tracker.tracker import GazeResult, GazeTracker
@@ -121,6 +121,7 @@ class GazeFrameTests(SimpleTestCase):
             'gaze_left': True,
             'gaze_right': True,
         }
+        consumer._essay_question_ids = {7}
         consumer.send = AsyncMock()
         below_result = GazeResult('Looking below', 0.82, True, False, True)
 
@@ -128,6 +129,7 @@ class GazeFrameTests(SimpleTestCase):
             await consumer.receive(text_data=json.dumps({
                 'image': base64.b64encode(b'jpeg').decode(),
                 'frame_id': 1,
+                'question_id': 7,
             }))
 
         payload = json.loads(consumer.send.call_args.kwargs['text_data'])
@@ -276,7 +278,16 @@ class GazeEvidenceTests(TestCase):
             self.exam.pk, self.student.email, self.raw, below_result,
         )
 
-        response = self.post_frame(record_strike='true', forced_label='Looking below')
+        essay = ExamQuestion.objects.create(
+            exam_set=self.exam,
+            question_type=ExamQuestion.TYPE_ESSAY,
+            question_text='Explain.',
+        )
+        response = self.post_frame(
+            record_strike='true',
+            forced_label='Looking below',
+            question_id=essay.pk,
+        )
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(response.data['direction_enabled'])
@@ -284,6 +295,31 @@ class GazeEvidenceTests(TestCase):
         self.assertTrue(response.data['is_normal'])
         self.assertNotIn('logged_event', response.data)
         self.assertFalse(ExamProctoringEvidence.objects.exists())
+
+    def test_disabled_essay_direction_remains_enabled_for_objective_question(self):
+        self.exam.detect_gaze_below = False
+        self.exam.save(update_fields=['detect_gaze_below'])
+        objective = ExamQuestion.objects.create(
+            exam_set=self.exam,
+            question_type=ExamQuestion.TYPE_MULTIPLE_CHOICE,
+            question_text='Choose.',
+            choices=['A', 'B'],
+            correct_answer='A',
+        )
+        below_result = GazeResult('Looking below', 0.82, True, False, True)
+        self.receipt = gaze_service.sign_gaze_result(
+            self.exam.pk, self.student.email, self.raw, below_result,
+        )
+
+        response = self.post_frame(
+            record_strike='true',
+            forced_label='Looking below',
+            question_id=objective.pk,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['direction_enabled'])
+        self.assertIsNotNone(response.data.get('logged_event'))
 
     def test_tampered_frame_is_rejected_without_inference(self):
         self.raw = b'different image'
@@ -302,7 +338,8 @@ class GazeEvidenceTests(TestCase):
             for offset in range(4)
         ]
 
-        with patch('accounts.gadget_service.detect_gadgets', return_value=detection), \
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), \
+                patch('accounts.gadget_service.detect_gadgets', return_value=detection), \
                 patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
             responses = [
                 self.client.post(url, {
@@ -324,6 +361,90 @@ class GazeEvidenceTests(TestCase):
             ExamProctoringEvidence.objects.get().event.event_type,
             'gadget_detected',
         )
+
+    def test_gadget_confirmation_tolerates_one_missed_frame(self):
+        detection = [{'label': 'cell phone', 'confidence': 0.91, 'box': [1, 2, 30, 40]}]
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+        started = timezone.now()
+        check_times = [
+            (started + timedelta(seconds=offset)).timestamp()
+            for offset in range(5)
+        ]
+
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), patch(
+            'accounts.gadget_service.detect_gadgets',
+            side_effect=[detection, [], detection, detection, detection],
+        ), patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
+            responses = [
+                self.client.post(url, {
+                    'image': SimpleUploadedFile(
+                        f'gadget-gap-{index}.jpg', self.raw, content_type='image/jpeg',
+                    ),
+                })
+                for index in range(5)
+            ]
+
+        self.assertTrue(any(response.data['confirmed'] for response in responses))
+        self.assertTrue(any(response.data['logged_event'] for response in responses))
+
+    def test_disabled_gadget_restriction_skips_inference(self):
+        self.exam.detect_gadgets = False
+        self.exam.save(update_fields=['detect_gadgets'])
+        essay = ExamQuestion.objects.create(
+            exam_set=self.exam,
+            question_type=ExamQuestion.TYPE_ESSAY,
+            question_text='Explain.',
+        )
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+
+        with patch('accounts.gadget_service.detect_gadgets') as detect:
+            response = self.client.post(url, {
+                'image': SimpleUploadedFile('gadget.jpg', self.raw, content_type='image/jpeg'),
+                'question_id': essay.pk,
+            })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['enabled'])
+        detect.assert_not_called()
+
+    def test_disabled_essay_gadget_detection_remains_enabled_for_objective_question(self):
+        self.exam.detect_gadgets = False
+        self.exam.save(update_fields=['detect_gadgets'])
+        objective = ExamQuestion.objects.create(
+            exam_set=self.exam,
+            question_type=ExamQuestion.TYPE_MULTIPLE_CHOICE,
+            question_text='Choose.',
+            choices=['A', 'B'],
+            correct_answer='A',
+        )
+        detection = [{'label': 'cell phone', 'confidence': 0.91, 'box': [1, 2, 30, 40]}]
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), \
+                patch('accounts.gadget_service.detect_gadgets', return_value=detection):
+            response = self.client.post(url, {
+                'image': SimpleUploadedFile('gadget.jpg', self.raw, content_type='image/jpeg'),
+                'question_id': objective.pk,
+            })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['enabled'])
+        self.assertTrue(response.data['detected'])
+
+    def test_cold_gadget_model_reports_warming_instead_of_unavailable(self):
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=False), \
+                patch('accounts.gadget_service.warm_gadget_detector', return_value=True) as warm, \
+                patch('accounts.gadget_service.detect_gadgets') as detect:
+            response = self.client.post(url, {
+                'image': SimpleUploadedFile('gadget.jpg', self.raw, content_type='image/jpeg'),
+            })
+
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertTrue(response.data['warming'])
+        warm.assert_called_once_with()
+        detect.assert_not_called()
 
 
 @override_settings(STORAGES={'default': {'BACKEND': 'django.core.files.storage.InMemoryStorage'}})

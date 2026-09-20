@@ -57,6 +57,13 @@ def warm_gadget_detector() -> bool:
         return True
 
 
+def gadget_detector_ready() -> bool:
+    """Return True only after model loading and synthetic warmup both finish."""
+    if not get_gadget_detector.cache_info().currsize:
+        return False
+    return _warmup_future is None or _warmup_future.done()
+
+
 def detect_gadgets(raw: bytes) -> list[dict]:
     frame = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
     if frame is None:

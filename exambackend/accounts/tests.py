@@ -195,6 +195,24 @@ class ExamQuestionOrderTests(TestCase):
             [(q.pk, q.order) for q in self.questions],
         )
 
+    def test_essay_questions_are_always_after_objective_questions(self):
+        essays = [
+            ExamQuestion.objects.create(
+                exam_set=self.exam,
+                order=20 + index,
+                question_text=f'Essay {index}',
+                question_type=ExamQuestion.TYPE_ESSAY,
+            )
+            for index in range(2)
+        ]
+
+        questions = self.fetch_questions()
+        types = [question['question_type'] for question in questions]
+
+        self.assertEqual(types[-2:], [ExamQuestion.TYPE_ESSAY, ExamQuestion.TYPE_ESSAY])
+        self.assertNotIn(ExamQuestion.TYPE_ESSAY, types[:-2])
+        self.assertCountEqual([question['id'] for question in questions[-2:]], [q.pk for q in essays])
+
     def test_empty_and_single_question_exams(self):
         self.exam.questions.exclude(pk=self.questions[0].pk).delete()
         questions = self.fetch_questions()
@@ -243,6 +261,7 @@ class ExamProctoringRestrictionTests(TestCase):
                 'gaze_below': False,
                 'gaze_left': False,
                 'gaze_right': True,
+                'gadgets': False,
             }},
             format='json',
         )
@@ -252,6 +271,7 @@ class ExamProctoringRestrictionTests(TestCase):
         self.assertFalse(self.exam.detect_gaze_below)
         self.assertFalse(self.exam.detect_gaze_left)
         self.assertTrue(self.exam.detect_gaze_right)
+        self.assertFalse(self.exam.detect_gadgets)
 
     def test_non_essay_question_enables_and_locks_all_restrictions(self):
         ExamSet.objects.filter(pk=self.exam.pk).update(
@@ -259,6 +279,7 @@ class ExamProctoringRestrictionTests(TestCase):
             detect_gaze_below=False,
             detect_gaze_left=False,
             detect_gaze_right=False,
+            detect_gadgets=False,
         )
         create_response = self.client.post(
             self.questions_url,
@@ -276,6 +297,7 @@ class ExamProctoringRestrictionTests(TestCase):
             self.exam.detect_gaze_below,
             self.exam.detect_gaze_left,
             self.exam.detect_gaze_right,
+            self.exam.detect_gadgets,
         ]))
 
         disable_response = self.client.patch(
@@ -284,7 +306,78 @@ class ExamProctoringRestrictionTests(TestCase):
             format='json',
         )
         self.assertEqual(disable_response.status_code, 400, disable_response.data)
-        self.assertIn('only essay-only exams', disable_response.data['error'].lower())
+        self.assertIn('at least one essay question', disable_response.data['error'].lower())
+
+    def test_mixed_exam_with_an_essay_can_customize_restrictions(self):
+        ExamQuestion.objects.create(
+            exam_set=self.exam,
+            order=1,
+            question_type=ExamQuestion.TYPE_MULTIPLE_CHOICE,
+            question_text='Choose one.',
+            choices=['A', 'B'],
+            correct_answer='A',
+        )
+        ExamQuestion.objects.create(
+            exam_set=self.exam,
+            order=2,
+            question_type=ExamQuestion.TYPE_ESSAY,
+            question_text='Explain your choice.',
+        )
+
+        response = self.client.patch(
+            self.detail_url,
+            {'proctoring_restrictions': {'gaze_left': False, 'gadgets': False}},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.exam.refresh_from_db()
+        self.assertFalse(self.exam.detect_gaze_left)
+        self.assertFalse(self.exam.detect_gadgets)
+
+
+@override_settings(STORAGES={'default': {'BACKEND': 'django.core.files.storage.InMemoryStorage'}})
+class ExamQuestionUploadTests(TestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(username='upload-instructor', is_staff=True)
+        self.subject = Subject.objects.create(
+            name='Writing Uploads', code='WUPLOAD', instructor=self.instructor,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+        self.url = f'/api/instructor/subjects/{self.subject.pk}/exam-sets/'
+
+    def upload(self, content, question_format):
+        return self.client.post(self.url, {
+            'title': 'Uploaded exam',
+            'due_at': '2030-01-01T12:00:00Z',
+            'question_file_format': question_format,
+            'exam_file': SimpleUploadedFile('questions.txt', content.encode('utf-8'), content_type='text/plain'),
+        }, format='multipart')
+
+    def test_uploads_blank_line_separated_essay_questions(self):
+        response = self.upload(
+            'Explain the water cycle.\n\nCompare mitosis and meiosis.',
+            'essay',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        exam = ExamSet.objects.get(pk=response.data['id'])
+        self.assertEqual(
+            list(exam.questions.values_list('question_type', 'question_text')),
+            [
+                (ExamQuestion.TYPE_ESSAY, 'Explain the water cycle.'),
+                (ExamQuestion.TYPE_ESSAY, 'Compare mitosis and meiosis.'),
+            ],
+        )
+        self.assertFalse(response.data['requires_all_restrictions'])
+
+    def test_invalid_aiken_upload_returns_an_error_instead_of_empty_exam(self):
+        response = self.upload('Question without choices or answer', 'aiken')
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('Aiken', response.data['error'])
+        self.assertFalse(ExamSet.objects.exists())
 
 
 class InstructorSubjectiveGradingTests(TestCase):

@@ -72,9 +72,10 @@ class GazeConsumer(AsyncWebsocketConsumer):
             'gaze_left': True,
             'gaze_right': True,
         }
+        self._essay_question_ids = set()
 
         from asgiref.sync import sync_to_async
-        from accounts.models import ExamSet
+        from accounts.models import ExamQuestion, ExamSet
         restriction_values = await sync_to_async(
             lambda: ExamSet.objects.filter(pk=self.exam_id).values(
                 'detect_gaze_above',
@@ -91,6 +92,13 @@ class GazeConsumer(AsyncWebsocketConsumer):
                 'gaze_left': restriction_values['detect_gaze_left'],
                 'gaze_right': restriction_values['detect_gaze_right'],
             }
+        self._essay_question_ids = set(await sync_to_async(
+            lambda: list(ExamQuestion.objects.filter(
+                exam_set_id=self.exam_id,
+                question_type=ExamQuestion.TYPE_ESSAY,
+            ).values_list('id', flat=True)),
+            thread_sensitive=True,
+        )())
 
         # Extract student email from JWT token passed as query param
         query_string = self.scope.get('query_string', b'').decode()
@@ -122,6 +130,10 @@ class GazeConsumer(AsyncWebsocketConsumer):
         try:
             data = json.loads(text_data)
             image_data = data.get('image', '')
+            try:
+                question_id = int(data.get('question_id'))
+            except (TypeError, ValueError):
+                question_id = None
 
             if image_data.startswith('data:image'):
                 image_data = image_data.split(',')[1]
@@ -141,9 +153,10 @@ class GazeConsumer(AsyncWebsocketConsumer):
             # Apply confidence gating: don't count as suspicious unless the model
             # is sufficiently confident. This prevents low-confidence below/right
             # frames from starting the violation timer.
-            direction_enabled = _ws_direction_enabled(
-                label,
-                getattr(self, '_restrictions', {}),
+            direction_enabled = (
+                _ws_direction_enabled(label, getattr(self, '_restrictions', {}))
+                if question_id in getattr(self, '_essay_question_ids', set())
+                else True
             )
             is_suspicious = result.is_suspicious and direction_enabled
             if is_suspicious and not is_no_face:

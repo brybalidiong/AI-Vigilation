@@ -161,6 +161,7 @@ class ExamSet(models.Model):
     detect_gaze_below = models.BooleanField(default=True)
     detect_gaze_left = models.BooleanField(default=True)
     detect_gaze_right = models.BooleanField(default=True)
+    detect_gadgets = models.BooleanField(default=True)
     assigned_sets = models.ManyToManyField('StudentSet', related_name='assigned_exams', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

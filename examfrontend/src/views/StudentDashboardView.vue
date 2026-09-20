@@ -908,6 +908,7 @@ const activeExamRestrictions = ref({
   gaze_below: true,
   gaze_left: true,
   gaze_right: true,
+  gadgets: true,
 });
 
 // â”€â”€â”€ Proctoring state â”€â”€â”€
@@ -1085,6 +1086,7 @@ function _formalGazeLabel(label) {
 }
 
 function _isGazeDirectionEnabled(label) {
+  if (currentQuestion.value?.question_type !== 'essay') return true;
   const normalized = String(label || '').toLowerCase();
   if (normalized.includes('above')) return activeExamRestrictions.value.gaze_above;
   if (normalized.includes('below')) return activeExamRestrictions.value.gaze_below;
@@ -1095,6 +1097,11 @@ function _isGazeDirectionEnabled(label) {
     return activeExamRestrictions.value.gaze_right;
   }
   return true;
+}
+
+function _isGadgetDetectionEnabled() {
+  return currentQuestion.value?.question_type !== 'essay'
+    || activeExamRestrictions.value.gadgets;
 }
 
 function _gazePendingMatches(kind, label) {
@@ -1327,7 +1334,7 @@ function _stopProctoringCaptureTimer() {
 }
 
 async function _runGadgetDetection() {
-  if (!takingExam.value || examTerminated.value || submitting.value || _gadgetDetectionInFlight) return;
+  if (!_isGadgetDetectionEnabled() || !takingExam.value || examTerminated.value || submitting.value || _gadgetDetectionInFlight) return;
   const video = examVideoEl.value;
   if (!video || video.readyState < 2 || !video.videoWidth) return;
 
@@ -1345,6 +1352,7 @@ async function _runGadgetDetection() {
 
     const form = new FormData();
     form.append('image', blob, `gadget_${Date.now()}.jpg`);
+    form.append('question_id', String(currentQuestion.value?.id || ''));
     const { data } = await api.post(
       `/api/student/exams/${takingExam.value.id}/proctoring/gadgets/`,
       form,
@@ -1410,6 +1418,7 @@ async function _runGazeCheck() {
     if (!blob) return;
     const form = new FormData();
     form.append('image', blob, `gaze_${Date.now()}.jpg`);
+    form.append('question_id', String(analyzed?.questionId || currentQuestion.value?.id || ''));
     form.append('record_strike', 'false');
     if (analyzed) {
       form.append('frame_receipt', analyzed.receipt);
@@ -1974,6 +1983,7 @@ async function _recordWsViolation(label) {
     form.append('frame_receipt', analyzed.receipt);
     form.append('record_strike', 'true');
     form.append('forced_label', label);
+    form.append('question_id', String(analyzed.questionId || currentQuestion.value?.id || ''));
 
     const { data } = await api.post(
       `/api/student/exams/${takingExam.value.id}/proctoring/gaze/`,
@@ -2040,11 +2050,20 @@ async function _sendWsFrame() {
   // Use canvas.toDataURL for base64 string
   const base64Image = canvas.toDataURL('image/jpeg', 0.6);
   const socket = _gazeWs;
-  _wsPendingFrame = { id: ++_wsFrameId, image: base64Image, capturedAt: Date.now() };
+  _wsPendingFrame = {
+    id: ++_wsFrameId,
+    image: base64Image,
+    capturedAt: Date.now(),
+    questionId: currentQuestion.value?.id || null,
+  };
   _wsResponseTimeout = setTimeout(() => {
     if (_gazeWs === socket) socket.close();
   }, _wsHasResult ? WS_RESPONSE_TIMEOUT_MS : WS_FIRST_RESULT_TIMEOUT_MS);
-  socket.send(JSON.stringify({ image: base64Image, frame_id: _wsPendingFrame.id }));
+  socket.send(JSON.stringify({
+    image: base64Image,
+    frame_id: _wsPendingFrame.id,
+    question_id: _wsPendingFrame.questionId,
+  }));
 }
 
 function _stopGazeWsLoop() {
@@ -2655,6 +2674,7 @@ async function _doOpenExam(exam) {
       gaze_below: qRes.data.proctoring_restrictions?.gaze_below ?? true,
       gaze_left: qRes.data.proctoring_restrictions?.gaze_left ?? true,
       gaze_right: qRes.data.proctoring_restrictions?.gaze_right ?? true,
+      gadgets: qRes.data.proctoring_restrictions?.gadgets ?? true,
     };
     for (const q of examQuestions.value) {
       studentAnswers.value[q.id] = "";
@@ -2777,6 +2797,7 @@ function closeTakeExam() {
     gaze_below: true,
     gaze_left: true,
     gaze_right: true,
+    gadgets: true,
   };
   _stopProctoringCaptureTimer();
   _stopGazeCheckTimer();

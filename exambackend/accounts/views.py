@@ -1408,6 +1408,7 @@ def subject_exam_sets(request, subject_id):
     available_from_raw = (request.data.get('available_from') or '').strip()
     due_at_raw = (request.data.get('due_at') or '').strip()
     exam_file = request.FILES.get('exam_file')
+    question_file_format = request.data.get('question_file_format', 'auto')
     max_attempts_raw = request.data.get('max_attempts', 1)
     time_limit_raw = request.data.get('time_limit', 60)
     assigned_sets_raw = request.data.get('assigned_sets', '[]')
@@ -1415,6 +1416,13 @@ def subject_exam_sets(request, subject_id):
         return Response({'error': 'Exam set title is required.'}, status=status.HTTP_400_BAD_REQUEST)
     if not due_at_raw:
         return Response({'error': 'Due date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    parsed_questions = []
+    if exam_file:
+        try:
+            parsed_questions = _parse_uploaded_exam(exam_file, question_file_format)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     
     available_from_value = None
     if available_from_raw:
@@ -1455,82 +1463,11 @@ def subject_exam_sets(request, subject_id):
     except:
         pass
 
-    if exam_file:
-        try:
-            filename = exam_file.name.lower()
-            exam_file.seek(0)
-            content = exam_file.read().decode('utf-8-sig')
-            lines = content.splitlines()
-
-            order = 1
-            if filename.endswith('.csv'):
-                reader = csv.reader(lines)
-                header = next(reader, None)
-                for row in reader:
-                    if not row or not row[0].strip():
-                        continue
-                    q_text = row[0].strip()
-                    q_type = ExamQuestion.TYPE_MULTIPLE_CHOICE
-                    correct_ans = None
-                    choices = []
-
-                    if len(row) > 1:
-                        cell = row[1].strip().lower()
-                        if cell in ('multiple_choice', 'identification'):
-                            q_type = cell
-                            if len(row) > 2:
-                                correct_ans = row[2].strip()
-                            choices = [c.strip() for c in row[3:] if c.strip()]
-                        else:
-                            correct_ans = row[1].strip()
-                            choices = [c.strip() for c in row[2:] if c.strip()]
-
-                    ExamQuestion.objects.create(
-                        exam_set=exam_set,
-                        order=order,
-                        question_type=q_type,
-                        question_text=q_text,
-                        choices=choices if q_type == ExamQuestion.TYPE_MULTIPLE_CHOICE else None,
-                        correct_answer=correct_ans
-                    )
-                    order += 1
-            elif filename.endswith('.iken') or filename.endswith('.txt'):
-                q_text = ""
-                choices = []
-                for line in lines:
-                    line = line.strip()
-                    if not line: continue
-                    if line.upper().startswith("ANSWER:"):
-                        ans_letter = line[7:].strip().upper()
-                        correct_ans_text = None
-                        clean_choices = []
-                        for c in choices:
-                            parts = c.split(maxsplit=1)
-                            if not parts: continue
-                            prefix = parts[0]
-                            text_val = parts[1] if len(parts) > 1 else ""
-                            clean_choices.append(text_val)
-                            if prefix.rstrip('.)').upper() == ans_letter:
-                                correct_ans_text = text_val
-                        
-                        if q_text and clean_choices and correct_ans_text:
-                            ExamQuestion.objects.create(
-                                exam_set=exam_set,
-                                order=order,
-                                question_type=ExamQuestion.TYPE_MULTIPLE_CHOICE,
-                                question_text=q_text,
-                                choices=clean_choices,
-                                correct_answer=correct_ans_text
-                            )
-                            order += 1
-                        q_text = ""
-                        choices = []
-                    elif not q_text:
-                        q_text = line
-                    else:
-                        choices.append(line)
-        except Exception as e:
-            pass # fallback to just saving the file if parsing fails
+    if parsed_questions:
+        ExamQuestion.objects.bulk_create([
+            ExamQuestion(exam_set=exam_set, order=index, **question)
+            for index, question in enumerate(parsed_questions, start=1)
+        ])
     return Response(
         {
             'id': exam_set.id,
@@ -1589,7 +1526,7 @@ def subject_exam_set_detail(request, subject_id, exam_set_id):
         if requires_all and not all(requested.values()):
             _enable_all_proctoring_restrictions(exam_set)
             return Response(
-                {'error': 'Only essay-only exams can customize proctoring restrictions. All other exam types require every restriction.'},
+                {'error': 'Add at least one essay question before customizing proctoring restrictions.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2121,6 +2058,7 @@ PROCTORING_RESTRICTION_FIELDS = {
     'gaze_below': 'detect_gaze_below',
     'gaze_left': 'detect_gaze_left',
     'gaze_right': 'detect_gaze_right',
+    'gadgets': 'detect_gadgets',
 }
 
 
@@ -2133,11 +2071,14 @@ def _serialize_proctoring_restrictions(exam_set):
 
 def _exam_requires_all_restrictions(exam_set):
     if hasattr(exam_set, 'question_count') and hasattr(exam_set, 'non_essay_question_count'):
-        return exam_set.question_count == 0 or exam_set.non_essay_question_count > 0
+        return (
+            exam_set.question_count == 0
+            or exam_set.question_count == exam_set.non_essay_question_count
+        )
     questions = exam_set.questions.all()
     return (
         not questions.exists()
-        or questions.exclude(question_type=ExamQuestion.TYPE_ESSAY).exists()
+        or not questions.filter(question_type=ExamQuestion.TYPE_ESSAY).exists()
     )
 
 
@@ -2164,7 +2105,128 @@ def _request_boolean(value):
     raise ValueError('Restriction values must be booleans.')
 
 
-def _gaze_direction_enabled(exam_set, label):
+def _parse_uploaded_exam(upload, requested_format='auto'):
+    """Parse an uploaded question file before creating the exam.
+
+    Text uploads support Aiken multiple-choice files and essay prompts separated
+    by a blank line. The explicit format sent by the instructor UI removes any
+    ambiguity, while ``auto`` keeps older clients working.
+    """
+    filename = upload.name.lower()
+    if not filename.endswith(('.txt', '.iken', '.csv')):
+        raise ValueError('Question files must be .txt, .iken, or .csv.')
+    if upload.size > 5 * 1024 * 1024:
+        raise ValueError('Question files must be 5 MB or smaller.')
+
+    try:
+        upload.seek(0)
+        content = upload.read().decode('utf-8-sig')
+    except UnicodeDecodeError as exc:
+        raise ValueError('Question files must use UTF-8 text encoding.') from exc
+    finally:
+        upload.seek(0)
+
+    requested_format = str(requested_format or 'auto').strip().lower()
+    if requested_format not in {'auto', 'aiken', 'essay'}:
+        raise ValueError('question_file_format must be auto, aiken, or essay.')
+
+    questions = []
+    if filename.endswith('.csv'):
+        reader = csv.reader(io.StringIO(content))
+        header = next(reader, None)
+        for row in reader:
+            if not row or not row[0].strip():
+                continue
+            question_text = row[0].strip()
+            question_type = (row[1].strip().lower() if len(row) > 1 else '') or ExamQuestion.TYPE_MULTIPLE_CHOICE
+            if question_type not in {choice[0] for choice in ExamQuestion.QUESTION_TYPE_CHOICES}:
+                question_type = ExamQuestion.TYPE_MULTIPLE_CHOICE
+            correct_answer = row[2].strip() if len(row) > 2 and row[2].strip() else None
+            choices = [cell.strip() for cell in row[3:] if cell.strip()]
+            if question_type == ExamQuestion.TYPE_ESSAY:
+                correct_answer = None
+                choices = None
+            elif question_type != ExamQuestion.TYPE_MULTIPLE_CHOICE:
+                choices = None
+            questions.append({
+                'question_type': question_type,
+                'question_text': question_text,
+                'choices': choices,
+                'correct_answer': correct_answer,
+            })
+    else:
+        is_aiken = requested_format == 'aiken' or (
+            requested_format == 'auto'
+            and any(line.strip().upper().startswith('ANSWER:') for line in content.splitlines())
+        )
+        if is_aiken:
+            question_text = ''
+            choices = []
+            for raw_line in [*content.splitlines(), '']:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.upper().startswith('ANSWER:'):
+                    answer_letter = line[7:].strip().upper()
+                    clean_choices = []
+                    correct_answer = None
+                    for choice in choices:
+                        parts = choice.split(maxsplit=1)
+                        prefix = parts[0].rstrip('.)').upper() if parts else ''
+                        choice_text = parts[1].strip() if len(parts) > 1 else ''
+                        if choice_text:
+                            clean_choices.append(choice_text)
+                        if prefix == answer_letter:
+                            correct_answer = choice_text
+                    if not question_text or len(clean_choices) < 2 or not correct_answer:
+                        raise ValueError('Invalid Aiken file. Each question needs at least two choices and a valid ANSWER letter.')
+                    questions.append({
+                        'question_type': ExamQuestion.TYPE_MULTIPLE_CHOICE,
+                        'question_text': question_text,
+                        'choices': clean_choices,
+                        'correct_answer': correct_answer,
+                    })
+                    question_text = ''
+                    choices = []
+                elif not question_text:
+                    question_text = line
+                else:
+                    choices.append(line)
+            if question_text or choices:
+                raise ValueError('Invalid Aiken file. The last question is missing an ANSWER line.')
+        else:
+            prompts = [part.strip() for part in re.split(r'\r?\n\s*\r?\n', content) if part.strip()]
+            for prompt in prompts:
+                prompt = re.sub(r'^\s*(?:essay|question)\s*:\s*', '', prompt, flags=re.IGNORECASE).strip()
+                if prompt:
+                    questions.append({
+                        'question_type': ExamQuestion.TYPE_ESSAY,
+                        'question_text': prompt,
+                        'choices': None,
+                        'correct_answer': None,
+                    })
+
+    if not questions:
+        raise ValueError('No valid questions were found in the uploaded file.')
+    return questions
+
+
+def _question_uses_custom_restrictions(exam_set, question_id):
+    """Customized restriction toggles apply only while answering an essay."""
+    try:
+        question_id = int(question_id)
+    except (TypeError, ValueError):
+        return False
+    return ExamQuestion.objects.filter(
+        pk=question_id,
+        exam_set=exam_set,
+        question_type=ExamQuestion.TYPE_ESSAY,
+    ).exists()
+
+
+def _gaze_direction_enabled(exam_set, label, question_id=None):
+    if not _question_uses_custom_restrictions(exam_set, question_id):
+        return True
     normalized = str(label or '').lower()
     if 'above' in normalized:
         return exam_set.detect_gaze_above
@@ -2536,11 +2598,14 @@ def student_exam_questions(request, exam_id):
     # and instructor ordering intact so answers continue to grade by ID.
     qs = sorted(
         ExamQuestion.objects.filter(exam_set=exam_set),
-        key=lambda q: salted_hmac(
-            'student-exam-question-order',
-            f'{submission.pk}:{submission.attempt_count}:{q.pk}',
-            algorithm='sha256',
-        ).digest(),
+        key=lambda q: (
+            q.question_type == ExamQuestion.TYPE_ESSAY,
+            salted_hmac(
+                'student-exam-question-order',
+                f'{submission.pk}:{submission.attempt_count}:{q.pk}',
+                algorithm='sha256',
+            ).digest(),
+        ),
     )
     questions = [
         {**_serialize_question(q, include_answer=False), 'order': position}
@@ -2987,7 +3052,8 @@ def student_analyze_gaze(request, exam_id):
     )
     logged_event = None
     is_no_face = not result.face_detected or result.label in ('no_face', 'multiple_people')
-    direction_enabled = _gaze_direction_enabled(exam_set, result.label)
+    question_id = request.data.get('question_id')
+    direction_enabled = _gaze_direction_enabled(exam_set, result.label, question_id)
     if not direction_enabled:
         forced_label = None
         payload['is_suspicious'] = False
@@ -3114,6 +3180,16 @@ def student_detect_gadgets(request, exam_id):
     if not _student_can_access_exam(student_email, exam_set):
         return Response({'error': 'You are not enrolled in this exam.'}, status=status.HTTP_403_FORBIDDEN)
 
+    question_id = request.data.get('question_id')
+    custom_restrictions_apply = _question_uses_custom_restrictions(exam_set, question_id)
+    if custom_restrictions_apply and not exam_set.detect_gadgets:
+        return Response({
+            'enabled': False,
+            'detections': [],
+            'detected': False,
+            'confirmed': False,
+        }, status=status.HTTP_200_OK)
+
     now_dt = timezone.now()
     submission, _ = ExamSubmission.objects.get_or_create(
         exam_set=exam_set,
@@ -3129,7 +3205,21 @@ def student_detect_gadgets(request, exam_id):
     raw = image.read()
 
     try:
-        from .gadget_service import GADGET_EXECUTOR, detect_gadgets
+        from .gadget_service import (
+            GADGET_EXECUTOR,
+            detect_gadgets,
+            gadget_detector_ready,
+            warm_gadget_detector,
+        )
+        if not gadget_detector_ready():
+            warm_gadget_detector()
+            return Response({
+                'enabled': True,
+                'warming': True,
+                'detections': [],
+                'detected': False,
+                'confirmed': False,
+            }, status=status.HTTP_202_ACCEPTED)
         detections = GADGET_EXECUTOR.submit(detect_gadgets, raw).result(timeout=30)
     except ValueError:
         return Response({'error': 'Could not decode image.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -3140,26 +3230,35 @@ def student_detect_gadgets(request, exam_id):
     now_ts = _gadget_now_timestamp()
     state = _GADGET_DETECTION_STATE.setdefault(key, {
         'streak': 0,
+        'misses': 0,
         'first_seen': 0.0,
         'last_seen': 0.0,
         'last_logged': 0.0,
     })
+    state.setdefault('misses', 0)
     if detections:
-        if not state['first_seen'] or now_ts - state['last_seen'] > 2:
+        # CPU inference and network scheduling can make nominal one-second
+        # samples arrive a little late. Keep the run alive across one missed
+        # frame and a modest scheduling gap instead of resetting forever.
+        if not state['first_seen'] or now_ts - state['last_seen'] > 3.5:
             state['first_seen'] = now_ts
             state['streak'] = 0
         state['streak'] += 1
+        state['misses'] = 0
         state['last_seen'] = now_ts
     else:
-        state['streak'] = 0
-        state['first_seen'] = 0.0
+        state['misses'] += 1
+        if state['misses'] > 1 or (state['last_seen'] and now_ts - state['last_seen'] > 3.5):
+            state['streak'] = 0
+            state['first_seen'] = 0.0
+            state['last_seen'] = 0.0
 
     detection_seconds = (
         max(0.0, now_ts - state['first_seen'])
         if detections and state['first_seen']
         else 0.0
     )
-    confirmed = bool(detections and detection_seconds >= 3.0)
+    confirmed = bool(detections and state['streak'] >= 3 and detection_seconds >= 3.0)
     logged_event = None
     evidence = None
     if confirmed and now_ts - state['last_logged'] >= 30:
@@ -3188,6 +3287,7 @@ def student_detect_gadgets(request, exam_id):
         state['last_logged'] = now_ts
 
     return Response({
+        'enabled': True,
         'detections': detections,
         'detected': bool(detections),
         'confirmation_count': state['streak'],

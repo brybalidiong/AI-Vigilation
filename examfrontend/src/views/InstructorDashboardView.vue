@@ -408,10 +408,10 @@
                   </div>
                   <div>
                     <h3 class="create-panel__title">Upload New Exam</h3>
-                    <p class="create-panel__sub">Upload a .txt question file and configure the exam settings. Question order is automatically shuffled for each student and attempt.</p>
+                    <p class="create-panel__sub">Upload Aiken multiple-choice questions or essay prompts, then configure the exam settings. Question order is automatically shuffled for each student and attempt.</p>
                   </div>
                 </div>
-                <form @submit.prevent="createExamSet(); showUploadExamPanel = false">
+                <form @submit.prevent="createExamSet">
                   <div class="upload-exam-grid">
                     <div class="create-panel__field" style="grid-column: 1 / -1;">
                       <label class="create-panel__label">Exam Title</label>
@@ -441,12 +441,20 @@
                       </select>
                     </div>
                     <div class="create-panel__field">
+                      <label class="create-panel__label">Question Format</label>
+                      <select v-model="newExamFileFormat" class="create-panel__input">
+                        <option value="aiken">Multiple Choice (Aiken)</option>
+                        <option value="essay">Essay prompts</option>
+                      </select>
+                    </div>
+                    <div class="create-panel__field">
                       <label class="create-panel__label">Question File (.txt)</label>
                       <label class="file-pick-label" style="width:100%;">
                         <input type="file" accept=".txt" @change="onExamFileChange" class="file-pick-input" />
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
                         <span class="file-pick-text">{{ newExamFile ? newExamFile.name : 'Choose .txt file…' }}</span>
                       </label>
+                      <small v-if="newExamFileFormat === 'essay'" style="color:#64748b;line-height:1.4;">Separate each essay question with a blank line.</small>
                     </div>
                   </div>
                   <div class="create-panel__actions" style="margin-top:1.5rem;">
@@ -1080,16 +1088,16 @@
                 <div style="flex: 1;">
                   <h4 style="font-size: 1.15rem; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 0.5rem; font-weight: 700;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a457c" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3" stroke="#4a457c" stroke-width="2.5"/></svg>
-                    Quiz-wide Proctoring Restrictions
+                    Essay Proctoring Restrictions
                   </h4>
                   <p style="font-size: 0.85rem; color: #64748b; margin: 0.25rem 0 0 0;">
                     {{ examRequiresAllRestrictions
-                      ? 'Only essay-only exams can customize these settings. All other exam types require every gaze restriction.'
-                      : 'These settings apply once to the entire essay quiz, including every essay question.' }}
+                      ? 'Add at least one essay question to customize these settings.'
+                      : 'These choices apply only while students are answering essay questions. All restrictions remain active for earlier objective questions.' }}
                   </p>
                 </div>
                 <span style="flex-shrink: 0; white-space: nowrap; background: #e0e7ff; color: #4338ca; font-size: 0.7rem; font-weight: 800; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;">
-                  {{ restrictionsSaving ? 'Saving…' : (examRequiresAllRestrictions ? 'Required' : 'Entire quiz') }}
+                  {{ restrictionsSaving ? 'Saving…' : (examRequiresAllRestrictions ? 'Required' : 'Essay section') }}
                 </span>
               </div>
               
@@ -1143,6 +1151,19 @@
                   </div>
                   <div class="premium-switch">
                     <input v-model="examRestrictions.gaze_right" type="checkbox" :disabled="examIsFinal || examRequiresAllRestrictions || restrictionsSaving" @change="saveExamRestrictions" />
+                    <span class="premium-slider"></span>
+                  </div>
+                </label>
+
+                <!-- Toggle 5: Prohibited devices -->
+                <label class="premium-toggle-card" :class="{ 'premium-toggle-card--locked': examIsFinal || examRequiresAllRestrictions }">
+                  <div class="ptc-icon" style="background: #fee2e2; color: #b91c1c;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="18" x2="15" y2="18"/></svg></div>
+                  <div class="ptc-info">
+                    <span class="ptc-title">Gadget Detection</span>
+                    <span class="ptc-desc">Detect phones and laptops</span>
+                  </div>
+                  <div class="premium-switch">
+                    <input v-model="examRestrictions.gadgets" type="checkbox" :disabled="examIsFinal || examRequiresAllRestrictions || restrictionsSaving" @change="saveExamRestrictions" />
                     <span class="premium-slider"></span>
                   </div>
                 </label>
@@ -1339,13 +1360,12 @@
       </div>
     </div>
 
-    <!-- EXAM STATS MODAL (premium redesign) -->
+    <!-- EXAM STATS MODAL -->
     <transition name="stats-fade">
       <div v-if="statsExam" class="stats-backdrop" @click.self="closeExamStats" role="dialog" aria-modal="true" aria-labelledby="stats-modal-title">
         <div class="stats-shell">
           <!-- Header -->
           <header class="stats-header">
-            <div class="stats-header-glow"></div>
             <div class="stats-header-content">
               <span class="stats-eyebrow">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
@@ -1392,19 +1412,20 @@
                 <div class="ssc-top">
                   <span class="ssc-set-badge">{{ s.name }}</span>
                 </div>
-                <div
-                  class="ssc-ring"
-                  :class="{
-                    'ssc-ring--green': statsSetPercent(s) >= 80,
-                    'ssc-ring--amber': statsSetPercent(s) >= 50 && statsSetPercent(s) < 80,
-                    'ssc-ring--red':   statsSetPercent(s) < 50
-                  }"
-                  :style="{ '--pct': statsSetPercent(s) }"
-                >
-                  <div class="ssc-ring-inner">
-                    <span class="ssc-pct">{{ statsSetPercent(s) }}<span class="ssc-pct-unit">%</span></span>
-                    <span class="ssc-pct-label">complete</span>
-                  </div>
+                <div class="ssc-progress-heading">
+                  <span class="ssc-pct">{{ statsSetPercent(s) }}<span class="ssc-pct-unit">%</span></span>
+                  <span class="ssc-pct-label">complete</span>
+                </div>
+                <div class="ssc-progress-track" aria-hidden="true">
+                  <span
+                    class="ssc-progress-fill"
+                    :class="{
+                      'ssc-progress-fill--green': statsSetPercent(s) >= 80,
+                      'ssc-progress-fill--amber': statsSetPercent(s) >= 50 && statsSetPercent(s) < 80,
+                      'ssc-progress-fill--red': statsSetPercent(s) < 50
+                    }"
+                    :style="{ width: `${statsSetPercent(s)}%` }"
+                  ></span>
                 </div>
                 <div class="ssc-counts">
                   <span class="ssc-done">{{ s.done }} done</span>
@@ -1452,8 +1473,8 @@
                         <span :class="{'stats-warn-text': ex.tab_switches > 0}">{{ ex.tab_switches }}</span>
                       </td>
                       <td class="stats-center">
-                        <div v-if="ex.gaze_violation_count > 0 || ex.gaze_no_face_count > 0" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
-                          <span style="font-size: 0.8rem; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 6px;" :title="`Gaze away: ${ex.gaze_violation_count} | No face: ${ex.gaze_no_face_count}`">
+                        <div v-if="ex.gaze_violation_count > 0 || ex.gaze_no_face_count > 0" class="stats-violation-stack">
+                          <span class="stats-violation-total" :title="`Gaze away: ${ex.gaze_violation_count} | No face: ${ex.gaze_no_face_count}`">
                             ⚠ {{ ex.gaze_violation_count + ex.gaze_no_face_count }}
                           </span>
                           <span class="stats-violation-breakdown">
@@ -1476,10 +1497,8 @@
                         <button
                           v-if="getExamineeReportStatus(ex) !== 'Not Started'"
                           type="button"
+                          class="stats-report-btn"
                           @click="openIntegrityReport({ exam_set_id: statsExam.id, subject_id: statsExam.subject_id, student_email: ex.email, score: ex.score ?? null })"
-                          style="font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid #a5b4fc; background: #eef2ff; color: #4338ca; cursor: pointer; white-space: nowrap; transition: background 0.15s;"
-                          onmouseover="this.style.background='#e0e7ff'"
-                          onmouseout="this.style.background='#eef2ff'"
                         >View Report →</button>
                         <span v-else style="color: #d1d5db; font-size: 0.75rem;">—</span>
                       </td>
@@ -2095,6 +2114,7 @@ const newExamTitle = ref("");
 const newExamStartAt = ref("");
 const newExamDueAt = ref("");
 const newExamFile = ref(null);
+const newExamFileFormat = ref('aiken');
 const newExamMaxAttempts = ref(1);
 const newExamTimeLimit = ref(60);
 const newExamAssignedSet = ref("");
@@ -2126,10 +2146,11 @@ const examRestrictions = ref({
   gaze_below: true,
   gaze_left: true,
   gaze_right: true,
+  gadgets: true,
 });
 const examRequiresAllRestrictions = computed(() =>
   examQuestions.value.length === 0
-  || examQuestions.value.some(question => question.question_type !== 'essay'),
+  || !examQuestions.value.some(question => question.question_type === 'essay'),
 );
 const newQ = ref({ type: 'multiple_choice', text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: false });
 const bulkText = ref("");
@@ -3084,6 +3105,7 @@ async function createExamSet() {
     payload.append("due_at", localDatetimeInputToApi(newExamDueAt.value));
     payload.append("max_attempts", newExamMaxAttempts.value);
     payload.append("time_limit", newExamTimeLimit.value);
+    payload.append("question_file_format", newExamFileFormat.value);
     const setsArray = newExamAssignedSet.value ? [Number(newExamAssignedSet.value)] : [];
     payload.append("assigned_sets", JSON.stringify(setsArray));
     if (newExamFile.value) payload.append("exam_file", newExamFile.value);
@@ -3096,6 +3118,8 @@ async function createExamSet() {
     newExamTimeLimit.value = 60;
     newExamAssignedSet.value = "";
     newExamFile.value = null;
+    newExamFileFormat.value = 'aiken';
+    showUploadExamPanel.value = false;
     await fetchExamSets();
     await fetchUpcomingExams();
   } catch (err) {
@@ -3142,6 +3166,7 @@ function closeManageQuestions() {
     gaze_below: true,
     gaze_left: true,
     gaze_right: true,
+    gadgets: true,
   };
 }
 
@@ -3177,6 +3202,7 @@ async function fetchExamQuestions() {
       gaze_below: data.proctoring_restrictions?.gaze_below ?? true,
       gaze_left: data.proctoring_restrictions?.gaze_left ?? true,
       gaze_right: data.proctoring_restrictions?.gaze_right ?? true,
+      gadgets: data.proctoring_restrictions?.gadgets ?? true,
     };
   } catch (err) {
     error.value = "Failed to load questions.";
@@ -3193,6 +3219,7 @@ async function saveExamRestrictions() {
       gaze_below: true,
       gaze_left: true,
       gaze_right: true,
+      gadgets: true,
     };
     return;
   }
@@ -3709,18 +3736,19 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(10, 10, 30, 0.6);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(5px);
 }
 
 /* Modal shell */
 .stats-shell {
   width: 100%;
-  max-width: 1040px;
-  background: #fff;
-  border-radius: 24px;
+  max-width: 1180px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 32px 80px rgba(15,23,42,0.22), 0 0 0 1px rgba(255,255,255,0.06);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.32);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 4rem);
@@ -3733,19 +3761,10 @@ onMounted(async () => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.75rem 2rem 1.5rem;
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  padding: 1.5rem 1.75rem;
+  background: #151b2d;
+  border-bottom: none;
   color: #f8fafc;
-  overflow: hidden;
-}
-.stats-header-glow {
-  position: absolute;
-  top: -60px;
-  right: -60px;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, rgba(99,102,241,0.35) 0%, transparent 70%);
-  pointer-events: none;
 }
 .stats-header-content { flex: 1; min-width: 0; }
 .stats-eyebrow {
@@ -3756,7 +3775,7 @@ onMounted(async () => {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: #a5b4fc;
+  color: #b8c1d9;
   margin-bottom: 0.5rem;
 }
 .stats-title {
@@ -3768,10 +3787,14 @@ onMounted(async () => {
   line-height: 1.2;
 }
 .stats-course-label {
-  margin: 0.4rem 0 0;
+  display: inline-flex;
+  margin: 0.55rem 0 0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
   font-size: 0.88rem;
-  color: #c7d2fe;
-  opacity: 0.85;
+  color: #d7dce8;
+  background: #222a40;
+  border: 1px solid #374057;
 }
 .stats-close-btn {
   flex-shrink: 0;
@@ -3780,35 +3803,41 @@ onMounted(async () => {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  background: #222a40;
+  border: 1px solid #3b455d;
   color: #fff;
   cursor: pointer;
   transition: background 0.18s;
   padding: 0;
 }
-.stats-close-btn:hover { background: rgba(255,255,255,0.22); }
+.stats-close-btn:hover { background: #303950; border-color: #64748b; }
 
 /* Summary bar */
 .stats-summary-bar {
-  display: flex;
-  gap: 0;
-  background: #f8fafc;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background: #eef2f7;
   border-bottom: 1px solid #e2e8f0;
 }
 .stats-summary-pill {
-  flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
   padding: 0.85rem 1rem;
-  border-right: 1px solid #e2e8f0;
-  gap: 0.15rem;
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-left: 4px solid #64748b;
+  border-radius: 10px;
+  gap: 0.75rem;
 }
-.stats-summary-pill:last-child { border-right: none; }
+.stats-summary-pill--green { border-left-color: #059669; }
+.stats-summary-pill--amber { border-left-color: #d97706; }
 .ssp-num {
-  font-size: 1.45rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #0f172a;
   line-height: 1;
@@ -3817,14 +3846,14 @@ onMounted(async () => {
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #94a3b8;
-  font-weight: 600;
+  color: #64748b;
+  font-weight: 700;
 }
 .stats-summary-pill--green .ssp-num { color: #059669; }
 .stats-summary-pill--amber .ssp-num { color: #d97706; }
 
 /* Body */
-.stats-body { padding: 2rem; overflow-y: auto; flex: 1; }
+.stats-body { padding: 1.5rem; overflow-y: auto; flex: 1; background: #f8fafc; }
 .stats-loading-state {
   display: flex;
   flex-direction: column;
@@ -3853,91 +3882,91 @@ onMounted(async () => {
 /* Set cards grid */
 .stats-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 1.1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
 }
 .stats-set-card {
   animation: card-pop 0.4s cubic-bezier(0.34,1.26,0.64,1) both;
   animation-delay: var(--card-delay, 0ms);
   background: #fff;
-  border: 1.5px solid #e9eaf4;
-  border-radius: 18px;
-  padding: 1.35rem 1rem 1.15rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  box-shadow: 0 2px 12px rgba(74,69,124,0.07);
+  align-items: stretch;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
   transition: box-shadow 0.2s, transform 0.2s;
 }
 .stats-set-card:hover {
-  box-shadow: 0 8px 28px rgba(99,102,241,0.15);
-  transform: translateY(-3px);
+  border-color: #a5b4fc;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.09);
+  transform: translateY(-2px);
 }
 @keyframes card-pop {
   from { opacity: 0; transform: scale(0.88) translateY(10px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
-.ssc-top { margin-bottom: 1rem; }
+.ssc-top { margin-bottom: 0.85rem; }
 .ssc-set-badge {
   display: inline-block;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #5b21b6;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #4338ca;
   font-size: 0.7rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 0.2rem 0.65rem;
-  border-radius: 999px;
+  border-radius: 6px;
 }
 
-/* Animated conic ring */
-.ssc-ring {
-  --pct: 0;
-  position: relative;
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  background: conic-gradient(
-    var(--ring-color, #6366f1) calc(var(--pct) * 1%),
-    #e8eaf5 0
-  );
+.ssc-progress-heading {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 0.9rem;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
 }
-.ssc-ring::before {
-  content: '';
-  position: absolute;
-  inset: 10px;
-  border-radius: 50%;
-  background: #fff;
+.ssc-progress-track {
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #e2e8f0;
+  margin-bottom: 0.8rem;
 }
-.ssc-ring--green { --ring-color: #10b981; }
-.ssc-ring--amber { --ring-color: #f59e0b; }
-.ssc-ring--red   { --ring-color: #ef4444; }
-
-.ssc-ring-inner {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.ssc-progress-fill {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: #64748b;
+  transition: width 0.45s ease;
 }
+.ssc-progress-fill--green { background: #059669; }
+.ssc-progress-fill--amber { background: #d97706; }
+.ssc-progress-fill--red { background: #dc2626; }
 .ssc-pct {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 900;
-  color: #1e293b;
+  color: #0f172a;
   line-height: 1;
 }
-.ssc-pct-unit { font-size: 0.75rem; font-weight: 700; opacity: 0.6; }
-.ssc-pct-label { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.07em; color: #94a3b8; margin-top: 0.1rem; }
+.ssc-pct-unit { font-size: 0.78rem; font-weight: 700; color: #64748b; }
+.ssc-pct-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b;
+  font-weight: 700;
+}
 
 .ssc-counts {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.4rem;
   font-size: 0.82rem;
   color: #64748b;
@@ -4298,28 +4327,87 @@ onMounted(async () => {
 .data-table tr.gaze-event-row td:first-child { border-left: 3px solid #f59e0b; }
 
 /* ---- Examinees stats table ---- */
-.stats-examinees-section { margin-top: 2rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem; }
-.stats-examinees-title { font-size: 1rem; font-weight: 600; color: #1e293b; margin: 0 0 1rem; }
-.stats-table-wrapper { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
-.stats-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left; }
-.stats-table th { background: #f8fafc; padding: 0.75rem 1rem; font-weight: 600; color: #475569; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
-.stats-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
+.stats-examinees-section {
+  margin-top: 1rem;
+  padding: 1.15rem;
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+.stats-examinees-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #172554;
+  margin: 0 0 0.9rem;
+}
+.stats-table-wrapper {
+  overflow: auto;
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  background: #ffffff;
+}
+.stats-table { width: 100%; min-width: 930px; border-collapse: collapse; font-size: 0.83rem; text-align: left; }
+.stats-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef2f7;
+  padding: 0.78rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #cbd5e1;
+  white-space: nowrap;
+}
+.stats-table td { padding: 0.8rem 0.85rem; border-bottom: 1px solid #e8edf4; color: #334155; vertical-align: middle; }
+.stats-table tbody tr { transition: background 0.15s ease; }
+.stats-table tbody tr:hover { background: #f8fafc; }
 .stats-table tr:last-child td { border-bottom: none; }
-.stats-ex-name { font-weight: 600; color: #0f172a; margin-bottom: 0.15rem; }
-.stats-ex-email { font-size: 0.75rem; color: #64748b; }
+.stats-ex-name { font-weight: 700; color: #0f172a; margin-bottom: 0.15rem; }
+.stats-ex-email { font-size: 0.72rem; color: #64748b; }
 .stats-center { text-align: center !important; }
 .stats-warn-text { color: #ef4444; font-weight: 700; }
 .stats-violation-breakdown { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.15rem 0.3rem; font-size: 0.68rem; line-height: 1.25; color: #92400e; }
-.stats-badge { display: inline-flex; padding: 0.25rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
-.stats-badge--green { background: #dcfce7; color: #16a34a; }
-.stats-badge--amber { background: #fef3c7; color: #d97706; }
-.stats-badge--red { background: #fee2e2; color: #ef4444; }
-.stats-badge--gray { background: #f1f5f9; color: #64748b; }
-.stats-badge--neutral { background: #f3f4f6; color: #475569; }
+.stats-violation-stack { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; }
+.stats-violation-total { font-size: 0.76rem; font-weight: 800; color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.15rem 0.45rem; }
+.stats-badge { display: inline-flex; padding: 0.28rem 0.6rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+.stats-badge--green { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.stats-badge--amber { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.stats-badge--red { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.stats-badge--gray { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+.stats-badge--neutral { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+.stats-report-btn {
+  padding: 0.38rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid #a5b4fc;
+  background: #ffffff;
+  color: #4338ca;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.stats-report-btn:hover { background: #eef2ff; border-color: #6366f1; }
 
 /* ---- Snapshot column ---- */
-.stats-snapshot-wrapper { width: 110px; height: 80px; border-radius: 8px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+.stats-snapshot-wrapper { width: 96px; height: 64px; border-radius: 8px; overflow: hidden; background: #f1f5f9; border: 1px solid #dbe3ee; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
 .stats-snapshot-img { width: 100%; height: 100%; object-fit: cover; }
 .stats-snapshot-placeholder { color: #cbd5e1; display: flex; }
+
+@media (max-width: 720px) {
+  .stats-backdrop { padding: 0; align-items: stretch; }
+  .stats-shell { max-height: 100vh; border-radius: 0; border: none; }
+  .stats-header { padding: 1.1rem 1rem; }
+  .stats-title { font-size: 1.25rem; }
+  .stats-summary-bar { grid-template-columns: 1fr; padding: 0.75rem; gap: 0.5rem; }
+  .stats-summary-pill { padding: 0.65rem 0.8rem; }
+  .stats-body { padding: 0.75rem; }
+  .stats-cards-grid { grid-template-columns: 1fr; }
+  .stats-examinees-section { padding: 0.75rem; }
+}
 </style>
 
