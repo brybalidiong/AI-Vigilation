@@ -89,12 +89,38 @@ _GAZE_NO_FACE_ABSENCE: dict[tuple[int, int], dict] = {}
 _GAZE_STRIKE_CACHE: dict[tuple[int, int], dict] = {}
 # Tracks when we last saw a suspicious frame — used for grace-period-based clearing.
 _GAZE_LAST_SUSPICIOUS: dict[tuple[int, int], object] = {}
-# A continuous three-second detection confirms a device; evidence is rate-limited.
+# Immediate gadget warnings; terminate after this many logged detections.
+GADGET_WARNING_TERMINATE_LIMIT = 3
+# Ignore back-to-back frames so one continuous hold is one warning.
+_GADGET_WARNING_COOLDOWN_SECONDS = 3.0
+_GADGET_INFER_TIMEOUT_SECONDS = 45
+# In-memory: (submission_id, attempt) -> {last_logged, cleared, warning_count}
 _GADGET_DETECTION_STATE: dict[tuple[int, int], dict] = {}
 
 
 def _gadget_now_timestamp() -> float:
     return timezone.now().timestamp()
+
+
+def _gadget_warning_count(submission, force_refresh: bool = False) -> int:
+    """Count logged gadget warnings for the current attempt."""
+    key = (submission.pk, submission.attempt_count)
+    state = _GADGET_DETECTION_STATE.setdefault(key, {
+        'last_logged': 0.0,
+        'cleared': True,
+        'warning_count': None,
+    })
+    if not force_refresh and state.get('warning_count') is not None:
+        return int(state['warning_count'])
+    count = ExamProctoringEvent.objects.filter(
+        submission=submission,
+        attempt_number=submission.attempt_count,
+        event_type=ExamProctoringEvent.EVENT_GADGET_DETECTED,
+    ).count()
+    state['warning_count'] = count
+    return count
+
+
 # Tracks when each submission last logged a gaze violation — enforces server-side cooldown.
 _GAZE_LAST_LOGGED: dict[tuple[int, int], object] = {}
 GAZE_VIOLATION_COOLDOWN_SECONDS = 6.0  # match WS_VIOLATION_COOLDOWN_MS on the frontend
@@ -322,6 +348,46 @@ def _clear_proctoring_for_attempt(submission):
     # Clear strike count cache for this attempt
     _GAZE_STRIKE_CACHE.pop((submission.pk, attempt), None)
     _GADGET_DETECTION_STATE.pop((submission.pk, attempt), None)
+
+
+def _purge_exam_set_student_records(exam_set):
+    """Delete every student-facing record tied to an exam before the exam itself.
+
+    Covers submissions, answers, proctoring events/evidence, integrity reports,
+    and in-memory strike caches so Exam Progress stays clean after quiz deletion.
+    """
+    submissions = list(ExamSubmission.objects.filter(exam_set=exam_set))
+    submission_ids = {submission.pk for submission in submissions}
+
+    if submission_ids:
+        for cache in (
+            _GAZE_STRIKE_CACHE,
+            _GAZE_LAST_LOGGED,
+            _GAZE_PENDING_STRIKES,
+            _GAZE_NO_FACE_ABSENCE,
+            _GAZE_LAST_SUSPICIOUS,
+            _GADGET_DETECTION_STATE,
+        ):
+            for key in list(cache.keys()):
+                if key and key[0] in submission_ids:
+                    cache.pop(key, None)
+
+        for evidence in ExamProctoringEvidence.objects.filter(
+            submission_id__in=submission_ids,
+        ).iterator():
+            if evidence.image:
+                evidence.image.delete(save=False)
+
+        for submission in submissions:
+            if submission.latest_snapshot:
+                submission.latest_snapshot.delete(save=False)
+
+        ExamIntegrityReport.objects.filter(submission_id__in=submission_ids).delete()
+        ExamProctoringEvidence.objects.filter(submission_id__in=submission_ids).delete()
+        ExamProctoringEvent.objects.filter(submission_id__in=submission_ids).delete()
+        ExamSubmission.objects.filter(pk__in=submission_ids).delete()
+
+    StudentAnswer.objects.filter(exam_set=exam_set).delete()
 
 
 def _log_proctoring_event(submission, event_type, *, severity=None, message='', source='', metadata=None):
@@ -1538,7 +1604,14 @@ def subject_exam_set_detail(request, subject_id, exam_set_id):
             'requires_all_restrictions': requires_all,
         })
 
-    exam_set.delete()
+    # Wipe student submissions, answers, proctoring logs/evidence, and integrity
+    # reports first so Exam Progress and student history do not keep orphans.
+    from django.db import transaction
+    with transaction.atomic():
+        _purge_exam_set_student_records(exam_set)
+        if exam_set.exam_file:
+            exam_set.exam_file.delete(save=False)
+        exam_set.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -3171,7 +3244,7 @@ def student_analyze_gaze(request, exam_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def student_detect_gadgets(request, exam_id):
-    """Detect phones/laptops and confirm them across consecutive webcam frames."""
+    """Detect phones/laptops and warn immediately; terminate after 3 warnings."""
     exam_set = ExamSet.objects.filter(id=exam_id).first()
     if not exam_set:
         return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -3188,6 +3261,9 @@ def student_detect_gadgets(request, exam_id):
             'detections': [],
             'detected': False,
             'confirmed': False,
+            'warning_count': 0,
+            'warning_limit': GADGET_WARNING_TERMINATE_LIMIT,
+            'should_terminate': False,
         }, status=status.HTTP_200_OK)
 
     now_dt = timezone.now()
@@ -3219,8 +3295,13 @@ def student_detect_gadgets(request, exam_id):
                 'detections': [],
                 'detected': False,
                 'confirmed': False,
+                'warning_count': _gadget_warning_count(submission),
+                'warning_limit': GADGET_WARNING_TERMINATE_LIMIT,
+                'should_terminate': False,
             }, status=status.HTTP_202_ACCEPTED)
-        detections = GADGET_EXECUTOR.submit(detect_gadgets, raw).result(timeout=30)
+        detections = GADGET_EXECUTOR.submit(detect_gadgets, raw).result(
+            timeout=_GADGET_INFER_TIMEOUT_SECONDS,
+        )
     except ValueError:
         return Response({'error': 'Could not decode image.'}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as exc:
@@ -3229,71 +3310,64 @@ def student_detect_gadgets(request, exam_id):
     key = (submission.id, submission.attempt_count)
     now_ts = _gadget_now_timestamp()
     state = _GADGET_DETECTION_STATE.setdefault(key, {
-        'streak': 0,
-        'misses': 0,
-        'first_seen': 0.0,
-        'last_seen': 0.0,
         'last_logged': 0.0,
+        'cleared': True,
+        'warning_count': None,
     })
-    state.setdefault('misses', 0)
-    if detections:
-        # CPU inference and network scheduling can make nominal one-second
-        # samples arrive a little late. Keep the run alive across one missed
-        # frame and a modest scheduling gap instead of resetting forever.
-        if not state['first_seen'] or now_ts - state['last_seen'] > 3.5:
-            state['first_seen'] = now_ts
-            state['streak'] = 0
-        state['streak'] += 1
-        state['misses'] = 0
-        state['last_seen'] = now_ts
-    else:
-        state['misses'] += 1
-        if state['misses'] > 1 or (state['last_seen'] and now_ts - state['last_seen'] > 3.5):
-            state['streak'] = 0
-            state['first_seen'] = 0.0
-            state['last_seen'] = 0.0
+    state.setdefault('cleared', True)
+    state.setdefault('last_logged', 0.0)
 
-    detection_seconds = (
-        max(0.0, now_ts - state['first_seen'])
-        if detections and state['first_seen']
-        else 0.0
-    )
-    confirmed = bool(detections and state['streak'] >= 3 and detection_seconds >= 3.0)
     logged_event = None
     evidence = None
-    if confirmed and now_ts - state['last_logged'] >= 30:
-        labels = sorted({item['label'] for item in detections})
-        logged_event = _log_proctoring_event(
-            submission,
-            ExamProctoringEvent.EVENT_GADGET_DETECTED,
-            severity=ExamProctoringEvent.SEVERITY_WARNING,
-            message=f"Prohibited gadget detected: {', '.join(labels)}",
-            source='yolo_gadget_ai',
-            metadata={
-                'detections': detections,
-                'confirmation_frames': state['streak'],
-                'continuous_seconds': round(detection_seconds, 2),
-                'model': 'yolo11n',
-            },
+    confirmed = False
+    if detections:
+        # Fire on first positive frame of an episode (after a clear stretch).
+        # Cooldown blocks flicker double-counts while the phone is still visible.
+        can_warn = (
+            state.get('cleared', True)
+            and now_ts - float(state.get('last_logged') or 0.0) >= _GADGET_WARNING_COOLDOWN_SECONDS
         )
-        evidence = ExamProctoringEvidence.objects.create(
-            submission=submission,
-            attempt_number=submission.attempt_count,
-            event=logged_event,
-            evidence_type=ExamProctoringEvidence.TYPE_WEBCAM,
-            image=ContentFile(raw, name=f'gadget_{logged_event.id}.jpg'),
-            caption=f"Gadget AI: {', '.join(labels)}",
-        )
-        state['last_logged'] = now_ts
+        if can_warn:
+            labels = sorted({item['label'] for item in detections})
+            logged_event = _log_proctoring_event(
+                submission,
+                ExamProctoringEvent.EVENT_GADGET_DETECTED,
+                severity=ExamProctoringEvent.SEVERITY_WARNING,
+                message=f"Prohibited gadget detected: {', '.join(labels)}",
+                source='yolo_gadget_ai',
+                metadata={
+                    'detections': detections,
+                    'model': 'yolo11n',
+                    'immediate': True,
+                },
+            )
+            evidence = ExamProctoringEvidence.objects.create(
+                submission=submission,
+                attempt_number=submission.attempt_count,
+                event=logged_event,
+                evidence_type=ExamProctoringEvidence.TYPE_WEBCAM,
+                image=ContentFile(raw, name=f'gadget_{logged_event.id}.jpg'),
+                caption=f"Gadget AI: {', '.join(labels)}",
+            )
+            state['last_logged'] = now_ts
+            state['cleared'] = False
+            state['warning_count'] = None
+            confirmed = True
+    else:
+        # Device left the frame — next appearance is a fresh warning.
+        state['cleared'] = True
+
+    warning_count = _gadget_warning_count(submission, force_refresh=logged_event is not None)
+    should_terminate = warning_count >= GADGET_WARNING_TERMINATE_LIMIT
 
     return Response({
         'enabled': True,
         'detections': detections,
         'detected': bool(detections),
-        'confirmation_count': state['streak'],
-        'continuous_seconds': round(detection_seconds, 2),
-        'required_seconds': 3,
         'confirmed': confirmed,
+        'warning_count': warning_count,
+        'warning_limit': GADGET_WARNING_TERMINATE_LIMIT,
+        'should_terminate': should_terminate,
         'logged_event': _serialize_proctoring_event(logged_event) if logged_event else None,
         'evidence': _serialize_proctoring_evidence(evidence, request) if evidence else None,
     }, status=status.HTTP_200_OK)

@@ -642,3 +642,89 @@ class GazeLabelStickyTests(SimpleTestCase):
         self.assertEqual(self.CLASSES[idx], "Looking at the left")
         self.assertGreaterEqual(confidence, 0.50)
 
+
+@override_settings(STORAGES={'default': {'BACKEND': 'django.core.files.storage.InMemoryStorage'}})
+class ExamSetDeletionPurgesStudentRecordsTests(TestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            username='purge-instructor', is_staff=True,
+        )
+        self.subject = Subject.objects.create(
+            name='Purge Course', code='PRG', instructor=self.instructor,
+        )
+        self.roster = StudentSet.objects.create(
+            name='Section A', subject=self.subject, created_by=self.instructor,
+        )
+        EnrolledStudent.objects.create(
+            email='student@example.com', student_set=self.roster,
+        )
+        self.exam = ExamSet.objects.create(
+            subject=self.subject, title='Quiz to delete', is_final=True,
+        )
+        self.question = ExamQuestion.objects.create(
+            exam_set=self.exam,
+            order=1,
+            question_type=ExamQuestion.TYPE_MULTIPLE_CHOICE,
+            question_text='Choose.',
+            choices=['A', 'B'],
+            correct_answer='A',
+        )
+        self.submission = ExamSubmission.objects.create(
+            exam_set=self.exam,
+            student_email='student@example.com',
+            is_done=True,
+            score=Decimal('100.00'),
+            integrity_score=Decimal('85.00'),
+        )
+        StudentAnswer.objects.create(
+            exam_set=self.exam,
+            question=self.question,
+            student_email='student@example.com',
+            answer_text='A',
+        )
+        from accounts.models import ExamIntegrityReport, ExamProctoringEvent
+        ExamProctoringEvent.objects.create(
+            submission=self.submission,
+            attempt_number=1,
+            event_type=ExamProctoringEvent.EVENT_GADGET_DETECTED,
+            severity=ExamProctoringEvent.SEVERITY_WARNING,
+            message='phone',
+        )
+        ExamIntegrityReport.objects.create(
+            submission=self.submission,
+            attempt_number=1,
+            integrity_score=Decimal('85.00'),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+
+    def test_deleting_exam_removes_progress_and_student_records(self):
+        from accounts.models import ExamIntegrityReport, ExamProctoringEvent
+
+        progress_before = self.client.get(
+            f'/api/instructor/subjects/{self.subject.pk}/exam-progress/',
+        )
+        self.assertEqual(progress_before.status_code, 200, progress_before.data)
+        self.assertTrue(
+            any(row['exam_set_id'] == self.exam.pk for row in progress_before.data['progress']),
+        )
+
+        delete_response = self.client.delete(
+            f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{self.exam.pk}/',
+        )
+        self.assertEqual(delete_response.status_code, 204)
+
+        self.assertFalse(ExamSet.objects.filter(pk=self.exam.pk).exists())
+        self.assertFalse(ExamSubmission.objects.filter(exam_set_id=self.exam.pk).exists())
+        self.assertFalse(StudentAnswer.objects.filter(exam_set_id=self.exam.pk).exists())
+        self.assertFalse(ExamProctoringEvent.objects.filter(submission_id=self.submission.pk).exists())
+        self.assertFalse(ExamIntegrityReport.objects.filter(submission_id=self.submission.pk).exists())
+
+        progress_after = self.client.get(
+            f'/api/instructor/subjects/{self.subject.pk}/exam-progress/',
+        )
+        self.assertEqual(progress_after.status_code, 200, progress_after.data)
+        self.assertFalse(
+            any(row['exam_set_id'] == self.exam.pk for row in progress_after.data['progress']),
+        )
+

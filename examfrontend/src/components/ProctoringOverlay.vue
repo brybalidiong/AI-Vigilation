@@ -20,6 +20,9 @@
             You looked away from the exam screen <span class="highlight">{{ gazeViolationCount }}</span> time{{ gazeViolationCount !== 1 ? 's' : '' }}.
           </template>
         </p>
+        <p v-else-if="terminateReason === 'gadget'" class="terminated-message">
+          A prohibited gadget was detected <span class="highlight">{{ gadgetWarningCount }}</span> time{{ gadgetWarningCount !== 1 ? 's' : '' }}.
+        </p>
         <p v-else class="terminated-message">
           You minimized the screen or switched tabs <span class="highlight">{{ switchCount }}</span> time{{ switchCount !== 1 ? 's' : '' }}.
         </p>
@@ -45,6 +48,8 @@ defineProps({
   gazeNoFaceCount: { type: Number, default: 0 },
   gazeViolationLimit: { type: Number, default: 8 },
   gazeNoFaceLimit: { type: Number, default: 5 },
+  gadgetWarningCount: { type: Number, default: 0 },
+  gadgetWarningLimit: { type: Number, default: 3 },
 });
 defineEmits(["dismiss"]);
 </script>

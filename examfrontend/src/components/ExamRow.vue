@@ -1,31 +1,50 @@
 <template>
-  <article class="timeline-row">
-    <div class="timeline-time" :title="timeText">
-      <span class="timeline-time-clock">{{ timeClock }}</span>
-      <span v-if="timeMeridiem" class="timeline-time-meridiem">{{ timeMeridiem }}</span>
+  <article class="timeline-row" :class="[toneClass, { 'timeline-row--center': centerCopy }]">
+    <div class="timeline-date" :title="dateTitle">
+      <span class="timeline-date-month">{{ dateMonth }}</span>
+      <span class="timeline-date-day">{{ dateDay }}</span>
     </div>
 
-    <div class="timeline-main" :class="{ 'timeline-main--center': centerCopy }">
-      <div v-if="!centerCopy" class="timeline-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-      </div>
-      <div class="timeline-copy" :class="{ 'timeline-copy--center': centerCopy }">
+    <div class="timeline-rail" aria-hidden="true">
+      <span class="timeline-dot"></span>
+    </div>
+
+    <div class="timeline-main">
+      <div class="timeline-copy">
         <div class="timeline-title-row">
           <h3 class="timeline-title">{{ title || 'Untitled exam' }}</h3>
           <span
             v-if="status"
-            class="timeline-status status-badge"
+            class="timeline-status"
             :class="statusClass"
           >{{ status }}</span>
         </div>
-        <p v-if="subtitle" class="timeline-subtitle">{{ subtitle }}</p>
+        <div v-if="timeText || subtitle" class="timeline-meta">
+          <span v-if="timeText" class="timeline-meta-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            {{ timeText }}
+          </span>
+          <span v-if="subtitle" class="timeline-meta-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 21s7-5.2 7-11a7 7 0 10-14 0c0 5.8 7 11 7 11z" />
+              <circle cx="12" cy="10" r="2.5" />
+            </svg>
+            {{ subtitle }}
+          </span>
+        </div>
       </div>
     </div>
 
     <div class="timeline-actions">
       <slot name="actions"></slot>
+      <span class="timeline-chevron" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      </span>
     </div>
   </article>
 </template>
@@ -39,175 +58,286 @@ const props = defineProps({
   subtitle: { type: String, default: '' },
   status: { type: String, default: '' },
   statusClass: { type: [String, Object, Array], default: '' },
+  /** ISO / API datetime used for the left date block */
+  dateIso: { type: [String, Date, null], default: null },
+  /** Visual accent: blue | amber | rose | slate */
+  tone: { type: String, default: '' },
   centerCopy: { type: Boolean, default: false },
+  dateMonth: { type: String, default: '' },
+  dateDay: { type: String, default: '' },
 });
 
-const timeClock = computed(() => {
-  const t = (props.timeText || '').trim();
-  const m = t.match(/^(\d{1,2}:\d{2})/);
-  return m ? m[1] : t || '—';
+const resolvedParts = computed(() => {
+  if (props.dateMonth && props.dateDay) {
+    return { month: props.dateMonth, day: props.dateDay };
+  }
+  const raw = props.dateIso;
+  const d = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  if (!d || Number.isNaN(d.getTime())) return { month: '—', day: '—' };
+  return {
+    month: d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+    day: String(d.getDate()).padStart(2, '0'),
+  };
 });
 
-const timeMeridiem = computed(() => {
-  const t = (props.timeText || '').trim();
-  const m = t.match(/\b(AM|PM)\b/i);
-  return m ? m[1].toUpperCase() : '';
+const dateMonth = computed(() => resolvedParts.value.month);
+const dateDay = computed(() => resolvedParts.value.day);
+
+const dateTitle = computed(() => {
+  const raw = props.dateIso;
+  const d = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  if (!d || Number.isNaN(d.getTime())) return props.timeText || '';
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+});
+
+const toneClass = computed(() => {
+  const explicit = String(props.tone || '').toLowerCase();
+  if (['blue', 'amber', 'rose', 'slate'].includes(explicit)) {
+    return `tone-${explicit}`;
+  }
+  const status = String(props.status || '').toLowerCase();
+  const cls = props.statusClass;
+  const classStr = Array.isArray(cls)
+    ? cls.join(' ')
+    : (typeof cls === 'object' && cls ? Object.keys(cls).filter((k) => cls[k]).join(' ') : String(cls || ''));
+
+  if (status.includes('open') || classStr.includes('badge-active') || classStr.includes('status-open') || classStr.includes('status-live')) return 'tone-blue';
+  if (status.includes('not yet') || status.includes('draft') || classStr.includes('badge-upcoming') || classStr.includes('status-draft') || classStr.includes('status-upcoming')) return 'tone-amber';
+  if (
+    status.includes('done')
+    || status.includes('not taken')
+    || classStr.includes('badge-done')
+    || classStr.includes('badge-not-taken')
+    || classStr.includes('status-closed')
+    || classStr.includes('status-ended')
+  ) return 'tone-rose';
+  return 'tone-blue';
 });
 </script>
 
 <style scoped>
 .timeline-row {
+  --tone-soft: #e8f1ff;
+  --tone-ink: #2f6fed;
+  --tone-tag-bg: #e8f1ff;
+  --tone-tag-fg: #2458d6;
+
   position: relative;
   display: grid;
-  grid-template-columns: 5rem minmax(0, 1fr) auto;
-  grid-template-areas: "time main actions";
-  align-items: center;
-  column-gap: 1rem;
-  padding: 0.85rem 1rem 0.85rem 0.9rem;
-  margin-bottom: 0.6rem;
-  border-radius: 13px;
-  background: #fff;
-  border: 1px solid #e8edf5;
-  transition: border-color 0.18s, box-shadow 0.18s;
+  grid-template-columns: 3.4rem 1.35rem minmax(0, 1fr) auto;
+  grid-template-areas: "date rail main actions";
+  align-items: stretch;
+  column-gap: 0.85rem;
+  padding: 1.05rem 0.35rem 1.05rem 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #eef1f6;
+  border-radius: 0;
+  box-shadow: none;
+  transition: background 0.15s ease;
 }
-.timeline-row::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--dash-accent, #1D3461);
-  border-radius: 3px 0 0 3px;
-  pointer-events: none;
+.timeline-row:last-child {
+  border-bottom: 0;
 }
 .timeline-row:hover {
-  border-color: rgba(var(--dash-accent-rgb, 29, 52, 97), 0.22);
-  box-shadow: 0 8px 24px rgba(var(--dash-accent-rgb, 29, 52, 97), 0.09);
+  background: rgba(248, 250, 252, 0.85);
 }
-.timeline-time {
-  grid-area: time;
+.timeline-row.tone-blue {
+  --tone-soft: #e8f1ff;
+  --tone-ink: #2f6fed;
+  --tone-tag-bg: #e8f1ff;
+  --tone-tag-fg: #2458d6;
+}
+.timeline-row.tone-amber {
+  --tone-soft: #fff4d6;
+  --tone-ink: #d97706;
+  --tone-tag-bg: #fff4d6;
+  --tone-tag-fg: #b45309;
+}
+.timeline-row.tone-rose {
+  --tone-soft: #ffe4e8;
+  --tone-ink: #e11d48;
+  --tone-tag-bg: #ffe4e8;
+  --tone-tag-fg: #be123c;
+}
+.timeline-row.tone-slate {
+  --tone-soft: #eef2f7;
+  --tone-ink: #64748b;
+  --tone-tag-bg: #eef2f7;
+  --tone-tag-fg: #475569;
+}
+
+.timeline-date {
+  grid-area: date;
+  align-self: center;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-left: 0.25rem;
+  gap: 0.05rem;
+  min-height: 3.35rem;
+  padding: 0.4rem 0.35rem;
+  border-radius: 12px;
+  background: var(--tone-soft);
+  color: var(--tone-ink);
 }
-.timeline-time-clock {
+.timeline-date-month {
   font-family: 'Poppins', sans-serif;
-  font-size: 0.92rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: #0f172a;
-  line-height: 1.1;
-}
-.timeline-time-meridiem {
-  margin-top: 0.1rem;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #64748b;
+  line-height: 1;
+  opacity: 0.85;
 }
+.timeline-date-day {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.timeline-rail {
+  grid-area: rail;
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+}
+/* Full-height segment so adjacent rows form one continuous vertical line */
+.timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: #e6ebf2;
+}
+.timeline-row:first-child .timeline-rail::before {
+  top: 50%;
+}
+.timeline-row:last-child .timeline-rail::before {
+  bottom: 50%;
+}
+.timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--tone-ink);
+  box-shadow: 0 0 0 4px #fff;
+}
+
 .timeline-main {
   grid-area: main;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
+  align-self: center;
   min-width: 0;
-}
-.timeline-main--center {
-  justify-content: center;
-}
-.timeline-icon {
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--dash-accent, #1D3461);
-  background: var(--dash-accent-soft, #eef2ff);
-}
-.timeline-icon svg {
-  width: 17px;
-  height: 17px;
-  display: block;
 }
 .timeline-copy {
-  flex: 1;
   min-width: 0;
-}
-.timeline-copy--center {
-  flex: 0 1 auto;
-  text-align: center;
-}
-.timeline-copy--center .timeline-title-row {
-  justify-content: center;
 }
 .timeline-title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem 0.5rem;
-  margin-bottom: 0.15rem;
+  gap: 0.4rem 0.55rem;
+  margin-bottom: 0.35rem;
 }
 .timeline-title {
   margin: 0;
   font-family: 'Poppins', sans-serif;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-  color: #1e293b;
-}
-.timeline-subtitle {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: #94a3b8;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: #1e3a5f;
 }
 .timeline-status {
-  font-size: 0.65rem !important;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem !important;
   font-weight: 700 !important;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.2rem 0.5rem !important;
+  letter-spacing: 0.02em;
+  text-transform: none !important;
+  padding: 0.22rem 0.6rem !important;
   border-radius: 999px !important;
+  border: 0 !important;
+  background: var(--tone-tag-bg) !important;
+  color: var(--tone-tag-fg) !important;
 }
+.timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+}
+.timeline-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #8b97a8;
+  line-height: 1.2;
+}
+.timeline-meta-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 .timeline-actions {
   grid-area: actions;
+  align-self: center;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 0.4rem;
 }
+.timeline-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #c0c8d4;
+}
+.timeline-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+.timeline-row:hover .timeline-chevron {
+  color: #94a3b8;
+}
+
 @media (max-width: 720px) {
   .timeline-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 3.1rem 1.1rem minmax(0, 1fr);
     grid-template-areas:
-      "time"
-      "main"
-      "actions";
-    text-align: center;
-  }
-  .timeline-time {
-    align-items: center;
-    flex-direction: row;
-    gap: 0.35rem;
-    justify-content: center;
-    padding-left: 0;
-  }
-  .timeline-time-meridiem {
-    margin-top: 0;
-  }
-  .timeline-main {
-    flex-direction: column;
+      "date rail main"
+      "actions actions actions";
+    row-gap: 0.65rem;
   }
   .timeline-actions {
-    justify-content: center;
+    justify-content: flex-start;
+    padding-left: 4.2rem;
+  }
+  .timeline-chevron {
+    display: none;
   }
 }
 </style>

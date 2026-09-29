@@ -11,11 +11,18 @@ import cv2
 import numpy as np
 
 
-GADGET_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gadget-inference')
+# Two workers so a still-running synthetic warmup predict cannot starve real
+# exam frames. All YOLO predict() calls are serialized via _infer_lock.
+GADGET_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix='gadget-inference')
 _warmup_lock = threading.Lock()
+_infer_lock = threading.Lock()
 _warmup_future = None
 
 DEFAULT_GADGET_NAMES = {'cell phone', 'laptop'}
+# COCO class ids: laptop=63, cell phone=67 — limits NMS work to gadget classes.
+_GADGET_CLASS_IDS = (63, 67)
+# 256 is fast on CPU while still resolving phones in a webcam PiP frame.
+_GADGET_IMGSZ = int(os.getenv('GADGET_IMGSZ', '256'))
 
 
 @lru_cache(maxsize=1)
@@ -44,13 +51,16 @@ def warm_gadget_detector() -> bool:
             detector = get_gadget_detector()
             # Run one synthetic frame so PyTorch graph/setup cost is paid before
             # the student enters an exam, not on their first monitored frame.
-            detector.predict(
-                source=np.zeros((480, 640, 3), dtype=np.uint8),
-                conf=0.55,
-                imgsz=640,
-                device='cpu',
-                verbose=False,
-            )
+            with _infer_lock:
+                detector.predict(
+                    source=np.zeros((192, 256, 3), dtype=np.uint8),
+                    conf=0.4,
+                    imgsz=_GADGET_IMGSZ,
+                    classes=list(_GADGET_CLASS_IDS),
+                    max_det=5,
+                    device='cpu',
+                    verbose=False,
+                )
             return detector
 
         _warmup_future = GADGET_EXECUTOR.submit(initialize)
@@ -58,10 +68,14 @@ def warm_gadget_detector() -> bool:
 
 
 def gadget_detector_ready() -> bool:
-    """Return True only after model loading and synthetic warmup both finish."""
-    if not get_gadget_detector.cache_info().currsize:
-        return False
-    return _warmup_future is None or _warmup_future.done()
+    """Return True as soon as the model is loaded into the cache.
+
+    The warmup future may still be running its synthetic predict() pass to
+    pre-warm PyTorch's JIT graph, but the model is already usable for
+    inference — waiting for the predict to finish kept the detector reporting
+    'not ready' for the entire exam on slower CPUs.
+    """
+    return bool(get_gadget_detector.cache_info().currsize)
 
 
 def detect_gadgets(raw: bytes) -> list[dict]:
@@ -70,7 +84,7 @@ def detect_gadgets(raw: bytes) -> list[dict]:
         raise ValueError('Invalid image')
 
     detector = get_gadget_detector()
-    confidence = float(os.getenv('GADGET_CONFIDENCE', '0.55'))
+    confidence = float(os.getenv('GADGET_CONFIDENCE', '0.4'))
     configured = os.getenv('GADGET_CLASSES', '')
     wanted = {
         name.strip().lower()
@@ -78,13 +92,16 @@ def detect_gadgets(raw: bytes) -> list[dict]:
         if name.strip()
     } or DEFAULT_GADGET_NAMES
 
-    results = detector.predict(
-        source=frame,
-        conf=confidence,
-        imgsz=640,
-        device='cpu',
-        verbose=False,
-    )
+    with _infer_lock:
+        results = detector.predict(
+            source=frame,
+            conf=confidence,
+            imgsz=_GADGET_IMGSZ,
+            classes=list(_GADGET_CLASS_IDS),
+            max_det=5,
+            device='cpu',
+            verbose=False,
+        )
     detections = []
     for result in results:
         names = result.names

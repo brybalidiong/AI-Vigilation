@@ -10,6 +10,8 @@
       :gazeNoFaceCount="gazeNoFaceCount"
       :gazeViolationLimit="GAZE_VIOLATION_LIMIT"
       :gazeNoFaceLimit="GAZE_NO_FACE_LIMIT"
+      :gadgetWarningCount="gadgetWarningCount"
+      :gadgetWarningLimit="GADGET_WARNING_LIMIT"
       @dismiss="dismissTerminatedScreen" 
     />
 
@@ -84,9 +86,19 @@
           </section>
 
         <div class="moodle-card dashboard-agenda">
-          <h2 class="moodle-section-title">Exam timeline</h2>
-          <div class="moodle-filters" style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-start; align-items: center;">
-            <div class="select-wrapper">
+          <div class="agenda-header">
+            <div class="agenda-header__copy">
+              <h2 class="moodle-section-title">Exam timeline</h2>
+              <p class="agenda-header__subtitle">Your upcoming schedules and important dates.</p>
+            </div>
+            <button type="button" class="agenda-view-all" @click="goStudentCourses">
+              View all
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <div class="moodle-filters agenda-filters">
+            <div class="select-wrapper agenda-filter-select">
               <select v-model="timelineWindowDays" class="moodle-select">
                 <option value="7">Next 7 days</option>
                 <option value="14">Next 14 days</option>
@@ -95,8 +107,16 @@
                 <option value="3650">All upcoming</option>
               </select>
             </div>
-            <input v-model.trim="timelineSearch" type="text" class="moodle-search" placeholder="Search" style="flex: 1;" />
-            <div class="select-wrapper">
+            <div class="agenda-search-wrap">
+              <svg class="agenda-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+              </svg>
+              <input v-model.trim="timelineSearch" type="text" class="moodle-search agenda-search" placeholder="Search exams, subjects..." />
+            </div>
+            <div class="select-wrapper agenda-filter-select agenda-sort-select">
+              <svg class="agenda-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
+              </svg>
               <select v-model="timelineSort" class="moodle-select">
                 <option value="due_asc">Sort by dates</option>
                 <option value="title_asc">Sort by title</option>
@@ -104,7 +124,7 @@
             </div>
           </div>
 
-          <div class="moodle-timeline-list dashboard-timeline-scroll">
+          <div class="moodle-timeline-list dashboard-timeline-scroll agenda-timeline">
             <template v-if="examsLoading">
               <SkeletonLoader type="row" v-for="i in 3" :key="i" />
             </template>
@@ -115,23 +135,21 @@
               icon='<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>'
             />
             <template v-else>
-              <div v-for="group in groupedFilteredDueExamTimeline" :key="group.key" class="moodle-day-group">
-                <h4 class="moodle-day-header moodle-day-header--center">{{ group.key }}</h4>
-                <ExamRow
-                  v-for="exam in group.exams"
-                  :key="`${exam.subject_id}-${exam.id}`"
-                  :timeText="formatExamTimelineTime(exam)"
-                  :title="formatDisplayTitle(exam.title)"
-                  :subtitle="formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`)"
-                  :status="getExamStatus(exam)"
-                  :statusClass="statusClass(exam)"
-                >
-                  <template #actions>
-                    <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
-                    <button v-else type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
-                  </template>
-                </ExamRow>
-              </div>
+              <ExamRow
+                v-for="exam in filteredDueExamTimeline"
+                :key="`${exam.subject_id}-${exam.id}`"
+                :dateIso="examTimelineDisplayAt(exam)"
+                :timeText="formatExamTimelineTime(exam)"
+                :title="formatDisplayTitle(exam.title)"
+                :subtitle="formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`)"
+                :status="getExamStatus(exam)"
+                :statusClass="statusClass(exam)"
+              >
+                <template #actions>
+                  <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
+                  <button v-else type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
+                </template>
+              </ExamRow>
             </template>
           </div>
         </div>
@@ -235,7 +253,7 @@
           <!-- Exams list -->
           <div class="course-tabs-card">
             <div class="course-tab-panel">
-              <div class="moodle-timeline-list dashboard-timeline-scroll">
+              <div class="moodle-timeline-list dashboard-timeline-scroll agenda-timeline">
                 <template v-if="examsLoading">
                   <SkeletonLoader type="row" v-for="i in 3" :key="i" />
                 </template>
@@ -246,23 +264,21 @@
                   icon='<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline>'
                 />
                 <template v-else>
-                  <div v-for="group in groupedCourseExams" :key="group.key" class="moodle-day-group">
-                    <h4 class="moodle-day-header moodle-day-header--center">{{ group.key }}</h4>
-                    <ExamRow
-                      v-for="exam in group.exams"
-                      :key="`${exam.subject_id}-${exam.id}`"
-                      :timeText="formatExamTimelineTime(exam)"
-                      :title="formatDisplayTitle(exam.title)"
-                      :subtitle="formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`)"
-                      :status="getExamStatus(exam)"
-                      :statusClass="statusClass(exam)"
-                    >
-                      <template #actions>
-                        <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
-                        <button v-else type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
-                      </template>
-                    </ExamRow>
-                  </div>
+                  <ExamRow
+                    v-for="exam in flatCourseExams"
+                    :key="`${exam.subject_id}-${exam.id}`"
+                    :dateIso="examTimelineDisplayAt(exam)"
+                    :timeText="formatExamTimelineTime(exam)"
+                    :title="formatDisplayTitle(exam.title)"
+                    :subtitle="formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`)"
+                    :status="getExamStatus(exam)"
+                    :statusClass="statusClass(exam)"
+                  >
+                    <template #actions>
+                      <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
+                      <button v-else type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
+                    </template>
+                  </ExamRow>
                 </template>
               </div>
             </div>
@@ -335,6 +351,16 @@
       <div class="cam-pip-inner" :style="{ boxShadow: pipBorderGlow, borderColor: pipBorderColor, transition: 'box-shadow 0.12s ease, border-color 0.12s ease' }">
         <video ref="examVideoEl" class="cam-pip-video" autoplay muted playsinline></video>
 
+        <!-- Gadget YOLO boxes (mirrored to match the flipped video) -->
+        <div
+          v-for="(box, idx) in gadgetOverlayBoxes"
+          :key="'gadget-box-' + idx"
+          class="cam-pip-gadget-box"
+          :style="box.style"
+        >
+          <span class="cam-pip-gadget-label">{{ box.label }}</span>
+        </div>
+
         <!-- Direction label overlay (replaces bounding box) -->
         <div v-if="takingExam && gazeCurrentDirection" class="cam-pip-direction-badge" :style="{ background: pipBorderColor }">
           {{ gazeDirectionIcon }} {{ gazeDirectionLabel }}
@@ -344,8 +370,8 @@
 
         <div v-if="takingExam" class="cam-pip-gaze">
           <span class="cam-pip-gaze-label">AI gaze<span v-if="gazeDetectionStatus"> · {{ gazeDetectionStatus }}</span></span>
-          <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gazeCurrentDirection }">
-            away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }}
+          <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gadgetWarningCount > 0 || gazeCurrentDirection }">
+            away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }} · gadget {{ gadgetWarningCount }}/{{ GADGET_WARNING_LIMIT }}
           </span>
         </div>
       </div>
@@ -401,9 +427,9 @@
           </div>
           <h2>{{ proctoringWarning.title }}</h2>
           <p>{{ proctoringWarning.message }}</p>
-          <div v-if="proctoringWarning.type === 'alttab'" class="proctor-counter">
-            <span class="strike-count">{{ tabSwitchCount }}</span>
-            <span class="strike-label">/ 5 warnings</span>
+          <div v-if="proctoringWarning.type === 'alttab' || proctoringWarning.type === 'gadget'" class="proctor-counter">
+            <span class="strike-count">{{ proctoringWarning.type === 'gadget' ? gadgetWarningCount : tabSwitchCount }}</span>
+            <span class="strike-label">/ {{ proctoringWarning.type === 'gadget' ? GADGET_WARNING_LIMIT : 5 }} warnings</span>
           </div>
           <button
             class="proctor-dismiss"
@@ -741,6 +767,7 @@ import EmptyState from "@/components/EmptyState.vue";
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import {
   examAnchorTimestamp,
+  examTimelineDisplayAt,
   formatExamTimelineTime,
   groupExamsByTimelineDay,
   studentExamOnDashboard,
@@ -915,10 +942,12 @@ const activeExamRestrictions = ref({
 const TAB_SWITCH_LIMIT = 5;
 const GAZE_VIOLATION_LIMIT = 8;
 const GAZE_NO_FACE_LIMIT = 5;
+const GADGET_WARNING_LIMIT = 3;
 const SPLIT_SCREEN_THRESHOLD = 0.98; // flag if window is not completely maximized
 const tabSwitchCount = ref(0);
 const gazeViolationCount = ref(0);
 const gazeNoFaceCount = ref(0);
+const gadgetWarningCount = ref(0);
 const gazeDetectionStatus = ref('');
 const terminateReason = ref('tab');
 const proctoringWarning = ref({ show: false, type: '', title: '', message: '' });
@@ -999,6 +1028,11 @@ let _proctoringCaptureTimer = null;
 let _gadgetDetectionTimer = null;
 let _gadgetDetectionInFlight = false;
 let _gadgetUnavailableNotified = false;
+let _gadgetLoopActive = false;
+/** @type {{ label: string, style: Record<string, string> }[]} */
+const gadgetOverlayBoxes = ref([]);
+const GADGET_FRAME_WIDTH = 256;
+const GADGET_POLL_MS = 200;
 let _gazeCheckTimer = null;
 let _lastGazeWarningAt = 0;
 let _gazeCheckInFlight = false;
@@ -1334,37 +1368,68 @@ function _stopProctoringCaptureTimer() {
 }
 
 async function _runGadgetDetection() {
-  if (!_isGadgetDetectionEnabled() || !takingExam.value || examTerminated.value || submitting.value || _gadgetDetectionInFlight) return;
-  const video = examVideoEl.value;
-  if (!video || video.readyState < 2 || !video.videoWidth) return;
+  if (!_gadgetLoopActive || !takingExam.value || examTerminated.value || submitting.value) return;
+  if (!_isGadgetDetectionEnabled() || _gadgetDetectionInFlight) {
+    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    return;
+  }
+  const video = _getProctoringVideoEl();
+  if (!video || video.readyState < 2 || !video.videoWidth) {
+    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    return;
+  }
 
   _gadgetDetectionInFlight = true;
+  const frameW = Math.min(GADGET_FRAME_WIDTH, video.videoWidth);
+  const frameH = Math.round((video.videoHeight / video.videoWidth) * frameW);
   try {
     const canvas = document.createElement('canvas');
-    const width = Math.min(640, video.videoWidth);
-    canvas.width = width;
-    canvas.height = Math.round((video.videoHeight / video.videoWidth) * width);
+    canvas.width = frameW;
+    canvas.height = frameH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.68));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.62));
     if (!blob) return;
 
     const form = new FormData();
     form.append('image', blob, `gadget_${Date.now()}.jpg`);
     form.append('question_id', String(currentQuestion.value?.id || ''));
+    // Default api timeout (15s) is too short under gaze CPU load.
     const { data } = await api.post(
       `/api/student/exams/${takingExam.value.id}/proctoring/gadgets/`,
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 65000 },
     );
-    if (data.logged_event) {
+    if (data.warming) {
+      _clearGadgetOverlayBoxes();
+    } else {
+      _updateGadgetOverlayBoxes(data.detections || [], frameW, frameH);
+    }
+    if (typeof data.warning_count === 'number') {
+      gadgetWarningCount.value = data.warning_count;
+    }
+    const warningLimit = data.warning_limit ?? GADGET_WARNING_LIMIT;
+    if (data.should_terminate) {
       const labels = [...new Set((data.detections || []).map(item => item.label))];
       proctoringWarning.value = {
         show: true,
         type: 'gadget',
-        title: 'Prohibited Gadget Detected',
-        message: `${labels.join(' and ') || 'A prohibited device'} was continuously detected for 3 seconds. Remove it from the camera view. This incident has been saved for instructor review.`,
+        title: 'Exam Terminated',
+        message: `${labels.join(' and ') || 'A prohibited device'} was detected ${gadgetWarningCount.value} times. Your exam has been terminated.`,
+      };
+      terminateReason.value = 'gadget';
+      _terminateExam();
+      return;
+    }
+    if (data.logged_event || data.confirmed) {
+      const labels = [...new Set((data.detections || []).map(item => item.label))];
+      const remaining = Math.max(0, warningLimit - gadgetWarningCount.value);
+      proctoringWarning.value = {
+        show: true,
+        type: 'gadget',
+        title: `Prohibited Gadget — Warning ${gadgetWarningCount.value} of ${warningLimit}`,
+        message: `${labels.join(' and ') || 'A prohibited device'} was detected. Remove it from the camera view immediately. ${remaining} warning${remaining === 1 ? '' : 's'} remaining before exam termination.`,
       };
     }
   } catch (err) {
@@ -1374,22 +1439,62 @@ async function _runGadgetDetection() {
     }
   } finally {
     _gadgetDetectionInFlight = false;
+    if (_gadgetLoopActive) {
+      _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    }
   }
+}
+
+function _gadgetDisplayLabel(label) {
+  const l = String(label || '').toLowerCase();
+  if (l.includes('phone')) return 'Phone';
+  if (l.includes('laptop')) return 'Laptop';
+  return label || 'Gadget';
+}
+
+function _updateGadgetOverlayBoxes(detections, frameW, frameH) {
+  if (!detections.length || !frameW || !frameH) {
+    _clearGadgetOverlayBoxes();
+    return;
+  }
+  // Video uses CSS scaleX(-1), so mirror box X to match what the student sees.
+  gadgetOverlayBoxes.value = detections.map((item) => {
+    const [x1, y1, x2, y2] = item.box || [0, 0, 0, 0];
+    const left = ((frameW - x2) / frameW) * 100;
+    const top = (y1 / frameH) * 100;
+    const width = (Math.max(0, x2 - x1) / frameW) * 100;
+    const height = (Math.max(0, y2 - y1) / frameH) * 100;
+    return {
+      label: _gadgetDisplayLabel(item.label),
+      style: {
+        left: `${left}%`,
+        top: `${top}%`,
+        width: `${width}%`,
+        height: `${height}%`,
+      },
+    };
+  });
+}
+
+function _clearGadgetOverlayBoxes() {
+  gadgetOverlayBoxes.value = [];
 }
 
 function _startGadgetDetectionTimer() {
   _stopGadgetDetectionTimer();
   _gadgetUnavailableNotified = false;
+  _gadgetLoopActive = true;
   _runGadgetDetection();
-  _gadgetDetectionTimer = setInterval(_runGadgetDetection, 1000);
 }
 
 function _stopGadgetDetectionTimer() {
+  _gadgetLoopActive = false;
   if (_gadgetDetectionTimer) {
-    clearInterval(_gadgetDetectionTimer);
+    clearTimeout(_gadgetDetectionTimer);
     _gadgetDetectionTimer = null;
   }
   _gadgetDetectionInFlight = false;
+  _clearGadgetOverlayBoxes();
 }
 
 async function _runGazeCheck() {
@@ -2300,10 +2405,6 @@ const selectedCourseExams = computed(() =>
     .sort((a, b) => examCreatedTimestamp(b) - examCreatedTimestamp(a)),
 );
 
-const groupedFilteredDueExamTimeline = computed(() =>
-  groupExamsByTimelineDay(filteredDueExamTimeline.value),
-);
-
 const groupedCourseExams = computed(() =>
   groupExamsByTimelineDay(selectedCourseExams.value)
     .sort((a, b) => {
@@ -2311,6 +2412,11 @@ const groupedCourseExams = computed(() =>
       const newestInB = Math.max(...b.exams.map(examCreatedTimestamp));
       return newestInB - newestInA;
     }),
+);
+
+/** Flat list for continuous timeline rail (same order as grouped course exams). */
+const flatCourseExams = computed(() =>
+  groupedCourseExams.value.flatMap((group) => group.exams),
 );
 
 function formatTimeOnly(raw) {
@@ -2659,6 +2765,7 @@ async function _doOpenExam(exam) {
   tabSwitchCount.value = 0;
   gazeViolationCount.value = 0;
   gazeNoFaceCount.value = 0;
+  gadgetWarningCount.value = 0;
   _clearGazePending();
   _clearAbsenceAlert();
   terminateReason.value = 'tab';
@@ -3360,6 +3467,30 @@ async function performLogout() {
 @keyframes pipIn { from { opacity: 0; transform: scale(0.7) translateY(-20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 .cam-pip-inner { position: relative; width: 240px; border-radius: 14px; overflow: hidden; background: #0f0f0f; border: 2.5px solid #34d399; aspect-ratio: 4/3; }
 .cam-pip-video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+.cam-pip-gadget-box {
+  position: absolute;
+  z-index: 3;
+  border: 2px solid #f97316;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.cam-pip-gadget-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateY(-100%);
+  background: #f97316;
+  color: #111;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 0.08rem 0.28rem;
+  border-radius: 3px 3px 0 0;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
 .cam-pip-direction-badge { position: absolute; top: 0.4rem; right: 0.4rem; z-index: 2; color: #fff; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em; padding: 0.2rem 0.5rem; border-radius: 999px; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.5); animation: dirBadgePop 0.15s cubic-bezier(0.34,1.56,0.64,1) both; }
 @keyframes dirBadgePop { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
 .cam-pip-badge { position: absolute; top: 0.5rem; left: 0.5rem; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.07em; padding: 0.2rem 0.55rem; border-radius: 999px; display: flex; align-items: center; gap: 0.3rem; }

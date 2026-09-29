@@ -96,9 +96,19 @@
           </section>
 
           <div class="moodle-card dashboard-agenda">
-            <h2 class="moodle-section-title">Exam timeline</h2>
-            <div class="moodle-filters" style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-start; align-items: center;">
-              <div class="select-wrapper">
+            <div class="agenda-header">
+              <div class="agenda-header__copy">
+                <h2 class="moodle-section-title">Exam timeline</h2>
+                <p class="agenda-header__subtitle">Your upcoming schedules and important dates.</p>
+              </div>
+              <button type="button" class="agenda-view-all" @click="goCourses">
+                View all
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+              </button>
+            </div>
+
+            <div class="moodle-filters agenda-filters">
+              <div class="select-wrapper agenda-filter-select">
                 <select v-model="timelineWindowDays" class="moodle-select">
                   <option value="7">Next 7 days</option>
                   <option value="14">Next 14 days</option>
@@ -107,8 +117,16 @@
                   <option value="3650">All upcoming</option>
                 </select>
               </div>
-              <input v-model.trim="timelineSearch" type="text" class="moodle-search" placeholder="Search" style="flex: 1;" />
-              <div class="select-wrapper">
+              <div class="agenda-search-wrap">
+                <svg class="agenda-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+                </svg>
+                <input v-model.trim="timelineSearch" type="text" class="moodle-search agenda-search" placeholder="Search exams, subjects..." />
+              </div>
+              <div class="select-wrapper agenda-filter-select agenda-sort-select">
+                <svg class="agenda-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
+                </svg>
                 <select v-model="timelineSort" class="moodle-select">
                   <option value="due_asc">Sort by dates</option>
                   <option value="title_asc">Sort by title</option>
@@ -116,7 +134,7 @@
               </div>
             </div>
 
-            <div class="moodle-timeline-list dashboard-timeline-scroll">
+            <div class="moodle-timeline-list dashboard-timeline-scroll agenda-timeline">
               <template v-if="upcomingLoading">
                 <SkeletonLoader type="row" v-for="i in 3" :key="i" />
               </template>
@@ -127,15 +145,16 @@
                 icon='<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>'
               />
               <template v-else>
-                <div v-for="group in groupedUpcomingExams" :key="group.key" class="moodle-day-group">
-                  <h4 class="moodle-day-header moodle-day-header--center">{{ group.key }}</h4>
+                <div v-for="group in groupedUpcomingExams" :key="group.key" class="moodle-day-group agenda-day-group">
                   <ExamRow
                     v-for="exam in group.exams"
                     :key="`upcoming-${exam.subject_id}-${exam.id}`"
-                    center-copy
+                    :dateIso="examTimelineDisplayAt(exam)"
                     :timeText="formatExamTimelineTime(exam)"
                     :title="formatDisplayTitle(exam.title)"
                     :subtitle="formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`)"
+                    :status="exam.is_final ? 'Published' : 'Draft'"
+                    :statusClass="exam.is_final ? 'badge-active' : 'badge-upcoming'"
                   >
                     <template #actions>
                       <button type="button" class="moodle-btn-ghost" @click="openExamStats(exam)">View Stats</button>
@@ -497,6 +516,7 @@
               <ExamRow
                 v-for="exam in displayedExams"
                 :key="exam.id"
+                :dateIso="examTimelineDisplayAt(exam)"
                 :timeText="formatExamTimelineTime(exam)"
                 :title="formatDisplayTitle(exam.title)"
                 :subtitle="toDisplayDue(exam)"
@@ -1460,7 +1480,7 @@
                       <td>{{ ex.set_name }}</td>
                       <td>
                         <span class="stats-badge" :class="{
-                          'stats-badge--green': getExamineeReportStatus(ex)==='Done',
+                          'stats-badge--red': getExamineeReportStatus(ex)==='Done',
                           'stats-badge--amber': getExamineeReportStatus(ex)==='In Progress',
                           'stats-badge--red': getExamineeReportStatus(ex)==='Terminated',
                           'stats-badge--gray': getExamineeReportStatus(ex)==='Not Taken',
@@ -1826,6 +1846,7 @@ import EmptyState from "@/components/EmptyState.vue";
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import {
   examAnchorTimestamp,
+  examTimelineDisplayAt,
   formatExamTimelineTime,
   groupExamsByTimelineDay,
   instructorExamOnDashboard,
@@ -3132,7 +3153,7 @@ async function createExamSet() {
 function requestRemoveExamSet(examSetId) {
   openConfirm({
     title: "Delete this exam?",
-    message: "This uploaded exam will be removed from this course.",
+    message: "This permanently deletes the exam and all related student records — submissions, scores, proctoring evidence, and integrity reports. Exam Progress will update immediately.",
     confirmText: "Delete exam",
     variant: "danger",
     onConfirm: () => removeExamSetImpl(examSetId),
@@ -3145,9 +3166,23 @@ async function removeExamSetImpl(examSetId) {
   message.value = "";
   try {
     await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${examSetId}/`);
-    message.value = "Exam deleted.";
+    message.value = "Exam and related student records deleted.";
+    // Drop local progress rows for this exam immediately, then refresh lists.
+    examProgressRows.value = (examProgressRows.value || []).filter(
+      (row) => Number(row.exam_set_id) !== Number(examSetId),
+    );
+    examProgressLoaded.value = false;
+    if (statsExam.value && Number(statsExam.value.id) === Number(examSetId)) {
+      closeExamStats();
+    }
+    if (managingExam.value && Number(managingExam.value.id) === Number(examSetId)) {
+      closeManageQuestions();
+    }
     await fetchExamSets();
     await fetchUpcomingExams();
+    if (activeCourseTab.value === "exam-progress") {
+      await fetchExamProgress();
+    }
   } catch (err) {
     error.value = err?.response?.data?.error || "Unable to delete exam.";
   }

@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 
 from accounts import gaze_service
 from accounts.models import (
-    EnrolledStudent, ExamProctoringEvidence, ExamQuestion, ExamSet, ExamSubmission,
+    EnrolledStudent, ExamProctoringEvent, ExamProctoringEvidence, ExamQuestion, ExamSet, ExamSubmission,
     StudentSet, Subject,
 )
 from gaze_tracker.tracker import GazeResult, GazeTracker
@@ -329,7 +329,53 @@ class GazeEvidenceTests(TestCase):
         analyze.assert_not_called()
         self.assertFalse(ExamProctoringEvidence.objects.exists())
 
-    def test_gadget_requires_three_continuous_seconds_then_logs_evidence(self):
+    def test_gadget_warns_immediately_then_terminates_after_three(self):
+        detection = [{'label': 'cell phone', 'confidence': 0.91, 'box': [1, 2, 30, 40]}]
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+        started = timezone.now()
+        # Clear frames between detections so each appearance is a new warning.
+        check_times = [
+            (started + timedelta(seconds=offset)).timestamp()
+            for offset in (0, 1, 4, 5, 8, 9, 12)
+        ]
+        detect_side_effect = [
+            detection,  # warn 1
+            [],         # clear
+            detection,  # warn 2
+            [],         # clear
+            detection,  # warn 3 → terminate
+            detection,  # still detected after terminate threshold
+            [],
+        ]
+
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), \
+                patch('accounts.gadget_service.detect_gadgets', side_effect=detect_side_effect), \
+                patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
+            responses = [
+                self.client.post(url, {
+                    'image': SimpleUploadedFile(
+                        f'gadget-{index}.jpg', self.raw, content_type='image/jpeg',
+                    ),
+                })
+                for index in range(5)
+            ]
+
+        self.assertEqual([response.status_code for response in responses], [200] * 5)
+        self.assertTrue(responses[0].data['confirmed'])
+        self.assertEqual(responses[0].data['warning_count'], 1)
+        self.assertFalse(responses[0].data['should_terminate'])
+        self.assertFalse(responses[1].data['confirmed'])
+        self.assertTrue(responses[2].data['confirmed'])
+        self.assertEqual(responses[2].data['warning_count'], 2)
+        self.assertTrue(responses[4].data['confirmed'])
+        self.assertEqual(responses[4].data['warning_count'], 3)
+        self.assertTrue(responses[4].data['should_terminate'])
+        self.assertEqual(
+            ExamProctoringEvent.objects.filter(event_type='gadget_detected').count(),
+            3,
+        )
+
+    def test_gadget_continuous_hold_counts_as_one_warning(self):
         detection = [{'label': 'cell phone', 'confidence': 0.91, 'box': [1, 2, 30, 40]}]
         url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
         started = timezone.now()
@@ -338,54 +384,24 @@ class GazeEvidenceTests(TestCase):
             for offset in range(4)
         ]
 
-        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), \
-                patch('accounts.gadget_service.detect_gadgets', return_value=detection), \
-                patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), patch(
+            'accounts.gadget_service.detect_gadgets',
+            return_value=detection,
+        ), patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
             responses = [
                 self.client.post(url, {
                     'image': SimpleUploadedFile(
-                        f'gadget-{index}.jpg', self.raw, content_type='image/jpeg',
+                        f'gadget-hold-{index}.jpg', self.raw, content_type='image/jpeg',
                     ),
                 })
                 for index in range(4)
             ]
 
-        self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
-        self.assertFalse(responses[0].data['confirmed'])
-        self.assertFalse(responses[1].data['confirmed'])
-        self.assertFalse(responses[2].data['confirmed'])
-        self.assertTrue(responses[3].data['confirmed'])
-        self.assertEqual(responses[3].data['continuous_seconds'], 3.0)
-        self.assertIsNotNone(responses[3].data['logged_event'])
-        self.assertEqual(
-            ExamProctoringEvidence.objects.get().event.event_type,
-            'gadget_detected',
-        )
-
-    def test_gadget_confirmation_tolerates_one_missed_frame(self):
-        detection = [{'label': 'cell phone', 'confidence': 0.91, 'box': [1, 2, 30, 40]}]
-        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
-        started = timezone.now()
-        check_times = [
-            (started + timedelta(seconds=offset)).timestamp()
-            for offset in range(5)
-        ]
-
-        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), patch(
-            'accounts.gadget_service.detect_gadgets',
-            side_effect=[detection, [], detection, detection, detection],
-        ), patch('accounts.views._gadget_now_timestamp', side_effect=check_times):
-            responses = [
-                self.client.post(url, {
-                    'image': SimpleUploadedFile(
-                        f'gadget-gap-{index}.jpg', self.raw, content_type='image/jpeg',
-                    ),
-                })
-                for index in range(5)
-            ]
-
-        self.assertTrue(any(response.data['confirmed'] for response in responses))
-        self.assertTrue(any(response.data['logged_event'] for response in responses))
+        confirmed = [response.data['confirmed'] for response in responses]
+        self.assertEqual(confirmed.count(True), 1)
+        self.assertEqual(responses[-1].data['warning_count'], 1)
+        self.assertFalse(responses[-1].data['should_terminate'])
+        self.assertEqual(ExamProctoringEvent.objects.filter(event_type='gadget_detected').count(), 1)
 
     def test_disabled_gadget_restriction_skips_inference(self):
         self.exam.detect_gadgets = False

@@ -54,6 +54,16 @@ export function formatExamTimelineTime(exam) {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Month + day parts for the agenda date block (e.g. OCT / 05). */
+export function formatExamTimelineDateParts(exam) {
+  const d = parseExamDate(examTimelineDisplayAt(exam));
+  if (!d) return { month: '—', day: '—' };
+  return {
+    month: d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+    day: String(d.getDate()).padStart(2, '0'),
+  };
+}
+
 /**
  * Dashboard timeline: open now or opens / ends in the future.
  * Hides exams whose due date has already passed.

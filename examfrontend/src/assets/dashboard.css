@@ -783,7 +783,7 @@
   white-space: nowrap;
   line-height: 1.2;
 }
-.badge-done { background: var(--status-success-bg); color: var(--status-success); border: 1px solid rgba(16, 185, 129, 0.2); }
+.badge-done { background: #ffe4e8; color: #be123c; border: 1px solid rgba(225, 29, 72, 0.22); }
 .badge-pending { background: var(--status-warning-bg); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.2); }
 .badge-not-taken { background: var(--status-neutral-bg); color: var(--status-neutral); border: 1px solid rgba(100, 116, 139, 0.2); }
 .badge-terminated { background: var(--status-danger-bg); color: var(--status-danger); border: 1px solid rgba(239, 68, 68, 0.2); }
@@ -3390,6 +3390,202 @@
 .dashboard-role .dashboard-agenda .dashboard-timeline-scroll > .empty-state {
   min-height: 100%;
 }
+
+/* Agenda card — reference-inspired timeline chrome */
+.dashboard-role .dashboard-agenda {
+  padding: 1.35rem 1.4rem 1.15rem;
+}
+.dashboard-role .dashboard-agenda .agenda-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+.dashboard-role .dashboard-agenda .agenda-header__copy {
+  min-width: 0;
+}
+.dashboard-role .dashboard-agenda .moodle-section-title {
+  margin: 0;
+  padding: 0;
+  color: #1e3a5f;
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.dashboard-role .dashboard-agenda .moodle-section-title::after {
+  display: none;
+}
+.dashboard-role .dashboard-agenda .agenda-header__subtitle {
+  margin: 0.28rem 0 0;
+  color: #8a98ab;
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.dashboard-role .dashboard-agenda .agenda-view-all {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+  padding: 0.42rem 0.9rem;
+  border: 1px solid #dde3ec;
+  border-radius: 999px;
+  background: #fff;
+  color: #1e3a5f;
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.dashboard-role .dashboard-agenda .agenda-view-all:hover {
+  border-color: #c9d3e2;
+  background: #f8fafc;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+.dashboard-role .dashboard-agenda .agenda-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.85rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.dashboard-role .dashboard-agenda .agenda-filter-select,
+.dashboard-role .dashboard-agenda .agenda-search-wrap {
+  position: relative;
+}
+.dashboard-role .dashboard-agenda .agenda-filters .moodle-select,
+.dashboard-role .dashboard-agenda .agenda-search {
+  min-height: 42px;
+  border-radius: 999px;
+  border-color: #dde3ec;
+  background: #fff;
+  box-shadow: none;
+  color: #334155;
+}
+.dashboard-role .dashboard-agenda .agenda-filter-select .moodle-select {
+  padding-right: 2rem;
+  min-width: 8.5rem;
+}
+.dashboard-role .dashboard-agenda .agenda-sort-select .moodle-select {
+  padding-left: 2.25rem;
+  min-width: 9.5rem;
+}
+.dashboard-role .dashboard-agenda .agenda-sort-icon {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+  z-index: 1;
+}
+.dashboard-role .dashboard-agenda .agenda-search-wrap {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+}
+.dashboard-role .dashboard-agenda .agenda-search-icon {
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+  z-index: 1;
+}
+.dashboard-role .dashboard-agenda .agenda-search {
+  width: 100%;
+  padding-left: 2.35rem;
+}
+.dashboard-role .dashboard-agenda .agenda-filters .moodle-select:focus,
+.dashboard-role .dashboard-agenda .agenda-search:focus {
+  border-color: #93b4f5;
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.12);
+}
+.dashboard-role .dashboard-agenda .agenda-day-group {
+  margin: 0;
+}
+.dashboard-role .dashboard-agenda .agenda-day-group + .agenda-day-group {
+  margin-top: 0;
+}
+.dashboard-role .dashboard-agenda .agenda-timeline {
+  border-top: 1px solid #eef1f6;
+  padding-top: 0.15rem;
+}
+/* Keep the rail continuous across day-group wrappers */
+.dashboard-role .dashboard-agenda .agenda-timeline .timeline-row .timeline-rail::before,
+.dashboard-role .moodle-timeline-list .timeline-row .timeline-rail::before,
+.dashboard-role .course-exam-scroll .timeline-row .timeline-rail::before {
+  top: 0;
+  bottom: 0;
+}
+.dashboard-role .dashboard-agenda .agenda-timeline .agenda-day-group:first-child .timeline-row:first-child .timeline-rail::before,
+.dashboard-role .dashboard-agenda .agenda-timeline > .timeline-row:first-child .timeline-rail::before,
+.dashboard-role .moodle-timeline-list > .timeline-row:first-child .timeline-rail::before,
+.dashboard-role .course-exam-scroll > .timeline-row:first-child .timeline-rail::before,
+.dashboard-role .course-tab-panel .moodle-timeline-list .agenda-day-group:first-child .timeline-row:first-child .timeline-rail::before {
+  top: 50%;
+}
+.dashboard-role .dashboard-agenda .agenda-timeline .agenda-day-group:last-child .timeline-row:last-child .timeline-rail::before,
+.dashboard-role .dashboard-agenda .agenda-timeline > .timeline-row:last-child .timeline-rail::before,
+.dashboard-role .moodle-timeline-list > .timeline-row:last-child .timeline-rail::before,
+.dashboard-role .course-exam-scroll > .timeline-row:last-child .timeline-rail::before,
+.dashboard-role .course-tab-panel .moodle-timeline-list .agenda-day-group:last-child .timeline-row:last-child .timeline-rail::before {
+  bottom: 50%;
+}
+/* Bridge the seam between day groups so the line never breaks */
+.dashboard-role .agenda-day-group:not(:last-child) .timeline-row:last-child .timeline-rail::before {
+  bottom: 0 !important;
+}
+.dashboard-role .agenda-day-group:not(:first-child) .timeline-row:first-child .timeline-rail::before {
+  top: 0 !important;
+}
+.dashboard-role .dashboard-agenda .timeline-actions .moodle-btn-ghost {
+  border-radius: 999px;
+  border-color: #dde3ec;
+  background: #fff;
+  color: #475569;
+  font-size: 0.74rem;
+  padding: 0.35rem 0.8rem;
+}
+.dashboard-role .dashboard-agenda .timeline-actions .timeline-btn-primary {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #fff;
+}
+.dashboard-role .dashboard-agenda .timeline-actions .timeline-btn-primary:hover {
+  background: #162d4a;
+  border-color: #162d4a;
+}
+@media (max-width: 820px) {
+  .dashboard-role .dashboard-agenda .agenda-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dashboard-role .dashboard-agenda .agenda-view-all {
+    align-self: flex-start;
+  }
+  .dashboard-role .dashboard-agenda .agenda-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dashboard-role .dashboard-agenda .agenda-filter-select .moodle-select,
+  .dashboard-role .dashboard-agenda .agenda-sort-select .moodle-select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .dashboard-role .moodle-card::before,
 .dashboard-role .moodle-section-title::before { display: none; }
 .dashboard-role .moodle-section-title {
@@ -3444,13 +3640,13 @@
   letter-spacing: 0.1em;
 }
 .dashboard-role .timeline-row {
-  border-color: #e5eaf1;
-  border-radius: 13px;
-  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.035);
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 .dashboard-role .timeline-row:hover {
-  border-color: rgba(var(--dash-accent-rgb), 0.25);
-  box-shadow: 0 9px 24px rgba(var(--dash-accent-rgb), 0.09);
+  border-color: transparent;
+  box-shadow: none;
 }
 .dashboard-role .timeline-btn-primary,
 .dashboard-role .new-course-btn,
@@ -3466,6 +3662,23 @@
 .dashboard-role .course-display-card {
   border-color: #dde5ef;
   box-shadow: 0 8px 26px rgba(15, 23, 42, 0.06);
+}
+.dashboard-role .course-tabs-card .agenda-timeline,
+.dashboard-role .course-tab-panel .agenda-timeline {
+  padding: 0.25rem 1rem 0.5rem;
+}
+.dashboard-role .course-tabs-card .timeline-actions .moodle-btn-ghost {
+  border-radius: 999px;
+  border-color: #dde3ec;
+  background: #fff;
+  color: #475569;
+  font-size: 0.74rem;
+  padding: 0.35rem 0.8rem;
+}
+.dashboard-role .course-tabs-card .timeline-actions .timeline-btn-primary {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #fff;
 }
 .dashboard-role .course-tabs-card,
 .dashboard-role .create-panel,
