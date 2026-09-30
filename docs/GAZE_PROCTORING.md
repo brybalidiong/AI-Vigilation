@@ -35,6 +35,17 @@ WebSocket. The next frame is sent after the previous result arrives, so a slow i
 cannot create a queue of stale frames. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
+Head yaw keeps the student's left/right sign; iris X is converted from camera
+coordinates before the two are blended. Up/down geometry thresholds allow a
+slightly smaller deliberate movement than before.
+
+Gadget checks send a 640-pixel-wide JPEG roughly every 150 ms after each response.
+The camera requests 1280-by-960 capture where supported. The backend uses YOLO at
+640 pixels with a 0.25 default confidence threshold;
+`GADGET_IMGSZ` and `GADGET_CONFIDENCE` can override these defaults. Checks stay
+sequential so slow inference cannot build a backlog of old frames. A failed model
+warmup returns an error instead of leaving the scanner in a permanent warming state;
+the exam camera shows whether gadget scanning is starting, active, or unavailable.
 
 ## Updating the model
 

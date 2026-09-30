@@ -50,7 +50,7 @@ def _sync_profile_enrollment_for_email(email: str):
 
 
 def _is_instructor(user):
-    return bool(user and user.is_authenticated and user.is_staff and not user.is_superuser)
+    return bool(user and user.is_authenticated and user.is_active and user.is_staff and not user.is_superuser)
 
 
 PROCTORING_EVENT_PENALTIES = {
@@ -661,7 +661,9 @@ def admin_instructors(request):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
-        instructors = User.objects.filter(is_staff=True, is_superuser=False).select_related('profile')
+        instructors = User.objects.filter(
+            Q(is_staff=True) | Q(profile__role='instructor'), is_superuser=False,
+        ).select_related('profile').distinct().order_by('email')
         data = []
         for u in instructors:
             data.append({
@@ -671,6 +673,7 @@ def admin_instructors(request):
                 'first_name': u.first_name,
                 'last_name': u.last_name,
                 'full_name': u.get_full_name() or u.username,
+                'is_active': u.is_active,
             })
         return Response({'instructors': data}, status=status.HTTP_200_OK)
 
@@ -697,13 +700,10 @@ def admin_instructors(request):
         },
     )
     if not created:
-        # Update to instructor if they exist
-        user.is_staff = True
-        if first_name:
-            user.first_name = first_name
-        if last_name:
-            user.last_name = last_name
-        user.save()
+        return Response(
+            {'error': 'This account already exists. Use the instructors list to manage access.'},
+            status=status.HTTP_409_CONFLICT,
+        )
 
     profile, _ = UserProfile.objects.get_or_create(
         user=user,
@@ -721,23 +721,37 @@ def admin_instructors(request):
             'last_name': user.last_name,
             'full_name': user.get_full_name() or user.username,
             'created': created,
+            'is_active': user.is_active,
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
 
 
-@api_view(['DELETE'])
+@api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def admin_instructor_detail(request, instructor_id):
-    """Admin: remove an instructor account."""
+    """Admin: deactivate or restore an instructor without deleting course records."""
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    instructor = User.objects.filter(id=instructor_id, is_staff=True, is_superuser=False).first()
+    instructor = User.objects.filter(
+        Q(is_staff=True) | Q(profile__role='instructor'), id=instructor_id, is_superuser=False,
+    ).first()
     if not instructor:
         return Response({'error': 'Instructor not found.'}, status=status.HTTP_404_NOT_FOUND)
-    instructor.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
+    active = request.data.get('is_active')
+    if not isinstance(active, bool):
+        return Response({'error': 'is_active must be a boolean.'}, status=status.HTTP_400_BAD_REQUEST)
+    profile, _ = UserProfile.objects.get_or_create(
+        user=instructor, defaults={'role': 'instructor', 'is_enrolled': False},
+    )
+    if profile.role != 'instructor':
+        profile.role = 'instructor'
+        profile.save(update_fields=['role'])
+    instructor.is_active = active
+    instructor.is_staff = active
+    instructor.save(update_fields=['is_active', 'is_staff'])
+    return Response({'id': instructor.id, 'is_active': active})
 
 
 @api_view(['GET', 'POST'])
@@ -798,6 +812,14 @@ def admin_students(request):
             'is_staff': False,
         },
     )
+    if not created and (
+        user.is_staff or user.is_superuser
+        or UserProfile.objects.filter(user=user, role='instructor').exists()
+    ):
+        return Response(
+            {'error': 'This email belongs to an instructor account.'},
+            status=status.HTTP_409_CONFLICT,
+        )
     if not created:
         if first_name:
             user.first_name = first_name
@@ -812,7 +834,11 @@ def admin_students(request):
     profile.is_enrolled = True
     if profile.role != 'student':
         profile.role = 'student'
-    profile.save(update_fields=['role', 'is_enrolled'])
+    with transaction.atomic():
+        profile.save(update_fields=['role', 'is_enrolled'])
+        if not user.is_active:
+            user.is_active = True
+            user.save(update_fields=['is_active'])
 
     return Response(
         {
@@ -828,10 +854,10 @@ def admin_students(request):
     )
 
 
-@api_view(['GET', 'PATCH', 'DELETE'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def admin_student_detail(request, student_id):
-    """Admin: view, update face approval, or remove a student."""
+    """Admin: view a student, manage enrollment, and review face photos."""
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -902,11 +928,24 @@ def admin_student_detail(request, student_id):
             profile.save(update_fields=['face_pending_photo', 'face_encoding', 'face_status'])
             return Response({'message': 'Pending face photo rejected.', 'face_status': profile.face_status})
 
+        elif action == 'set_enrollment':
+            enrolled = request.data.get('is_enrolled')
+            if not isinstance(enrolled, bool):
+                return Response({'error': 'is_enrolled must be a boolean.'}, status=status.HTTP_400_BAD_REQUEST)
+            profile.is_enrolled = enrolled
+            student.is_active = enrolled
+            with transaction.atomic():
+                profile.save(update_fields=['is_enrolled'])
+                student.save(update_fields=['is_active'])
+            return Response({'id': student.id, 'is_enrolled': enrolled})
+
         elif action == 'toggle_reupload':
             # Flip the reupload flag. If enabling, reset status so student can submit fresh.
             profile.face_reupload_allowed = not profile.face_reupload_allowed
-            if profile.face_reupload_allowed:
-                profile.face_status = UserProfile.FACE_STATUS_NONE
+            profile.face_status = (
+                UserProfile.FACE_STATUS_NONE if profile.face_reupload_allowed or not profile.face_photo
+                else UserProfile.FACE_STATUS_APPROVED
+            )
             profile.save(update_fields=['face_reupload_allowed', 'face_status'])
             return Response({
                 'message': 'Re-upload permission updated.',
@@ -914,13 +953,7 @@ def admin_student_detail(request, student_id):
                 'face_status': profile.face_status,
             })
 
-        return Response({'error': 'Unknown action. Use approve_face, reject_face, or toggle_reupload.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # DELETE
-    profile.is_enrolled = False
-    profile.save(update_fields=['is_enrolled'])
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
+        return Response({'error': 'Unknown student update action.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET', 'POST'])
@@ -1444,7 +1477,7 @@ def subject_exam_sets(request, subject_id):
                     distinct=True,
                 ),
             )
-            .order_by('due_at', '-created_at')
+            .order_by('-created_at', '-id')
         )
         for exam in exams:
             rows.append(
@@ -1814,7 +1847,7 @@ def subject_exam_progress(request, subject_id):
     exams = list(
         ExamSet.objects.filter(subject=subject)
         .prefetch_related('assigned_sets', 'questions')
-        .order_by('due_at', '-created_at')
+        .order_by('-created_at', '-id')
     )
     submissions = list(ExamSubmission.objects.filter(exam_set__subject=subject))
     submission_map = {
@@ -1869,6 +1902,7 @@ def subject_exam_progress(request, subject_id):
                 {
                     'exam_set_id': exam.id,
                     'exam_title': exam.title,
+                    'created_at': exam.created_at,
                     'available_from': exam.available_from,
                     'due_at': exam.due_at,
                     'student_email': email,
@@ -1878,6 +1912,7 @@ def subject_exam_progress(request, subject_id):
                     'score': sub.score if sub and sub.is_done else None,
                     'integrity_score': sub.integrity_score if sub and sub.is_done else None,
                     'submitted_at': sub.submitted_at if sub and sub.is_done else None,
+                    'started_at': sub.started_at if sub else None,
                     'terminated': bool(sub and sub.terminated),
                     'tab_switches': sub.tab_switches if sub else 0,
                     'gaze_violation_count': gaze_v,
@@ -1970,17 +2005,17 @@ def my_exam_sets(request):
         )
         .select_related('subject')
         .distinct()
-        .order_by('-created_at')
+        .order_by('-created_at', '-id')
     )
 
     submissions = ExamSubmission.objects.filter(
         student_email__iexact=student_email,
-        is_done=True
-    ).values('exam_set_id', 'score')
-    done_exam_dict = {s['exam_set_id']: s['score'] for s in submissions}
+    ).values('exam_set_id', 'score', 'is_done', 'terminated')
+    submission_dict = {s['exam_set_id']: s for s in submissions}
 
     exams = []
     for exam in subject_exams:
+        submission = submission_dict.get(exam.id, {})
         exams.append(
             {
                 'id': exam.id,
@@ -1996,8 +2031,9 @@ def my_exam_sets(request):
                 'subject_code': exam.subject.code,
                 'exam_file': exam.exam_file.url if exam.exam_file else None,
                 'exam_file_name': exam.exam_file.name.split('/')[-1] if exam.exam_file else None,
-                'is_done': exam.id in done_exam_dict,
-                'score': done_exam_dict.get(exam.id),
+                'is_done': bool(submission.get('is_done')),
+                'terminated': bool(submission.get('terminated')),
+                'score': submission.get('score') if submission.get('is_done') else None,
             }
         )
     return Response({'exam_sets': exams}, status=status.HTTP_200_OK)
@@ -2041,6 +2077,12 @@ def google_login(request):
                 'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
             },
         )
+
+        if not user.is_active:
+            return Response(
+                {'error': 'This account is inactive. Contact an administrator.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         picture = decoded.get('picture') or ''
         profile, _ = UserProfile.objects.get_or_create(
@@ -3284,11 +3326,18 @@ def student_detect_gadgets(request, exam_id):
         from .gadget_service import (
             GADGET_EXECUTOR,
             detect_gadgets,
+            gadget_detector_error,
             gadget_detector_ready,
             warm_gadget_detector,
         )
+        failure = gadget_detector_error()
+        if failure:
+            raise RuntimeError(failure)
         if not gadget_detector_ready():
             warm_gadget_detector()
+            failure = gadget_detector_error()
+            if failure:
+                raise RuntimeError(failure)
             return Response({
                 'enabled': True,
                 'warming': True,

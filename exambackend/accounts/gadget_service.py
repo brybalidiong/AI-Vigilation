@@ -21,8 +21,8 @@ _warmup_future = None
 DEFAULT_GADGET_NAMES = {'cell phone', 'laptop'}
 # COCO class ids: laptop=63, cell phone=67 — limits NMS work to gadget classes.
 _GADGET_CLASS_IDS = (63, 67)
-# 256 is fast on CPU while still resolving phones in a webcam PiP frame.
-_GADGET_IMGSZ = int(os.getenv('GADGET_IMGSZ', '256'))
+# Small phones disappear when a webcam frame is reduced to 320 pixels.
+_GADGET_IMGSZ = int(os.getenv('GADGET_IMGSZ', '640'))
 
 
 @lru_cache(maxsize=1)
@@ -40,10 +40,10 @@ def get_gadget_detector():
 def warm_gadget_detector() -> bool:
     """Load/download the detector in its own worker without blocking a request."""
     global _warmup_future
-    if get_gadget_detector.cache_info().currsize:
+    if gadget_detector_ready() or gadget_detector_error():
         return False
     with _warmup_lock:
-        if get_gadget_detector.cache_info().currsize:
+        if gadget_detector_ready() or gadget_detector_error():
             return False
         if _warmup_future and not _warmup_future.done():
             return False
@@ -53,8 +53,8 @@ def warm_gadget_detector() -> bool:
             # the student enters an exam, not on their first monitored frame.
             with _infer_lock:
                 detector.predict(
-                    source=np.zeros((192, 256, 3), dtype=np.uint8),
-                    conf=0.4,
+                    source=np.zeros((480, 640, 3), dtype=np.uint8),
+                    conf=0.25,
                     imgsz=_GADGET_IMGSZ,
                     classes=list(_GADGET_CLASS_IDS),
                     max_det=5,
@@ -68,14 +68,19 @@ def warm_gadget_detector() -> bool:
 
 
 def gadget_detector_ready() -> bool:
-    """Return True as soon as the model is loaded into the cache.
+    """Only report ready after both model loading and first inference succeed."""
+    return bool(get_gadget_detector.cache_info().currsize) and (
+        _warmup_future is None or (
+            _warmup_future.done() and _warmup_future.exception() is None
+        )
+    )
 
-    The warmup future may still be running its synthetic predict() pass to
-    pre-warm PyTorch's JIT graph, but the model is already usable for
-    inference — waiting for the predict to finish kept the detector reporting
-    'not ready' for the entire exam on slower CPUs.
-    """
-    return bool(get_gadget_detector.cache_info().currsize)
+
+def gadget_detector_error():
+    """Surface a failed background warmup instead of returning 202 forever."""
+    if _warmup_future and _warmup_future.done():
+        return _warmup_future.exception()
+    return None
 
 
 def detect_gadgets(raw: bytes) -> list[dict]:
@@ -84,7 +89,7 @@ def detect_gadgets(raw: bytes) -> list[dict]:
         raise ValueError('Invalid image')
 
     detector = get_gadget_detector()
-    confidence = float(os.getenv('GADGET_CONFIDENCE', '0.4'))
+    confidence = float(os.getenv('GADGET_CONFIDENCE', '0.25'))
     configured = os.getenv('GADGET_CLASSES', '')
     wanted = {
         name.strip().lower()

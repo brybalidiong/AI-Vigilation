@@ -1,0 +1,423 @@
+{
+  "fileKey": "rDJkI8K5S2QF8CcKUqk0aZ",
+  "pageId": "169:35",
+  "startNode": "170:35",
+  "qa": {
+    "coreScreens": 60,
+    "reachableCoreScreens": 60,
+    "unreachable": [],
+    "interactiveControls": 1412,
+    "conditionalActions": 173,
+    "invalidDestinations": [],
+    "invalidVariables": [],
+    "overlayFrames": 71
+  },
+  "sessionCollection": "VariableCollectionId:200:7009",
+  "sessionVariables": 320,
+  "flowMenus": {
+    "student": "199:6729",
+    "instructor": "199:6871",
+    "admin": "199:7003",
+    "mobile": "199:7065"
+  },
+  "dialogs": {
+    "roleChooser": "199:7426",
+    "feedback": "200:7013",
+    "confirmation": "200:7028",
+    "submission": "209:7516"
+  },
+  "responsiveComponentSet": "215:7519",
+  "deleteCases": [
+    {
+      "key": "176:1807",
+      "variable": "VariableID:204:7217",
+      "target": "170:4700",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:7690;177:766",
+      "variable": "VariableID:204:7227",
+      "target": "177:7690",
+      "dest": ""
+    },
+    {
+      "key": "I177:7732;177:859",
+      "variable": "VariableID:204:7230",
+      "target": "177:7732",
+      "dest": ""
+    },
+    {
+      "key": "I177:7774;177:952",
+      "variable": "VariableID:204:7233",
+      "target": "177:7774",
+      "dest": ""
+    },
+    {
+      "key": "176:2040",
+      "variable": "VariableID:204:7242",
+      "target": "170:5131",
+      "dest": "170:4510"
+    },
+    {
+      "key": "170:5323",
+      "variable": "VariableID:204:7253",
+      "target": "170:5290",
+      "dest": ""
+    },
+    {
+      "key": "I177:7816;177:1045",
+      "variable": "VariableID:204:7255",
+      "target": "177:7816",
+      "dest": ""
+    },
+    {
+      "key": "I177:7858;177:1138",
+      "variable": "VariableID:204:7258",
+      "target": "177:7858",
+      "dest": ""
+    },
+    {
+      "key": "176:2126",
+      "variable": "VariableID:204:7263",
+      "target": "170:5454",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:7900;177:1204",
+      "variable": "VariableID:204:7276",
+      "target": "177:7900",
+      "dest": ""
+    },
+    {
+      "key": "I177:7912;177:1233",
+      "variable": "VariableID:204:7280",
+      "target": "177:7912",
+      "dest": ""
+    },
+    {
+      "key": "I177:7924;177:1262",
+      "variable": "VariableID:204:7284",
+      "target": "177:7924",
+      "dest": ""
+    },
+    {
+      "key": "176:2226",
+      "variable": "VariableID:204:7287",
+      "target": "170:5657",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:7936;177:1291",
+      "variable": "VariableID:204:7301",
+      "target": "177:7936",
+      "dest": ""
+    },
+    {
+      "key": "I177:7948;177:1320",
+      "variable": "VariableID:204:7305",
+      "target": "177:7948",
+      "dest": ""
+    },
+    {
+      "key": "I177:7960;177:1349",
+      "variable": "VariableID:204:7309",
+      "target": "177:7960",
+      "dest": ""
+    },
+    {
+      "key": "176:2307",
+      "variable": "VariableID:204:7314",
+      "target": "170:5872",
+      "dest": "170:4510"
+    },
+    {
+      "key": "176:2428",
+      "variable": "VariableID:204:7329",
+      "target": "170:6093",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I176:2530;175:1002",
+      "variable": "VariableID:204:7349",
+      "target": "I176:2530;175:971",
+      "dest": ""
+    },
+    {
+      "key": "I176:2564;175:1056",
+      "variable": "VariableID:204:7351",
+      "target": "I176:2564;175:1042",
+      "dest": ""
+    },
+    {
+      "key": "I176:2581;175:1111",
+      "variable": "VariableID:204:7353",
+      "target": "I176:2581;175:1079",
+      "dest": ""
+    },
+    {
+      "key": "I176:2616;175:1163",
+      "variable": "VariableID:204:7355",
+      "target": "I176:2616;175:1152",
+      "dest": ""
+    },
+    {
+      "key": "I176:2736;175:1002",
+      "variable": "VariableID:204:7390",
+      "target": "I176:2736;175:971",
+      "dest": ""
+    },
+    {
+      "key": "I176:2770;175:1056",
+      "variable": "VariableID:204:7392",
+      "target": "I176:2770;175:1042",
+      "dest": ""
+    },
+    {
+      "key": "I176:2787;175:1111",
+      "variable": "VariableID:204:7394",
+      "target": "I176:2787;175:1079",
+      "dest": ""
+    },
+    {
+      "key": "I176:2822;175:1163",
+      "variable": "VariableID:204:7396",
+      "target": "I176:2822;175:1152",
+      "dest": ""
+    },
+    {
+      "key": "I176:2919;175:1002",
+      "variable": "VariableID:204:7422",
+      "target": "I176:2919;175:971",
+      "dest": ""
+    },
+    {
+      "key": "I176:2953;175:1056",
+      "variable": "VariableID:204:7424",
+      "target": "I176:2953;175:1042",
+      "dest": ""
+    },
+    {
+      "key": "I176:2970;175:1111",
+      "variable": "VariableID:204:7426",
+      "target": "I176:2970;175:1079",
+      "dest": ""
+    },
+    {
+      "key": "I176:3005;175:1163",
+      "variable": "VariableID:204:7428",
+      "target": "I176:3005;175:1152",
+      "dest": ""
+    },
+    {
+      "key": "I176:3105;175:1002",
+      "variable": "VariableID:204:7460",
+      "target": "I176:3105;175:971",
+      "dest": ""
+    },
+    {
+      "key": "I176:3139;175:1056",
+      "variable": "VariableID:204:7462",
+      "target": "I176:3139;175:1042",
+      "dest": ""
+    },
+    {
+      "key": "I176:3156;175:1111",
+      "variable": "VariableID:204:7464",
+      "target": "I176:3156;175:1079",
+      "dest": ""
+    },
+    {
+      "key": "I176:3191;175:1163",
+      "variable": "VariableID:204:7466",
+      "target": "I176:3191;175:1152",
+      "dest": ""
+    },
+    {
+      "key": "176:3285",
+      "variable": "VariableID:204:7490",
+      "target": "170:7549",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:8057;177:766",
+      "variable": "VariableID:204:7499",
+      "target": "177:8057",
+      "dest": ""
+    },
+    {
+      "key": "I177:8099;177:859",
+      "variable": "VariableID:204:7502",
+      "target": "177:8099",
+      "dest": ""
+    },
+    {
+      "key": "I177:8141;177:952",
+      "variable": "VariableID:204:7505",
+      "target": "177:8141",
+      "dest": ""
+    },
+    {
+      "key": "176:3438",
+      "variable": "VariableID:204:7523",
+      "target": "170:7986",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:8294;177:766",
+      "variable": "VariableID:204:7532",
+      "target": "177:8294",
+      "dest": ""
+    },
+    {
+      "key": "I177:8336;177:859",
+      "variable": "VariableID:204:7535",
+      "target": "177:8336",
+      "dest": ""
+    },
+    {
+      "key": "I177:8378;177:952",
+      "variable": "VariableID:204:7538",
+      "target": "177:8378",
+      "dest": ""
+    },
+    {
+      "key": "176:3605",
+      "variable": "VariableID:204:7542",
+      "target": "170:8378",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:8420;177:766",
+      "variable": "VariableID:204:7551",
+      "target": "177:8420",
+      "dest": ""
+    },
+    {
+      "key": "I177:8462;177:859",
+      "variable": "VariableID:204:7554",
+      "target": "177:8462",
+      "dest": ""
+    },
+    {
+      "key": "I177:8504;177:952",
+      "variable": "VariableID:204:7557",
+      "target": "177:8504",
+      "dest": ""
+    },
+    {
+      "key": "176:3742",
+      "variable": "VariableID:204:7724",
+      "target": "170:8732",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:8546;177:766",
+      "variable": "VariableID:204:7733",
+      "target": "177:8546",
+      "dest": ""
+    },
+    {
+      "key": "I177:8588;177:859",
+      "variable": "VariableID:204:7736",
+      "target": "177:8588",
+      "dest": ""
+    },
+    {
+      "key": "I177:8630;177:952",
+      "variable": "VariableID:204:7739",
+      "target": "177:8630",
+      "dest": ""
+    },
+    {
+      "key": "176:3879",
+      "variable": "VariableID:204:7744",
+      "target": "170:9086",
+      "dest": "170:4510"
+    },
+    {
+      "key": "I177:8672;177:766",
+      "variable": "VariableID:204:7753",
+      "target": "177:8672",
+      "dest": ""
+    },
+    {
+      "key": "I177:8714;177:859",
+      "variable": "VariableID:204:7756",
+      "target": "177:8714",
+      "dest": ""
+    },
+    {
+      "key": "I177:8756;177:952",
+      "variable": "VariableID:204:7759",
+      "target": "177:8756",
+      "dest": ""
+    },
+    {
+      "key": "I177:8798;177:1804",
+      "variable": "VariableID:204:7767",
+      "target": "177:8798",
+      "dest": ""
+    },
+    {
+      "key": "I177:8808;177:1829",
+      "variable": "VariableID:204:7772",
+      "target": "177:8808",
+      "dest": ""
+    },
+    {
+      "key": "I177:8818;177:1804",
+      "variable": "VariableID:204:7781",
+      "target": "177:8818",
+      "dest": ""
+    },
+    {
+      "key": "I177:8828;177:1829",
+      "variable": "VariableID:204:7786",
+      "target": "177:8828",
+      "dest": ""
+    },
+    {
+      "key": "I177:8838;177:1872",
+      "variable": "VariableID:204:7798",
+      "target": "177:8838",
+      "dest": ""
+    },
+    {
+      "key": "I177:8866;177:1935",
+      "variable": "VariableID:204:7806",
+      "target": "177:8866",
+      "dest": ""
+    },
+    {
+      "key": "I177:8892;177:1982",
+      "variable": "VariableID:204:7813",
+      "target": "177:8892",
+      "dest": ""
+    },
+    {
+      "key": "I177:8908;177:1872",
+      "variable": "VariableID:204:7830",
+      "target": "177:8908",
+      "dest": ""
+    },
+    {
+      "key": "I177:8936;177:1935",
+      "variable": "VariableID:204:7838",
+      "target": "177:8936",
+      "dest": ""
+    },
+    {
+      "key": "I177:8962;177:1982",
+      "variable": "VariableID:204:7845",
+      "target": "177:8962",
+      "dest": ""
+    }
+  ],
+  "notes": [
+    "All 60 copied screens are reachable from the sign-in flow.",
+    "Click fields to populate synthetic sample values; free keyboard entry and real file upload are not provided by this prototype.",
+    "Camera and backend responses are simulated.",
+    "Actions include conditional required-field checks, dropdown options, flags, exclusive answer selection, extra answer rows, removal limits, deletion confirmations and session reset.",
+    "Reachability and references verified via Figma Plugin API; added overlays and editor layout visually reviewed."
+  ]
+}

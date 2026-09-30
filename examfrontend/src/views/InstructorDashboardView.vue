@@ -31,10 +31,10 @@
           </div>
           <a href="#" class="nav-item" :class="{ active: activeNav === 'settings' }" @click.prevent="goSettings">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              <circle cx="12" cy="8" r="4"></circle>
+              <path d="M4 21a8 8 0 0 1 16 0"></path>
             </svg>
-            Settings
+            Profile
           </a>
           <a href="#" class="nav-item logout-nav" @click.prevent="requestLogout">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -61,7 +61,7 @@
             <template v-else>
               <span class="dashboard-eyebrow">{{ currentDate }}</span>
               <h1>{{ dashboardTitle }}</h1>
-              <p v-if="activeNav === 'settings'" class="header-sub">Manage your profile and account preferences.</p>
+              <p v-if="activeNav === 'settings'" class="header-sub">Your personal details and account information.</p>
               <p v-else-if="activeNav === 'courses'" class="header-sub">Create a course, then open it to run exams and enroll students.</p>
               <p v-else class="header-sub">See upcoming exams and jump into a course quickly.</p>
             </template>
@@ -123,15 +123,7 @@
                 </svg>
                 <input v-model.trim="timelineSearch" type="text" class="moodle-search agenda-search" placeholder="Search exams, subjects..." />
               </div>
-              <div class="select-wrapper agenda-filter-select agenda-sort-select">
-                <svg class="agenda-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
-                </svg>
-                <select v-model="timelineSort" class="moodle-select">
-                  <option value="due_asc">Sort by dates</option>
-                  <option value="title_asc">Sort by title</option>
-                </select>
-              </div>
+              <span class="agenda-order-label">Newest added first</span>
             </div>
 
             <div class="moodle-timeline-list dashboard-timeline-scroll agenda-timeline">
@@ -145,9 +137,8 @@
                 icon='<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>'
               />
               <template v-else>
-                <div v-for="group in groupedUpcomingExams" :key="group.key" class="moodle-day-group agenda-day-group">
                   <ExamRow
-                    v-for="exam in group.exams"
+                    v-for="exam in filteredUpcomingExams"
                     :key="`upcoming-${exam.subject_id}-${exam.id}`"
                     :dateIso="examTimelineDisplayAt(exam)"
                     :timeText="formatExamTimelineTime(exam)"
@@ -160,7 +151,6 @@
                       <button type="button" class="moodle-btn-ghost" @click="openExamStats(exam)">View Stats</button>
                     </template>
                   </ExamRow>
-                </div>
               </template>
             </div>
           </div>
@@ -175,6 +165,7 @@
               :errorMsg="profileError"
               :successMsg="profileSuccess"
               @save-profile="handleProfileUpdate"
+              @dismiss-notice="profileError = ''; profileSuccess = ''"
             />
           </div>
         </template>
@@ -816,8 +807,8 @@
 
                       <!-- Status badge -->
                       <td>
-                        <span class="status-badge" :class="row.is_done ? (row.terminated ? 'badge-terminated' : 'badge-done') : (row.due_at && new Date() > new Date(row.due_at) ? 'badge-not-taken' : 'badge-pending')">
-                          {{ row.is_done ? (row.terminated ? 'Terminated' : 'Done') : (row.due_at && new Date() > new Date(row.due_at) ? 'Not Taken' : 'Pending') }}
+                        <span class="status-badge" :class="submissionStatusClass(row)">
+                          {{ submissionStatus(row) }}
                         </span>
                       </td>
 
@@ -941,8 +932,8 @@
                           </div>
                         </td>
                         <td>
-                          <span class="status-badge" :class="row.is_done ? (row.terminated ? 'badge-terminated' : 'badge-done') : (row.due_at && new Date() > new Date(row.due_at) ? 'badge-not-taken' : 'badge-pending')">
-                            {{ row.is_done ? (row.terminated ? 'Terminated' : 'Done') : (row.due_at && new Date() > new Date(row.due_at) ? 'Not Taken' : 'Pending') }}
+                          <span class="status-badge" :class="submissionStatusClass(row)">
+                            {{ submissionStatus(row) }}
                           </span>
                         </td>
                         <td style="text-align:center">
@@ -1006,12 +997,7 @@
         </template>
 
         <!-- GLOBAL MESSAGES -->
-        <Transition name="action-toast">
-          <div v-if="message" class="action-success-toast" role="status" aria-live="polite">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            <div><strong>Success</strong><span>{{ message }}</span></div>
-          </div>
-        </Transition>
+        <NoticeModal :model-value="Boolean(message)" :message="message" @close="message = ''" />
         <p v-if="error" class="error global">{{ error }}</p>
 
       </main>
@@ -1387,10 +1373,7 @@
           <!-- Header -->
           <header class="stats-header">
             <div class="stats-header-content">
-              <span class="stats-eyebrow">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                Exam Report
-              </span>
+              <span class="stats-eyebrow">Exam overview</span>
               <h2 id="stats-modal-title" class="stats-title">{{ formatDisplayTitle(statsExam.title) }}</h2>
               <p class="stats-course-label">{{ formatDisplayTitle(`${statsExam.subject_code || ''} ${statsExam.subject_name || ''}`.trim()) }}</p>
             </div>
@@ -1403,7 +1386,7 @@
           <div v-if="!statsLoading && examStatsSets.length > 0" class="stats-summary-bar">
             <div class="stats-summary-pill">
               <span class="ssp-num">{{ examStatsSets.reduce((a,s)=>a+Number(s.total||0),0) }}</span>
-              <span class="ssp-lbl">Total Students</span>
+              <span class="ssp-lbl">Examinees</span>
             </div>
             <div class="stats-summary-pill stats-summary-pill--green">
               <span class="ssp-num">{{ examStatsSets.reduce((a,s)=>a+Number(s.done||0),0) }}</span>
@@ -1411,7 +1394,7 @@
             </div>
             <div class="stats-summary-pill stats-summary-pill--amber">
               <span class="ssp-num">{{ examStatsSets.reduce((a,s)=>a+Number(s.total||0),0) - examStatsSets.reduce((a,s)=>a+Number(s.done||0),0) }}</span>
-              <span class="ssp-lbl">Pending</span>
+              <span class="ssp-lbl">Not completed</span>
             </div>
           </div>
 
@@ -1421,53 +1404,24 @@
               <div class="stats-spinner"></div>
               <p>Loading statistics...</p>
             </div>
-            <p v-else-if="examStatsSets.length === 0" class="stats-empty">No sets or students found for this exam.</p>
-            <div v-else class="stats-cards-grid">
-              <article
-                v-for="(s, idx) in examStatsSets"
-                :key="s.id"
-                class="stats-set-card"
-                :style="{ '--card-delay': `${idx * 80}ms` }"
-              >
-                <div class="ssc-top">
-                  <span class="ssc-set-badge">{{ s.name }}</span>
+            <!-- Live examinees stay visible even when no one has started yet. -->
+            <div v-else class="stats-examinees-section">
+              <div class="stats-examinees-heading">
+                <div>
+                  <span class="stats-live-label"><span class="stats-live-dot"></span> Live view</span>
+                  <h3 class="stats-examinees-title">Examinees</h3>
                 </div>
-                <div class="ssc-progress-heading">
-                  <span class="ssc-pct">{{ statsSetPercent(s) }}<span class="ssc-pct-unit">%</span></span>
-                  <span class="ssc-pct-label">complete</span>
-                </div>
-                <div class="ssc-progress-track" aria-hidden="true">
-                  <span
-                    class="ssc-progress-fill"
-                    :class="{
-                      'ssc-progress-fill--green': statsSetPercent(s) >= 80,
-                      'ssc-progress-fill--amber': statsSetPercent(s) >= 50 && statsSetPercent(s) < 80,
-                      'ssc-progress-fill--red': statsSetPercent(s) < 50
-                    }"
-                    :style="{ width: `${statsSetPercent(s)}%` }"
-                  ></span>
-                </div>
-                <div class="ssc-counts">
-                  <span class="ssc-done">{{ s.done }} done</span>
-                  <span class="ssc-sep">·</span>
-                  <span class="ssc-total">{{ s.total }} total</span>
-                </div>
-              </article>
-            </div>
-
-            <!-- Active Examinees Table -->
-            <div v-if="examStatsExaminees.length > 0" class="stats-examinees-section">
-              <h3 class="stats-examinees-title">Examinee Status & Violations</h3>
+                <span class="stats-refresh-note">Updates every 5 seconds</span>
+              </div>
               <div class="stats-table-wrapper">
                 <table class="stats-table">
                   <thead>
                     <tr>
-                  <th>Name / Email</th>
+                      <th>Examinee</th>
                       <th>Set</th>
                       <th>Status</th>
-                      <th class="stats-center">Tab Switches</th>
-                      <th class="stats-center">Violations</th>
-                      <th class="stats-center">Last Snapshot</th>
+                      <th>Activity</th>
+                      <th class="stats-center">Live view</th>
                       <th class="stats-center">Report</th>
                     </tr>
                   </thead>
@@ -1480,30 +1434,20 @@
                       <td>{{ ex.set_name }}</td>
                       <td>
                         <span class="stats-badge" :class="{
-                          'stats-badge--red': getExamineeReportStatus(ex)==='Done',
-                          'stats-badge--amber': getExamineeReportStatus(ex)==='In Progress',
+                          'stats-badge--green': getExamineeReportStatus(ex)==='Done',
+                          'stats-badge--blue': getExamineeReportStatus(ex)==='Ongoing',
                           'stats-badge--red': getExamineeReportStatus(ex)==='Terminated',
-                          'stats-badge--gray': getExamineeReportStatus(ex)==='Not Taken',
-                          'stats-badge--neutral': getExamineeReportStatus(ex)==='Not Started'
+                          'stats-badge--orange': getExamineeReportStatus(ex)==='Not Taken',
+                          'stats-badge--amber': getExamineeReportStatus(ex)==='Pending'
                         }">
                           {{ getExamineeReportStatus(ex) }}
                         </span>
                       </td>
-                      <td class="stats-center">
-                        <span :class="{'stats-warn-text': ex.tab_switches > 0}">{{ ex.tab_switches }}</span>
-                      </td>
-                      <td class="stats-center">
-                        <div v-if="ex.gaze_violation_count > 0 || ex.gaze_no_face_count > 0" class="stats-violation-stack">
-                          <span class="stats-violation-total" :title="`Gaze away: ${ex.gaze_violation_count} | No face: ${ex.gaze_no_face_count}`">
-                            ⚠ {{ ex.gaze_violation_count + ex.gaze_no_face_count }}
-                          </span>
-                          <span class="stats-violation-breakdown">
-                            <span>{{ ex.gaze_violation_count }} gaze away</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{{ ex.gaze_no_face_count }} face hidden</span>
-                          </span>
+                      <td>
+                        <div class="stats-activity">
+                          <span :class="{'stats-warn-text': ex.tab_switches > 0}">{{ ex.tab_switches }} tab switches</span>
+                          <span :class="{'stats-warn-text': ex.gaze_violation_count + ex.gaze_no_face_count > 0}" :title="`Gaze away: ${ex.gaze_violation_count} | No face: ${ex.gaze_no_face_count}`">{{ ex.gaze_violation_count + ex.gaze_no_face_count }} gaze alerts</span>
                         </div>
-                        <span v-else style="color: #6b7280; font-size: 0.85rem;">—</span>
                       </td>
                       <td class="stats-center">
                         <div class="stats-snapshot-wrapper">
@@ -1523,6 +1467,7 @@
                         <span v-else style="color: #d1d5db; font-size: 0.75rem;">—</span>
                       </td>
                     </tr>
+                    <tr v-if="examStatsExaminees.length === 0"><td colspan="6" class="stats-table-empty">No examinees are assigned yet.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1656,7 +1601,8 @@
               <button class="ir-tab-btn" :class="{ 'ir-tab-btn--active': activeIrTab === 'answers' }" @click="activeIrTab = 'answers'">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                 Answers &amp; grading
-                <span class="ir-tab-count">{{ (integrityReportData.subjective_answers || []).length }}</span>
+                <span v-if="pendingSubjectiveAnswers.length" class="ir-tab-count">{{ pendingSubjectiveAnswers.length }}</span>
+                <span v-else-if="(integrityReportData.subjective_answers || []).length" class="ir-tab-count ir-tab-count--done">✓</span>
               </button>
               <button class="ir-tab-btn" :class="{ 'ir-tab-btn--active': activeIrTab === 'log' }" @click="activeIrTab = 'log'">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -1681,11 +1627,19 @@
                 <div class="ir-grading-summary" :class="integrityReportData.manual_grading_complete ? 'ir-grading-summary--done' : ''">
                   <div>
                     <strong>{{ integrityReportData.manual_grading_complete ? 'Grading complete' : 'Manual grading required' }}</strong>
-                    <p>Read each response, enter the awarded points, then save the grades.</p>
+                    <p>{{ integrityReportData.manual_grading_complete ? 'Every response has been checked.' : 'Score the remaining responses, then save the grades.' }}</p>
                   </div>
                   <span>{{ gradedSubjectiveCount }} / {{ integrityReportData.subjective_answers.length }} graded</span>
                 </div>
-                <article v-for="answer in integrityReportData.subjective_answers" :key="answer.answer_id" class="ir-answer-card">
+                <button v-if="gradedSubjectiveCount" type="button" class="ir-review-checked" @click="reviewCheckedAnswers = !reviewCheckedAnswers">
+                  {{ reviewCheckedAnswers ? 'Show unchecked answers' : `Review checked answers (${gradedSubjectiveCount})` }}
+                </button>
+                <div v-if="!visibleSubjectiveAnswers.length" class="ir-checked-empty">
+                  <span class="ir-checked-empty-icon" aria-hidden="true">✓</span>
+                  <strong>All answers checked</strong>
+                  <p>The answer and grading fields are clear. Use Review checked answers if you need to change a score.</p>
+                </div>
+                <article v-for="answer in visibleSubjectiveAnswers" :key="answer.answer_id" class="ir-answer-card">
                   <div class="ir-answer-heading">
                     <span class="ir-answer-number">Question {{ answer.order }}</span>
                     <label class="ir-points-field">
@@ -1707,9 +1661,8 @@
                     <p>{{ answer.answer_text || 'No answer provided.' }}</p>
                   </div>
                 </article>
-                <div class="ir-grading-actions">
+                <div v-if="visibleSubjectiveAnswers.length" class="ir-grading-actions">
                   <p v-if="gradingError" class="ir-grading-error">{{ gradingError }}</p>
-                  <p v-else-if="gradingMessage" class="ir-grading-success">{{ gradingMessage }}</p>
                   <button type="button" class="primary-btn" :disabled="gradingSaving" @click="saveSubjectiveGrades">
                     {{ gradingSaving ? 'Saving…' : 'Save grades' }}
                   </button>
@@ -1720,6 +1673,8 @@
                 <p>This exam has no subjective answers to grade.</p>
               </div>
             </div>
+
+            <NoticeModal :model-value="Boolean(gradingMessage)" title="Grades saved" :message="gradingMessage" @close="gradingMessage = ''" />
 
             <!-- TAB: ACTION LOG -->
             <div v-if="activeIrTab === 'log'" class="ir-tab-panel">
@@ -1844,11 +1799,11 @@ import SettingsPanel from "@/components/SettingsPanel.vue";
 import SkeletonLoader from "@/components/SkeletonLoader.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
+import NoticeModal from "@/components/NoticeModal.vue";
 import {
-  examAnchorTimestamp,
+  compareExamsNewestFirst,
   examTimelineDisplayAt,
   formatExamTimelineTime,
-  groupExamsByTimelineDay,
   instructorExamOnDashboard,
   localDatetimeInputToApi,
 } from "@/utils/examTimeline.js";
@@ -1897,12 +1852,7 @@ async function handleProfileUpdate(formData) {
     
     // The backend returns { user: { ... } }
     onSettingsUpdated(response.data.user);
-    profileSuccess.value = "Profile updated successfully!";
-    
-    // Clear success message after 3 seconds
-    setTimeout(() => {
-      profileSuccess.value = "";
-    }, 3000);
+    profileSuccess.value = "Your profile has been updated.";
   } catch (err) {
     profileError.value = err?.response?.data?.error || "Failed to update profile.";
   } finally {
@@ -2123,9 +2073,18 @@ const integrityReportData = ref({});
 const gradingSaving = ref(false);
 const gradingError = ref("");
 const gradingMessage = ref("");
+const reviewCheckedAnswers = ref(false);
 const gradedSubjectiveCount = computed(() => (
   integrityReportData.value.subjective_answers || []
-).filter(answer => answer._grade !== '' && answer._grade != null).length);
+).filter(answer => answer.awarded_points != null).length);
+const pendingSubjectiveAnswers = computed(() => (
+  integrityReportData.value.subjective_answers || []
+).filter(answer => answer.awarded_points == null));
+const visibleSubjectiveAnswers = computed(() => (
+  reviewCheckedAnswers.value
+    ? integrityReportData.value.subjective_answers || []
+    : pendingSubjectiveAnswers.value
+));
 const evidenceImages = computed(() => (integrityReportData.value.evidence || []).filter(s => !String(s.caption || '').toLowerCase().includes('scheduled')));
 const snapshotImages = computed(() => (integrityReportData.value.evidence || []).filter(s => String(s.caption || '').toLowerCase().includes('scheduled')));
 const activeIrTab = ref('log');
@@ -2145,7 +2104,6 @@ const bulkEnrollEmails = ref("");
 const bulkEnrollLoading = ref(false);
 const bulkEnrollResult = ref(null);
 const timelineWindowDays = ref("3650");
-const timelineSort = ref("due_asc");
 const timelineSearch = ref("");
 const courseFilter = ref("all");
 const courseSearch = ref("");
@@ -2223,16 +2181,6 @@ const examProgressLoaded = ref(false);
 const message = ref("");
 const error = ref("");
 
-watch(message, (newVal) => {
-  if (newVal) {
-    setTimeout(() => {
-      if (message.value === newVal) {
-        message.value = "";
-      }
-    }, 4000);
-  }
-});
-
 const activeCourseLabel = computed(() => {
   if (!selectedSubjectId.value) return "";
   const found = subjects.value.find((s) => Number(s.id) === Number(selectedSubjectId.value));
@@ -2252,9 +2200,7 @@ const activeSetLabel = computed(() => {
 });
 
 const sortedExamSets = computed(() =>
-  [...(examSets.value || [])].sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  )
+  [...(examSets.value || [])].sort(compareExamsNewestFirst)
 );
 
 const dashboardTitle = computed(() => {
@@ -2263,7 +2209,7 @@ const dashboardTitle = computed(() => {
     return selectedCourse.value.name;
   }
   if (activeNav.value === 'courses') return 'My Courses';
-  if (activeNav.value === 'settings') return 'Account Settings';
+  if (activeNav.value === 'settings') return 'Profile';
   return '';
 });
 
@@ -2340,10 +2286,6 @@ const activeNav = computed(() => {
   return "dashboard";
 });
 
-const groupedUpcomingExams = computed(() =>
-  groupExamsByTimelineDay(filteredUpcomingExams.value),
-);
-
 function formatTimeOnly(raw) {
   if (!raw) return "23:59";
   const d = new Date(raw);
@@ -2365,12 +2307,7 @@ const filteredUpcomingExams = computed(() => {
     );
   });
 
-  if (timelineSort.value === "title_asc") {
-    rows = rows.sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
-  } else {
-    rows = rows.sort((a, b) => examAnchorTimestamp(a) - examAnchorTimestamp(b));
-  }
-  return rows;
+  return rows.sort(compareExamsNewestFirst);
 });
 
 const displayedCourses = computed(() => {
@@ -2429,10 +2366,10 @@ const progressExams = computed(() => {
   const map = new Map();
   for (const row of examProgressRows.value || []) {
     if (!map.has(row.exam_set_id)) {
-      map.set(row.exam_set_id, { id: row.exam_set_id, title: row.exam_title });
+      map.set(row.exam_set_id, { id: row.exam_set_id, title: row.exam_title, created_at: row.created_at });
     }
   }
-  return Array.from(map.values()).sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+  return Array.from(map.values()).sort(compareExamsNewestFirst);
 });
 
 const progressExamsForSelectedSet = computed(() => {
@@ -2518,7 +2455,7 @@ const selectedStudentProgressRows = computed(() => {
   return (examProgressRows.value || []).filter(
     (row) => row.student_set_id === selectedProgressSetId.value
       && String(row.student_email || "").toLowerCase() === selectedProgressStudentEmail.value,
-  );
+  ).sort(compareExamsNewestFirst);
 });
 
 function courseBannerClass(index) {
@@ -2737,6 +2674,7 @@ async function openIntegrityReport(row) {
   integrityReportData.value = { _student_score: row.score ?? null, _student_email: row.student_email, _subject_id: subjectId };
   gradingError.value = '';
   gradingMessage.value = '';
+  reviewCheckedAnswers.value = false;
   activeIrTab.value = row.pending_subjective_count > 0 ? 'answers' : 'log';
   try {
     const { data } = await apiClient.get(
@@ -2845,11 +2783,10 @@ async function fetchUpcomingExams() {
           subject_code: subject.code,
           subject_name: subject.name,
           display_due: toDisplayDue(exam),
-          sort_value: new Date(exam?.due_at || exam?.deadline || exam?.created_at || 0).getTime(),
         }));
       }),
     );
-    upcomingExamRows.value = examLists.flat().sort((a, b) => a.sort_value - b.sort_value);
+    upcomingExamRows.value = examLists.flat().sort(compareExamsNewestFirst);
     upcomingLoaded.value = true;
   } catch {
     upcomingExamRows.value = [];
@@ -2976,7 +2913,7 @@ async function saveSubjectiveGrades() {
   gradingError.value = '';
   gradingMessage.value = '';
   try {
-    const grades = (report.subjective_answers || []).map(answer => ({
+    const grades = visibleSubjectiveAnswers.value.map(answer => ({
       answer_id: answer.answer_id,
       awarded_points: answer._grade === '' ? null : answer._grade,
     }));
@@ -2995,6 +2932,7 @@ async function saveSubjectiveGrades() {
       _subject_id: report._subject_id,
       _student_score: data.submission?.score ?? report._student_score,
     };
+    reviewCheckedAnswers.value = false;
     gradingMessage.value = data.manual_grading_complete
       ? 'All subjective answers are graded and the exam score has been updated.'
       : 'Grades saved. Unscored answers remain pending.';
@@ -3420,19 +3358,29 @@ async function finalizeExam() {
   }
 }
 
-function statsSetPercent(setRow) {
-  const total = Number(setRow?.total) || 0;
-  const done = Number(setRow?.done) || 0;
-  if (total <= 0) return 0;
-  return Math.round((done / total) * 100);
-}
-
 function getExamineeReportStatus(ex) {
   if (ex.status === 'Done' || ex.status === 'Terminated') return ex.status;
   if (statsExam.value?.due_at && new Date() > new Date(statsExam.value.due_at)) {
     return 'Not Taken';
   }
-  return ex.status || 'Not Started';
+  return ex.status === 'In Progress' ? 'Ongoing' : 'Pending';
+}
+
+function submissionStatus(row) {
+  if (row.terminated) return 'Terminated';
+  if (row.is_done) return 'Done';
+  if (row.due_at && new Date(row.due_at).getTime() < Date.now()) return 'Not Taken';
+  return row.started_at ? 'Ongoing' : 'Pending';
+}
+
+function submissionStatusClass(row) {
+  return {
+    Terminated: 'badge-terminated',
+    Done: 'badge-done',
+    'Not Taken': 'badge-not-taken',
+    Ongoing: 'badge-active',
+    Pending: 'badge-pending',
+  }[submissionStatus(row)];
 }
 
 async function fetchStatsData(exam, isBackground = false) {
@@ -3626,29 +3574,6 @@ onMounted(async () => {
 <style scoped>
 @import '@/assets/dashboard.css';
 
-.action-success-toast {
-  position: fixed;
-  top: 1.25rem;
-  right: 1.25rem;
-  z-index: 1000002;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
-  width: min(390px, calc(100vw - 2rem));
-  padding: 0.9rem 1rem;
-  color: #14532d;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-left: 4px solid #22c55e;
-  border-radius: 10px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
-}
-.action-success-toast svg { flex: 0 0 auto; margin-top: 0.1rem; }
-.action-success-toast div { display: grid; gap: 0.15rem; }
-.action-success-toast strong { font-size: 0.82rem; }
-.action-success-toast span { font-size: 0.86rem; line-height: 1.35; }
-.action-toast-enter-active, .action-toast-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.action-toast-enter-from, .action-toast-leave-to { opacity: 0; transform: translateY(-10px); }
 
 /* Premium Proctoring Toggle UI */
 .premium-toggle-card {
@@ -3771,51 +3696,50 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(15, 23, 42, 0.72);
-  backdrop-filter: blur(5px);
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(7px);
 }
 
 /* Modal shell */
 .stats-shell {
   width: 100%;
-  max-width: 1180px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 16px;
+  max-width: 1200px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
   overflow: hidden;
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.32);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 4rem);
+  max-height: calc(100vh - 3rem);
 }
 
 /* Header */
 .stats-header {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.5rem 1.75rem;
-  background: #151b2d;
-  border-bottom: none;
-  color: #f8fafc;
+  padding: 1.8rem 2rem;
+  background: linear-gradient(120deg, #1d3461, #314d83);
+  color: #fff;
 }
 .stats-header-content { flex: 1; min-width: 0; }
 .stats-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.68rem;
+  font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: #b8c1d9;
+  color: #c9d8f1;
   margin-bottom: 0.5rem;
 }
 .stats-title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: clamp(1.55rem, 2.3vw, 2.05rem);
   font-weight: 800;
   font-family: 'Poppins', sans-serif;
   letter-spacing: -0.01em;
@@ -3824,63 +3748,57 @@ onMounted(async () => {
 .stats-course-label {
   display: inline-flex;
   margin: 0.55rem 0 0;
-  padding: 0.25rem 0.55rem;
-  border-radius: 6px;
-  font-size: 0.88rem;
-  color: #d7dce8;
-  background: #222a40;
-  border: 1px solid #374057;
+  font-size: 0.98rem;
+  color: #dce7fa;
 }
 .stats-close-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #222a40;
-  border: 1px solid #3b455d;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.24);
   color: #fff;
   cursor: pointer;
   transition: background 0.18s;
   padding: 0;
 }
-.stats-close-btn:hover { background: #303950; border-color: #64748b; }
+.stats-close-btn:hover { background: rgba(255,255,255,.22); }
 
 /* Summary bar */
 .stats-summary-bar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  background: #eef2f7;
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+  background: #f7f9fc;
   border-bottom: 1px solid #e2e8f0;
 }
 .stats-summary-pill {
   display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0.85rem 1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1.25rem 1.4rem;
   background: #ffffff;
   border: 1px solid #dbe3ee;
-  border-left: 4px solid #64748b;
-  border-radius: 10px;
-  gap: 0.75rem;
+  border-radius: 15px;
+  gap: 0.45rem;
+  box-shadow: 0 4px 15px rgba(29,52,97,.04);
 }
-.stats-summary-pill--green { border-left-color: #059669; }
-.stats-summary-pill--amber { border-left-color: #d97706; }
+.stats-summary-pill--green { background: #f0faf5; border-color: #d4eddf; }
+.stats-summary-pill--amber { background: #fff9ec; border-color: #f5e4bc; }
 .ssp-num {
-  font-size: 1.6rem;
+  font-size: 2.15rem;
   font-weight: 800;
-  color: #0f172a;
+  color: #1d3461;
   line-height: 1;
 }
 .ssp-lbl {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  font-size: 0.88rem;
   color: #64748b;
   font-weight: 700;
 }
@@ -3888,7 +3806,7 @@ onMounted(async () => {
 .stats-summary-pill--amber .ssp-num { color: #d97706; }
 
 /* Body */
-.stats-body { padding: 1.5rem; overflow-y: auto; flex: 1; background: #f8fafc; }
+.stats-body { padding: 0 2rem 2rem; overflow-y: auto; flex: 1; background: #f7f9fc; }
 .stats-loading-state {
   display: flex;
   flex-direction: column;
@@ -3913,102 +3831,6 @@ onMounted(async () => {
   font-size: 0.95rem;
   margin: 0;
 }
-
-/* Set cards grid */
-.stats-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.85rem;
-}
-.stats-set-card {
-  animation: card-pop 0.4s cubic-bezier(0.34,1.26,0.64,1) both;
-  animation-delay: var(--card-delay, 0ms);
-  background: #fff;
-  border: 1px solid #dbe3ee;
-  border-radius: 12px;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  text-align: left;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-  transition: box-shadow 0.2s, transform 0.2s;
-}
-.stats-set-card:hover {
-  border-color: #a5b4fc;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.09);
-  transform: translateY(-2px);
-}
-@keyframes card-pop {
-  from { opacity: 0; transform: scale(0.88) translateY(10px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
-}
-.ssc-top { margin-bottom: 0.85rem; }
-.ssc-set-badge {
-  display: inline-block;
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-  color: #4338ca;
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.2rem 0.65rem;
-  border-radius: 6px;
-}
-
-.ssc-progress-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.55rem;
-}
-.ssc-progress-track {
-  width: 100%;
-  height: 9px;
-  overflow: hidden;
-  border-radius: 5px;
-  background: #e2e8f0;
-  margin-bottom: 0.8rem;
-}
-.ssc-progress-fill {
-  display: block;
-  height: 100%;
-  min-width: 0;
-  border-radius: inherit;
-  background: #64748b;
-  transition: width 0.45s ease;
-}
-.ssc-progress-fill--green { background: #059669; }
-.ssc-progress-fill--amber { background: #d97706; }
-.ssc-progress-fill--red { background: #dc2626; }
-.ssc-pct {
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: #0f172a;
-  line-height: 1;
-}
-.ssc-pct-unit { font-size: 0.78rem; font-weight: 700; color: #64748b; }
-.ssc-pct-label {
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: #64748b;
-  font-weight: 700;
-}
-
-.ssc-counts {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.4rem;
-  font-size: 0.82rem;
-  color: #64748b;
-}
-.ssc-done { font-weight: 700; color: #059669; }
-.ssc-sep  { opacity: 0.4; }
-.ssc-total { font-weight: 600; }
 
 /* ================================================
    PROCTORING / INTEGRITY REPORT — Slide Drawer
@@ -4200,6 +4022,7 @@ onMounted(async () => {
   font-size: 0.62rem; font-weight: 800;
   min-width: 17px; height: 17px; padding: 0 0.28rem; border-radius: 999px;
 }
+.ir-tab-count--done { background: #dcfce7; color: #047857; }
 
 /* ---- Tab panel ---- */
 .ir-tab-panel {
@@ -4315,6 +4138,20 @@ onMounted(async () => {
 .ir-grading-summary strong { display: block; font-size: 0.88rem; }
 .ir-grading-summary p { margin: 0.2rem 0 0; font-size: 0.75rem; line-height: 1.4; }
 .ir-grading-summary > span { flex-shrink: 0; font-size: 0.72rem; font-weight: 800; }
+.ir-review-checked {
+  align-self: flex-start; border: 1px solid #c6d5ed; border-radius: 9px;
+  background: #fff; color: #1d3461; padding: 0.6rem 0.85rem;
+  font: inherit; font-size: 0.78rem; font-weight: 800; cursor: pointer;
+}
+.ir-review-checked:hover, .ir-review-checked:focus-visible { background: #edf3fd; border-color: #7799ce; }
+.ir-checked-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  padding: 2.5rem 1.25rem; border: 1px solid #d4eddf; border-radius: 14px;
+  background: #fff; color: #065f46; text-align: center;
+}
+.ir-checked-empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 0.35rem; border-radius: 50%; background: #dcfce7; font-size: 1.4rem; font-weight: 800; }
+.ir-checked-empty strong { font-size: 1.05rem; }
+.ir-checked-empty p { max-width: 46ch; margin: 0; color: #475569; font-size: 0.82rem; line-height: 1.5; }
 .ir-answer-card {
   padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px;
   background: #fff;
@@ -4337,7 +4174,6 @@ onMounted(async () => {
 .ir-grading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; position: sticky; bottom: 0; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 10px; background: rgba(255,255,255,0.96); }
 .ir-grading-actions p { flex: 1; margin: 0; font-size: 0.76rem; }
 .ir-grading-error { color: #dc2626; }
-.ir-grading-success { color: #047857; }
 .ep-report-btn--grade { background: #fff7ed; border-color: #fdba74; color: #c2410c; }
 .ep-report-btn--grade:hover { background: #ffedd5; border-color: #fb923c; color: #9a3412; }
 
@@ -4363,33 +4199,37 @@ onMounted(async () => {
 
 /* ---- Examinees stats table ---- */
 .stats-examinees-section {
-  margin-top: 1rem;
-  padding: 1.15rem;
+  margin-top: 0;
+  padding: 1.5rem;
   background: #ffffff;
   border: 1px solid #dbe3ee;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  border-radius: 16px;
+  box-shadow: 0 6px 22px rgba(29, 52, 97, 0.05);
 }
+.stats-examinees-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.15rem; }
+.stats-live-label { display: inline-flex; align-items: center; gap: .45rem; color: #15803d; font-size: .82rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.stats-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px #dcfce7; }
+.stats-refresh-note { color: #64748b; font-size: .82rem; }
 .stats-examinees-title {
-  font-size: 1rem;
+  font-size: 1.45rem;
   font-weight: 800;
-  color: #172554;
-  margin: 0 0 0.9rem;
+  color: #1d3461;
+  margin: .3rem 0 0;
 }
 .stats-table-wrapper {
   overflow: auto;
   border: 1px solid #dbe3ee;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #ffffff;
 }
-.stats-table { width: 100%; min-width: 930px; border-collapse: collapse; font-size: 0.83rem; text-align: left; }
+.stats-table { width: 100%; min-width: 830px; border-collapse: collapse; font-size: 0.95rem; text-align: left; }
 .stats-table th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #eef2f7;
-  padding: 0.78rem 0.85rem;
-  font-size: 0.7rem;
+  background: #f1f5fb;
+  padding: 1rem;
+  font-size: 0.78rem;
   font-weight: 800;
   color: #475569;
   text-transform: uppercase;
@@ -4397,36 +4237,37 @@ onMounted(async () => {
   border-bottom: 1px solid #cbd5e1;
   white-space: nowrap;
 }
-.stats-table td { padding: 0.8rem 0.85rem; border-bottom: 1px solid #e8edf4; color: #334155; vertical-align: middle; }
+.stats-table td { padding: 1rem; border-bottom: 1px solid #e8edf4; color: #334155; vertical-align: middle; }
 .stats-table tbody tr { transition: background 0.15s ease; }
 .stats-table tbody tr:hover { background: #f8fafc; }
 .stats-table tr:last-child td { border-bottom: none; }
-.stats-ex-name { font-weight: 700; color: #0f172a; margin-bottom: 0.15rem; }
-.stats-ex-email { font-size: 0.72rem; color: #64748b; }
+.stats-ex-name { font-weight: 800; color: #1d3461; margin-bottom: 0.2rem; }
+.stats-ex-email { font-size: 0.8rem; color: #64748b; }
 .stats-center { text-align: center !important; }
 .stats-warn-text { color: #ef4444; font-weight: 700; }
-.stats-violation-breakdown { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.15rem 0.3rem; font-size: 0.68rem; line-height: 1.25; color: #92400e; }
-.stats-violation-stack { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; }
-.stats-violation-total { font-size: 0.76rem; font-weight: 800; color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.15rem 0.45rem; }
-.stats-badge { display: inline-flex; padding: 0.28rem 0.6rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+.stats-activity { display: flex; flex-direction: column; gap: .25rem; font-size: .88rem; white-space: nowrap; }
+.stats-table-empty { text-align: center; padding: 2.25rem !important; color: #64748b !important; }
+.stats-badge { display: inline-flex; padding: 0.38rem 0.7rem; border-radius: 8px; font-size: 0.83rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
 .stats-badge--green { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.stats-badge--blue { background: #e8f1ff; color: #2458d6; border-color: #bfdbfe; }
 .stats-badge--amber { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.stats-badge--orange { background: #fff0df; color: #9a3412; border-color: #fed7aa; }
 .stats-badge--red { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
 .stats-badge--gray { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
 .stats-badge--neutral { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
 .stats-report-btn {
-  padding: 0.38rem 0.65rem;
-  border-radius: 7px;
-  border: 1px solid #a5b4fc;
+  padding: 0.55rem 0.85rem;
+  border-radius: 9px;
+  border: 1px solid #c6d5ed;
   background: #ffffff;
-  color: #4338ca;
-  font-size: 0.72rem;
+  color: #1d3461;
+  font-size: 0.83rem;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.stats-report-btn:hover { background: #eef2ff; border-color: #6366f1; }
+.stats-report-btn:hover { background: #edf3fd; border-color: #7799ce; }
 
 /* ---- Snapshot column ---- */
 .stats-snapshot-wrapper { width: 96px; height: 64px; border-radius: 8px; overflow: hidden; background: #f1f5f9; border: 1px solid #dbe3ee; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
@@ -4437,12 +4278,18 @@ onMounted(async () => {
   .stats-backdrop { padding: 0; align-items: stretch; }
   .stats-shell { max-height: 100vh; border-radius: 0; border: none; }
   .stats-header { padding: 1.1rem 1rem; }
-  .stats-title { font-size: 1.25rem; }
-  .stats-summary-bar { grid-template-columns: 1fr; padding: 0.75rem; gap: 0.5rem; }
-  .stats-summary-pill { padding: 0.65rem 0.8rem; }
-  .stats-body { padding: 0.75rem; }
-  .stats-cards-grid { grid-template-columns: 1fr; }
-  .stats-examinees-section { padding: 0.75rem; }
+  .stats-title { font-size: 1.4rem; }
+  .stats-summary-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 1rem; gap: 0.5rem; }
+  .stats-summary-pill { padding: 0.8rem; }
+  .ssp-num { font-size: 1.65rem; }
+  .ssp-lbl { font-size: 0.72rem; }
+  .stats-body { padding: 0 1rem 1rem; }
+  .stats-examinees-section { padding: 1rem; }
+  .stats-refresh-note { display: none; }
+}
+@media (max-width: 480px) {
+  .stats-summary-bar { grid-template-columns: 1fr; }
+  .stats-summary-pill { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
 </style>
 

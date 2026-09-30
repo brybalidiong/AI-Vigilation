@@ -35,6 +35,14 @@ export function examAnchorTimestamp(exam) {
   return d ? d.getTime() : 0;
 }
 
+/** Most recently created exam first; ID breaks equal or missing timestamps. */
+export function compareExamsNewestFirst(a, b) {
+  const created = (exam) => parseExamDate(exam?.created_at)?.getTime() ?? 0;
+  const difference = created(b) - created(a);
+  if (difference) return difference;
+  return Number(b?.id ?? b?.exam_set_id ?? 0) - Number(a?.id ?? a?.exam_set_id ?? 0);
+}
+
 export function formatTimelineDayHeader(rawOrDate) {
   const d = rawOrDate instanceof Date ? rawOrDate : parseExamDate(rawOrDate);
   if (!d) return 'Unknown date';

@@ -4,13 +4,118 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 from decimal import Decimal
+from datetime import timedelta
 from io import BytesIO
+from unittest.mock import patch
+from django.utils import timezone
 
 from accounts.grading import grade_question
 from accounts.models import (
     EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, StudentAnswer,
     StudentSet, Subject, UserProfile,
 )
+
+
+class AdminAccessWorkflowTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin-workflow', is_superuser=True)
+        self.instructor = User.objects.create_user(
+            username='instructor@dnsc.edu.ph', email='instructor@dnsc.edu.ph', is_staff=True,
+        )
+        UserProfile.objects.create(user=self.instructor, role='instructor')
+        self.subject = Subject.objects.create(
+            name='Preserved Course', code='KEEP', instructor=self.instructor,
+        )
+        self.exam = ExamSet.objects.create(subject=self.subject, title='Preserved Exam', is_final=True)
+        self.student = User.objects.create_user(
+            username='student@dnsc.edu.ph', email='student@dnsc.edu.ph',
+        )
+        UserProfile.objects.create(user=self.student, role='student', is_enrolled=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_instructor_deactivation_keeps_courses_and_can_be_restored(self):
+        url = f'/api/admin/instructors/{self.instructor.pk}/'
+        response = self.client.patch(url, {'is_active': False}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.instructor.refresh_from_db()
+        self.assertFalse(self.instructor.is_active)
+        self.assertFalse(self.instructor.is_staff)
+        self.assertTrue(Subject.objects.filter(pk=self.subject.pk).exists())
+        self.assertTrue(ExamSet.objects.filter(pk=self.exam.pk).exists())
+        listed = self.client.get('/api/admin/instructors/')
+        self.assertTrue(any(row['id'] == self.instructor.pk and not row['is_active'] for row in listed.data['instructors']))
+
+        response = self.client.patch(url, {'is_active': True}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.instructor.refresh_from_db()
+        self.assertTrue(self.instructor.is_active)
+        self.assertTrue(self.instructor.is_staff)
+
+    def test_student_enrollment_can_be_disabled_and_restored(self):
+        url = f'/api/admin/students/{self.student.pk}/'
+        for enabled in (False, True):
+            response = self.client.patch(url, {
+                'action': 'set_enrollment', 'is_enrolled': enabled,
+            }, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+            self.student.profile.refresh_from_db()
+            self.student.refresh_from_db()
+            self.assertEqual(self.student.profile.is_enrolled, enabled)
+            self.assertEqual(self.student.is_active, enabled)
+
+    def test_face_reupload_can_be_turned_off_again(self):
+        profile = self.student.profile
+        profile.face_photo = 'face_photos/synthetic.jpg'
+        profile.face_status = UserProfile.FACE_STATUS_APPROVED
+        profile.save(update_fields=['face_photo', 'face_status'])
+        url = f'/api/admin/students/{self.student.pk}/'
+        first = self.client.patch(url, {'action': 'toggle_reupload'}, format='json')
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertTrue(first.data['face_reupload_allowed'])
+        self.assertEqual(first.data['face_status'], UserProfile.FACE_STATUS_NONE)
+        second = self.client.patch(url, {'action': 'toggle_reupload'}, format='json')
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertFalse(second.data['face_reupload_allowed'])
+        self.assertEqual(second.data['face_status'], UserProfile.FACE_STATUS_APPROVED)
+
+    def test_non_admin_cannot_change_access(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.patch(
+            f'/api/admin/instructors/{self.instructor.pk}/', {'is_active': False}, format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_register_instructor_does_not_promote_existing_student(self):
+        response = self.client.post('/api/admin/instructors/', {
+            'email': self.student.email, 'first_name': 'Student',
+        }, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_staff)
+        self.assertEqual(self.student.profile.role, 'student')
+
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_enroll_student_does_not_convert_existing_instructor(self):
+        response = self.client.post('/api/admin/students/', {
+            'email': self.instructor.email,
+        }, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.instructor.refresh_from_db()
+        self.assertTrue(self.instructor.is_staff)
+        self.assertEqual(self.instructor.profile.role, 'instructor')
+
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_deactivated_instructor_cannot_sign_in(self):
+        self.instructor.is_active = False
+        self.instructor.save(update_fields=['is_active'])
+        with patch('accounts.views.firebase_auth.verify_id_token', return_value={
+            'email': self.instructor.email, 'name': 'Instructor Example',
+        }):
+            response = self.client.post('/api/auth/google/', {'token': 'synthetic-token'})
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertNotIn('access_token', response.data)
 
 
 @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
@@ -97,6 +202,55 @@ class ExcelEnrollmentImportTests(TestCase):
         self.assertEqual(response.data['error'], 'Only .xlsx Excel files are supported.')
 
 
+class ExamListOrderingTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.instructor = User.objects.create_user(username='order-instructor', is_staff=True)
+        cls.student = User.objects.create_user(
+            username='order-student', email='order-student@example.com',
+        )
+        cls.subject = Subject.objects.create(
+            name='Order Science', code='ORDER', instructor=cls.instructor,
+        )
+        roster = StudentSet.objects.create(
+            name='Section A', subject=cls.subject, created_by=cls.instructor,
+        )
+        EnrolledStudent.objects.create(email=cls.student.email, student_set=roster)
+        cls.older = ExamSet.objects.create(
+            subject=cls.subject, title='Older exam', is_final=True,
+            due_at=timezone.now() + timedelta(days=30),
+        )
+        cls.newer = ExamSet.objects.create(
+            subject=cls.subject, title='Newer exam', is_final=True,
+            due_at=timezone.now() + timedelta(days=7),
+        )
+
+    def test_student_and_instructor_exam_lists_are_newest_first(self):
+        client = APIClient()
+        client.force_authenticate(self.student)
+        response = client.get('/api/student/exams/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            [row['id'] for row in response.data['exam_sets']],
+            [self.newer.id, self.older.id],
+        )
+
+        client.force_authenticate(self.instructor)
+        response = client.get(f'/api/instructor/subjects/{self.subject.id}/exam-sets/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            [row['id'] for row in response.data['exam_sets']],
+            [self.newer.id, self.older.id],
+        )
+        response = client.get(f'/api/instructor/subjects/{self.subject.id}/exam-progress/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            [row['exam_set_id'] for row in response.data['progress']],
+            [self.newer.id, self.older.id],
+        )
+        self.assertTrue(all(row['created_at'] for row in response.data['progress']))
+
+
 @override_settings(SECRET_KEY='exam-question-order-test-key')
 class ExamQuestionOrderTests(TestCase):
     @classmethod
@@ -133,6 +287,24 @@ class ExamQuestionOrderTests(TestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200, response.data)
         return response.data['questions']
+
+    def test_exam_list_exposes_terminated_status(self):
+        submission = ExamSubmission.objects.create(
+            exam_set=self.exam,
+            student_email=self.students[0].email,
+            is_done=True,
+            terminated=True,
+        )
+        response = self.client.get('/api/student/exams/')
+        self.assertEqual(response.status_code, 200, response.data)
+        listed = next(row for row in response.data['exam_sets'] if row['id'] == self.exam.pk)
+        self.assertTrue(listed['is_done'])
+        self.assertTrue(listed['terminated'])
+        submission.terminated = False
+        submission.save(update_fields=['terminated'])
+        response = self.client.get('/api/student/exams/')
+        listed = next(row for row in response.data['exam_sets'] if row['id'] == self.exam.pk)
+        self.assertFalse(listed['terminated'])
 
     def test_shuffle_is_complete_stable_and_specific_to_student(self):
         first = self.fetch_questions()

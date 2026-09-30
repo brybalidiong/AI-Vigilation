@@ -783,11 +783,11 @@
   white-space: nowrap;
   line-height: 1.2;
 }
-.badge-done { background: #ffe4e8; color: #be123c; border: 1px solid rgba(225, 29, 72, 0.22); }
-.badge-pending { background: var(--status-warning-bg); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.2); }
-.badge-not-taken { background: var(--status-neutral-bg); color: var(--status-neutral); border: 1px solid rgba(100, 116, 139, 0.2); }
-.badge-terminated { background: var(--status-danger-bg); color: var(--status-danger); border: 1px solid rgba(239, 68, 68, 0.2); }
-.badge-active { background: var(--status-success-bg); color: var(--status-success); border: 1px solid rgba(16, 185, 129, 0.2); }
+.badge-done { background: #e8f5ee; color: #166534; border: 1px solid #bbdfc8; }
+.badge-pending { background: #fff8d9; color: #854d0e; border: 1px solid #f5e6a1; }
+.badge-not-taken { background: #fff0df; color: #9a3412; border: 1px solid #fed7aa; }
+.badge-terminated { background: #feecec; color: #b91c1c; border: 1px solid #fecaca; }
+.badge-active { background: #e8f1ff; color: #2458d6; border: 1px solid #bfdbfe; }
 .badge-upcoming { background: var(--status-warning-bg); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.2); }
 .badge-overdue { background: var(--status-danger-bg); color: var(--status-danger); border: 1px solid rgba(239, 68, 68, 0.2); }
 .badge-neutral { background: var(--status-neutral-bg); color: var(--status-neutral); border: 1px solid rgba(100, 116, 139, 0.2); }
@@ -3473,20 +3473,11 @@
   padding-right: 2rem;
   min-width: 8.5rem;
 }
-.dashboard-role .dashboard-agenda .agenda-sort-select .moodle-select {
-  padding-left: 2.25rem;
-  min-width: 9.5rem;
-}
-.dashboard-role .dashboard-agenda .agenda-sort-icon {
-  position: absolute;
-  left: 0.85rem;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  transform: translateY(-50%);
-  color: #94a3b8;
-  pointer-events: none;
-  z-index: 1;
+.dashboard-role .dashboard-agenda .agenda-order-label {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .dashboard-role .dashboard-agenda .agenda-search-wrap {
   flex: 1 1 12rem;
@@ -3579,8 +3570,7 @@
     flex-direction: column;
     align-items: stretch;
   }
-  .dashboard-role .dashboard-agenda .agenda-filter-select .moodle-select,
-  .dashboard-role .dashboard-agenda .agenda-sort-select .moodle-select {
+  .dashboard-role .dashboard-agenda .agenda-filter-select .moodle-select {
     width: 100%;
     min-width: 0;
   }

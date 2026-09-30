@@ -7,7 +7,7 @@
           <span class="sidebar-brand-name">AI-Vigilation</span>
         </div>
         
-        <div class="sidebar-section-label">Admin Panel</div>
+        <div class="sidebar-section-label">Administration</div>
         
         <nav class="sidebar-nav">
           <button
@@ -20,7 +20,7 @@
           >
             <component :is="'svg'" class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" v-html="tab.icon"/>
             <span>{{ tab.label }}</span>
-            <span v-if="tab.count !== undefined" class="badge" style="margin-left:auto; background: rgba(0,0,0,0.2); border-radius: 99px; padding: 0.1rem 0.5rem; font-size: 0.75rem;">{{ tab.count }}</span>
+            <span v-if="tab.count !== undefined" class="nav-count">{{ tab.count }}</span>
           </button>
         </nav>
 
@@ -47,22 +47,26 @@
       <main class="main-content">
         <header class="main-header">
           <div class="header-titles">
-            <h1 v-if="activeTab === 'overview'">Dashboard Overview</h1>
-            <h1 v-if="activeTab === 'instructors'">Instructor Management</h1>
-            <h1 v-if="activeTab === 'students'">Student Enrollment</h1>
-            <p class="header-sub" v-if="activeTab === 'overview'">Manage your institution's users and access</p>
-            <p class="header-sub" v-if="activeTab === 'instructors'">Register instructor accounts that can log in with their @{{ schoolDomain }} Google account</p>
-            <p class="header-sub" v-if="activeTab === 'students'">Formally enroll students so they can log in with their @{{ schoolDomain }} Google account</p>
+            <h1 v-if="activeTab === 'overview'">Overview</h1>
+            <h1 v-if="activeTab === 'instructors'">Instructors</h1>
+            <h1 v-if="activeTab === 'students'">Students</h1>
+            <p class="header-sub" v-if="activeTab === 'overview'">Manage accounts, access, and identity review.</p>
+            <p class="header-sub" v-if="activeTab === 'instructors'">Register instructors and manage access without losing their course records.</p>
+            <p class="header-sub" v-if="activeTab === 'students'">Manage enrollment and review exam identity photos.</p>
           </div>
           <div class="header-actions">
-            <div class="role-pill">Admin</div>
+            <div class="role-pill">Administrator</div>
           </div>
         </header>
+        <div v-if="loadError" class="admin-inline-error" role="alert">
+          <span>{{ loadError }}</span>
+          <button type="button" @click="fetchInstructors(); fetchStudents()">Retry</button>
+        </div>
 
         <!-- Overview Tab -->
-        <section v-if="activeTab === 'overview'">
+        <section v-if="activeTab === 'overview'" class="admin-overview">
           <div class="stats-grid">
-            <div class="moodle-card stat-card" id="stat-instructors">
+            <div class="stat-card" id="stat-instructors">
               <div class="stat-icon instructor-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -70,11 +74,11 @@
                 </svg>
               </div>
               <div class="stat-body">
-                <p class="stat-label">Registered Instructors</p>
-                <h2 class="stat-value">{{ instructors.length }}</h2>
+                <p class="stat-label">Active Instructors</p>
+                <h2 class="stat-value">{{ activeInstructorCount }}</h2>
               </div>
             </div>
-            <div class="moodle-card stat-card" id="stat-students">
+            <div class="stat-card" id="stat-students">
               <div class="stat-icon student-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -82,10 +86,10 @@
               </div>
               <div class="stat-body">
                 <p class="stat-label">Enrolled Students</p>
-                <h2 class="stat-value">{{ students.length }}</h2>
+                <h2 class="stat-value">{{ enrolledStudentCount }}</h2>
               </div>
             </div>
-            <div class="moodle-card stat-card" id="stat-domain">
+            <div class="stat-card" id="stat-domain">
               <div class="stat-icon domain-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
@@ -94,27 +98,45 @@
               </div>
               <div class="stat-body">
                 <p class="stat-label">Allowed Domain</p>
-                <h2 class="stat-value domain-val" style="font-size:1.5rem;">@{{ schoolDomain }}</h2>
+                <h2 class="stat-value domain-val">@{{ schoolDomain }}</h2>
               </div>
+            </div>
+            <div class="stat-card" id="stat-review">
+              <div class="stat-icon review-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg>
+              </div>
+              <div class="stat-body"><p class="stat-label">Photos to Review</p><h2 class="stat-value">{{ pendingFaceCount }}</h2></div>
             </div>
           </div>
 
-          <div class="moodle-card mt-1">
-            <h2 class="moodle-section-title">Quick Actions</h2>
-            <div class="action-grid" style="display:flex; gap:1.5rem;">
-              <button class="moodle-btn-ghost action-card" @click="activeTab = 'instructors'" id="action-add-instructor">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div class="overview-actions">
+            <div class="overview-actions-heading">
+              <div>
+                <h2>Quick actions</h2>
+                <p>Manage people and review identity submissions.</p>
+              </div>
+            </div>
+            <div class="action-grid">
+              <button class="action-card" @click="openInstructorForm" id="action-add-instructor">
+                <span class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
                   <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
-                </svg>
-                Register Instructor
+                </svg></span>
+                <span class="action-copy"><strong>Register instructor</strong><small>Add a new instructor account</small></span>
+                <span class="action-arrow" aria-hidden="true">→</span>
               </button>
-              <button class="moodle-btn-ghost action-card" @click="activeTab = 'students'" id="action-enroll-student">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <button class="action-card" @click="openStudentForm" id="action-enroll-student">
+                <span class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
                   <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
-                </svg>
-                Enroll Student
+                </svg></span>
+                <span class="action-copy"><strong>Enroll student</strong><small>Create student access</small></span>
+                <span class="action-arrow" aria-hidden="true">→</span>
+              </button>
+              <button class="action-card" @click="openPendingReviews" id="action-review-photos">
+                <span class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg></span>
+                <span class="action-copy"><strong>Review photos <span class="action-count">{{ pendingFaceCount }}</span></strong><small>Check identity submissions</small></span>
+                <span class="action-arrow" aria-hidden="true">→</span>
               </button>
             </div>
           </div>
@@ -123,30 +145,34 @@
         <!-- Instructors Tab -->
         <section v-if="activeTab === 'instructors'">
           <div class="moodle-filters">
-             <button class="primary-btn" @click="showAddInstructor = !showAddInstructor" id="add-instructor-btn">
+             <button class="primary-btn" @click="openInstructorForm" id="add-instructor-btn">
                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                </svg>
                Register Instructor
              </button>
-             <input v-model="instructorSearch" type="text" class="moodle-search" placeholder="Search instructors..." id="instructor-search"/>
+             <input v-model="instructorSearch" type="search" class="moodle-search" placeholder="Search by name or email" aria-label="Search instructors" id="instructor-search"/>
+             <select v-model="instructorStatusFilter" class="admin-filter" aria-label="Filter instructors">
+               <option value="all">All instructors</option>
+               <option value="active">Active</option>
+               <option value="inactive">Inactive</option>
+             </select>
           </div>
 
           <!-- Add Instructor Form -->
-          <div v-if="showAddInstructor" class="create-form-wrapper" id="instructor-form">
-            <h3 class="form-title">Register New Instructor</h3>
+          <form v-if="showAddInstructor" class="create-form-wrapper admin-entry-form" id="instructor-form" @submit.prevent="registerInstructor">
+            <div class="entry-heading"><div><h3 class="form-title">Register instructor</h3><p>Use the instructor's school email. They will sign in with Google.</p></div><button type="button" class="entry-close" aria-label="Close form" @click="closeInstructorForm">×</button></div>
             <div class="inline-form">
-              <input v-model="newInstructor.first_name" type="text" placeholder="First Name (e.g. Juan)" id="instructor-first-name"/>
-              <input v-model="newInstructor.last_name" type="text" placeholder="Last Name (e.g. Dela Cruz)" id="instructor-last-name"/>
-              <input v-model="newInstructor.email" type="email" :placeholder="`Email (e.g. instructor@${schoolDomain})`" required id="instructor-email"/>
-              <button class="primary-btn shrink-btn" @click="registerInstructor" :disabled="instructorLoading" id="submit-instructor-btn">
+              <label class="entry-field" for="instructor-first-name">First name<input v-model="newInstructor.first_name" type="text" autocomplete="given-name" id="instructor-first-name"/></label>
+              <label class="entry-field" for="instructor-last-name">Last name<input v-model="newInstructor.last_name" type="text" autocomplete="family-name" id="instructor-last-name"/></label>
+              <label class="entry-field entry-field--email" for="instructor-email">School email<input v-model="newInstructor.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="instructor-email"/></label>
+              <button type="submit" class="primary-btn shrink-btn" :disabled="instructorLoading" id="submit-instructor-btn">
                 {{ instructorLoading ? 'Registering...' : 'Register' }}
               </button>
-              <button class="ghost-btn shrink-btn" @click="showAddInstructor = false; clearInstructorForm()">Cancel</button>
+              <button type="button" class="ghost-btn shrink-btn" @click="closeInstructorForm">Cancel</button>
             </div>
-            <p v-if="instructorError" class="res-msg" style="color:var(--status-danger);">{{ instructorError }}</p>
-            <p v-if="instructorSuccess" class="res-msg" style="color:var(--status-success);">{{ instructorSuccess }}</p>
-          </div>
+            <p v-if="instructorError" class="form-error" role="alert">{{ instructorError }}</p>
+          </form>
 
           <!-- Instructors Table -->
           <div class="data-table-container">
@@ -155,6 +181,7 @@
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
+                  <th>Status</th>
                   <th style="text-align: right;">Actions</th>
                 </tr>
               </thead>
@@ -162,45 +189,50 @@
                 <tr v-for="ins in filteredInstructors" :key="ins.id">
                   <td class="bold-td">{{ ins.full_name || '—' }}</td>
                   <td>{{ ins.email }}</td>
+                  <td><span class="status-badge" :class="ins.is_active ? 'badge-done' : 'badge-neutral'">{{ ins.is_active ? 'Active' : 'Inactive' }}</span></td>
                   <td style="text-align: right;">
-                    <button class="danger-btn" style="padding: 0.35rem 0.8rem;" @click="removeInstructor(ins)" :id="`remove-instructor-${ins.id}`">Remove</button>
+                    <button class="row-action" :class="ins.is_active ? 'row-action--danger' : 'row-action--restore'" :disabled="ins._saving" @click="setInstructorActive(ins)" :id="`remove-instructor-${ins.id}`">{{ ins._saving ? 'Saving…' : ins.is_active ? 'Deactivate' : 'Restore access' }}</button>
                   </td>
                 </tr>
               </tbody>
             </table>
             <div v-else-if="loadingInstructors" class="table-meta" style="text-align: center;">Loading instructors...</div>
-            <div v-else class="table-meta" style="text-align: center;">No instructors found.</div>
+            <div v-else class="table-meta" style="text-align: center;">{{ instructorSearch || instructorStatusFilter !== 'all' ? 'No instructors match this view.' : 'No instructors registered yet.' }}</div>
           </div>
         </section>
 
         <!-- Students Tab -->
         <section v-if="activeTab === 'students'">
           <div class="moodle-filters">
-             <button class="primary-btn" @click="showAddStudent = !showAddStudent" id="add-student-btn">
+             <button class="primary-btn" @click="openStudentForm" id="add-student-btn">
                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                </svg>
                Enroll Student
              </button>
-             <input v-model="studentSearch" type="text" class="moodle-search" placeholder="Search students..." id="student-search"/>
+             <input v-model="studentSearch" type="search" class="moodle-search" placeholder="Search by name or email" aria-label="Search students" id="student-search"/>
+             <select v-model="studentStatusFilter" class="admin-filter" aria-label="Filter students">
+               <option value="all">All students</option>
+               <option value="enrolled">Enrolled</option>
+               <option value="disabled">Access disabled</option>
+               <option value="pending">Photos pending review</option>
+             </select>
           </div>
 
           <!-- Add Student Form -->
-          <div v-if="showAddStudent" class="create-form-wrapper" id="student-form">
-            <h3 class="form-title">Formally Enroll New Student</h3>
+          <form v-if="showAddStudent" class="create-form-wrapper admin-entry-form" id="student-form" @submit.prevent="enrollStudent">
+            <div class="entry-heading"><div><h3 class="form-title">Enroll student</h3><p>Use the student's school email to allow Google sign-in.</p></div><button type="button" class="entry-close" aria-label="Close form" @click="closeStudentForm">×</button></div>
             <div class="inline-form">
-              <input v-model="newStudent.first_name" type="text" placeholder="First Name" id="student-first-name"/>
-              <input v-model="newStudent.last_name" type="text" placeholder="Last Name" id="student-last-name"/>
-              <input v-model="newStudent.email" type="email" :placeholder="`Email (e.g. student@${schoolDomain})`" required id="student-email"/>
-              <button class="primary-btn shrink-btn" @click="enrollStudent" :disabled="studentLoading" id="submit-student-btn">
+              <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name"/></label>
+              <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name"/></label>
+              <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="student-email"/></label>
+              <button type="submit" class="primary-btn shrink-btn" :disabled="studentLoading" id="submit-student-btn">
                 {{ studentLoading ? 'Enrolling...' : 'Enroll' }}
               </button>
-              <button class="ghost-btn shrink-btn" @click="showAddStudent = false; clearStudentForm()">Cancel</button>
+              <button type="button" class="ghost-btn shrink-btn" @click="closeStudentForm">Cancel</button>
             </div>
-            <p class="res-msg">Once enrolled here, the student can log in using Google Sign-In.</p>
-            <p v-if="studentError" class="res-msg" style="color:var(--status-danger);">{{ studentError }}</p>
-            <p v-if="studentSuccess" class="res-msg" style="color:var(--status-success);">{{ studentSuccess }}</p>
-          </div>
+            <p v-if="studentError" class="form-error" role="alert">{{ studentError }}</p>
+          </form>
 
         <!-- Students Table -->
           <div class="data-table-container">
@@ -219,8 +251,8 @@
                   <td class="bold-td">{{ st.full_name || '—' }}</td>
                   <td>{{ st.email }}</td>
                   <td>
-                    <span class="status-badge" :class="st.is_enrolled ? 'badge-active' : 'badge-neutral'">
-                      {{ st.is_enrolled ? 'Enrolled' : 'Inactive' }}
+                    <span class="status-badge" :class="st.is_enrolled ? 'badge-done' : 'badge-neutral'">
+                      {{ st.is_enrolled ? 'Enrolled' : 'Access disabled' }}
                     </span>
                   </td>
                   <td style="min-width:240px">
@@ -231,25 +263,22 @@
                           <img v-if="st.face_pending_photo_url" :src="st.face_pending_photo_url" class="face-thumb-img" alt="Pending" />
                           <span v-else class="face-thumb-placeholder">?</span>
                         </div>
-                        <span class="face-label face-label--pending">⏳ Pending Review</span>
+                        <span class="face-label face-label--pending">Pending review</span>
                       </div>
                       <div class="face-btn-row">
-                        <button class="face-btn face-btn--approve" @click="approveFace(st)" :disabled="!!st._faceLoading" :id="`approve-face-${st.id}`">
-                          {{ st._faceLoading === 'approve' ? 'Approving…' : '✓ Approve' }}
-                        </button>
-                        <button class="face-btn face-btn--reject" @click="rejectFace(st)" :disabled="!!st._faceLoading" :id="`reject-face-${st.id}`">
-                          {{ st._faceLoading === 'reject' ? 'Rejecting…' : '✗ Reject' }}
+                        <button class="face-btn face-btn--approve" @click="reviewStudent = st" :disabled="!!st._faceLoading" :id="`approve-face-${st.id}`">
+                          Review photo
                         </button>
                       </div>
                     </div>
                     <!-- APPROVED -->
-                    <div v-else-if="st.face_status === 'approved'" class="face-cell">
+                    <div v-else-if="st.face_status === 'approved' || (st.face_reupload_allowed && st.face_photo_url)" class="face-cell">
                       <div class="face-cell-top">
                         <div class="face-thumb-wrap face-thumb--approved">
                           <img v-if="st.face_photo_url" :src="st.face_photo_url" class="face-thumb-img" alt="Approved" />
                           <span v-else class="face-thumb-placeholder">✓</span>
                         </div>
-                        <span class="face-label face-label--approved">✅ Approved</span>
+                        <span class="face-label face-label--approved">{{ st.face_reupload_allowed ? 'New photo allowed' : 'Approved' }}</span>
                       </div>
                       <label class="face-toggle" :for="`reupload-toggle-${st.id}`">
                         <input
@@ -257,10 +286,10 @@
                           :id="`reupload-toggle-${st.id}`"
                           :checked="st.face_reupload_allowed"
                           :disabled="!!st._faceLoading"
-                          @change="toggleReupload(st)"
+                          @change="toggleReupload(st, $event)"
                         />
                         <span class="face-toggle-slider"></span>
-                        <span class="face-toggle-label">Allow re-upload</span>
+                        <span class="face-toggle-label">Allow new photo</span>
                       </label>
                     </div>
                     <!-- NONE -->
@@ -269,13 +298,13 @@
                     </div>
                   </td>
                   <td style="text-align: right;">
-                    <button class="danger-btn" style="padding: 0.35rem 0.8rem;" @click="removeStudent(st)" :id="`remove-student-${st.id}`">Remove</button>
+                    <button class="row-action" :class="st.is_enrolled ? 'row-action--danger' : 'row-action--restore'" :disabled="st._saving" @click="setStudentEnrollment(st)" :id="`remove-student-${st.id}`">{{ st._saving ? 'Saving…' : st.is_enrolled ? 'Disable access' : 'Restore access' }}</button>
                   </td>
                 </tr>
               </tbody>
             </table>
             <div v-else-if="loadingStudents" class="table-meta" style="text-align: center;">Loading students...</div>
-            <div v-else class="table-meta" style="text-align: center;">No students found.</div>
+            <div v-else class="table-meta" style="text-align: center;">{{ studentSearch || studentStatusFilter !== 'all' ? 'No students match this view.' : 'No students enrolled yet.' }}</div>
           </div>
         </section>
       </main>
@@ -291,12 +320,26 @@
         @confirm="onConfirmDialog"
         @cancel="clearPendingConfirm"
       />
-      <Transition name="action-toast">
-        <div v-if="actionSuccess" class="action-success-toast" role="status" aria-live="polite">
-          <span class="action-success-icon">✓</span>
-          <div><strong>Success</strong><span>{{ actionSuccess }}</span></div>
-        </div>
-      </Transition>
+      <div v-if="reviewStudent" class="review-backdrop" @click.self="reviewStudent = null">
+        <section class="review-dialog" role="dialog" aria-modal="true" aria-labelledby="review-title" @keydown.esc="reviewStudent = null">
+          <div class="review-heading">
+            <div><p class="review-eyebrow">IDENTITY REVIEW</p><h2 id="review-title">{{ reviewStudent.full_name || reviewStudent.email }}</h2><p>{{ reviewStudent.email }}</p></div>
+            <button type="button" class="entry-close" aria-label="Close review" @click="reviewStudent = null">×</button>
+          </div>
+          <div class="review-photo">
+            <img v-if="reviewStudent.face_pending_photo_url" :src="reviewStudent.face_pending_photo_url" :alt="`Pending ID photo for ${reviewStudent.full_name || reviewStudent.email}`" />
+            <p v-else>Photo preview is unavailable. Ask the student to upload it again.</p>
+          </div>
+          <p class="review-guidance">Check that one face is clear and the photo belongs to this student before approving.</p>
+          <div class="review-actions">
+            <button type="button" class="ghost-btn" @click="reviewStudent = null">Cancel</button>
+            <button type="button" class="row-action row-action--danger" :disabled="!!reviewStudent._faceLoading" @click="confirmRejectFace(reviewStudent)">Reject photo</button>
+            <button type="button" class="primary-btn" :disabled="!!reviewStudent._faceLoading || !reviewStudent.face_pending_photo_url" @click="approveFace(reviewStudent)">{{ reviewStudent._faceLoading ? 'Saving…' : 'Approve photo' }}</button>
+          </div>
+        </section>
+      </div>
+      <NoticeModal :model-value="Boolean(actionSuccess)" title="Update complete" :message="actionSuccess" @close="actionSuccess = ''" />
+      <NoticeModal :model-value="Boolean(actionError)" type="error" title="Action failed" :message="actionError" @close="actionError = ''" />
     </div>
   </div>
 </template>
@@ -306,6 +349,7 @@ import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
+import NoticeModal from "@/components/NoticeModal.vue";
 
 const router = useRouter();
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -339,8 +383,8 @@ const loadingInstructors = ref(false);
 const showAddInstructor = ref(false);
 const instructorLoading = ref(false);
 const instructorError = ref("");
-const instructorSuccess = ref("");
 const instructorSearch = ref("");
+const instructorStatusFilter = ref('all');
 const newInstructor = ref({ email: "", first_name: "", last_name: "" });
 
 // Students
@@ -349,17 +393,63 @@ const loadingStudents = ref(false);
 const showAddStudent = ref(false);
 const studentLoading = ref(false);
 const studentError = ref("");
-const studentSuccess = ref("");
 const actionSuccess = ref("");
-let actionSuccessTimer = null;
-
+const actionError = ref("");
+const loadError = ref("");
+const reviewStudent = ref(null);
+const studentStatusFilter = ref('all');
+const pendingFaceCount = computed(() => students.value.filter((student) => student.face_status === 'pending').length);
+const activeInstructorCount = computed(() => instructors.value.filter((instructor) => instructor.is_active).length);
+const enrolledStudentCount = computed(() => students.value.filter((student) => student.is_enrolled).length);
 function showActionSuccess(text) {
+  actionError.value = '';
   actionSuccess.value = text;
-  clearTimeout(actionSuccessTimer);
-  actionSuccessTimer = setTimeout(() => { actionSuccess.value = ""; }, 4000);
+}
+function showActionError(text) {
+  actionSuccess.value = '';
+  actionError.value = text;
 }
 const studentSearch = ref("");
 const newStudent = ref({ email: "", first_name: "", last_name: "" });
+
+function openInstructorForm() {
+  activeTab.value = 'instructors';
+  showAddInstructor.value = true;
+  instructorError.value = '';
+}
+
+function closeInstructorForm() {
+  showAddInstructor.value = false;
+  clearInstructorForm();
+}
+
+function openStudentForm() {
+  activeTab.value = 'students';
+  studentStatusFilter.value = 'all';
+  showAddStudent.value = true;
+  studentError.value = '';
+}
+
+function closeStudentForm() {
+  showAddStudent.value = false;
+  clearStudentForm();
+}
+
+function openPendingReviews() {
+  activeTab.value = 'students';
+  studentStatusFilter.value = 'pending';
+  studentSearch.value = '';
+}
+
+function confirmRejectFace(student) {
+  reviewStudent.value = null;
+  openConfirm({
+    title: 'Reject face photo?',
+    message: `${student.full_name || student.email} will need to upload another photo for identity verification.`,
+    confirmText: 'Reject photo',
+    onConfirm: () => rejectFace(student),
+  });
+}
 
 const confirmOpen = ref(false);
 const confirmTitle = ref("");
@@ -396,11 +486,12 @@ function getHeaders() {
 
 async function fetchInstructors() {
   loadingInstructors.value = true;
+  loadError.value = '';
   try {
     const res = await axios.get(`${backendBaseUrl}/api/admin/instructors/`, { headers: getHeaders() });
     instructors.value = res.data.instructors || [];
   } catch (e) {
-    console.error(e);
+    loadError.value = e?.response?.data?.error || 'Could not load instructors.';
   } finally {
     loadingInstructors.value = false;
   }
@@ -408,11 +499,12 @@ async function fetchInstructors() {
 
 async function fetchStudents() {
   loadingStudents.value = true;
+  loadError.value = '';
   try {
     const res = await axios.get(`${backendBaseUrl}/api/admin/students/`, { headers: getHeaders() });
     students.value = res.data.students || [];
   } catch (e) {
-    console.error(e);
+    loadError.value = e?.response?.data?.error || 'Could not load students.';
   } finally {
     loadingStudents.value = false;
   }
@@ -420,19 +512,18 @@ async function fetchStudents() {
 
 async function registerInstructor() {
   instructorError.value = "";
-  instructorSuccess.value = "";
-  if (!newInstructor.value.email) {
-    instructorError.value = "Email is required.";
+  newInstructor.value.email = newInstructor.value.email.trim().toLowerCase();
+  if (!newInstructor.value.email.endsWith(`@${schoolDomain}`)) {
+    instructorError.value = `Use a @${schoolDomain} email address.`;
     return;
   }
   instructorLoading.value = true;
   try {
     const res = await axios.post(`${backendBaseUrl}/api/admin/instructors/`, newInstructor.value, { headers: getHeaders() });
-    instructorSuccess.value = `Instructor "${res.data.email}" registered successfully!`;
-    showActionSuccess(`Instructor "${res.data.email}" registered successfully.`);
+    showActionSuccess(`Instructor ${res.data.email} was registered.`);
     instructors.value.unshift(res.data);
     clearInstructorForm();
-    setTimeout(() => { instructorSuccess.value = ""; showAddInstructor.value = false; }, 2000);
+    showAddInstructor.value = false;
   } catch (e) {
     instructorError.value = e?.response?.data?.error || "Failed to register instructor.";
   } finally {
@@ -440,38 +531,48 @@ async function registerInstructor() {
   }
 }
 
-function removeInstructor(ins) {
+function setInstructorActive(ins) {
+  if (!ins.is_active) {
+    updateInstructorActive(ins, true);
+    return;
+  }
   openConfirm({
-    title: "Remove Instructor",
-    message: `Are you sure you want to remove "${ins.full_name || ins.email}"? This action cannot be undone.`,
-    onConfirm: async () => {
-      try {
-        await axios.delete(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { headers: getHeaders() });
-        instructors.value = instructors.value.filter((i) => i.id !== ins.id);
-        showActionSuccess('Instructor removed successfully.');
-      } catch (e) {
-        alert(e?.response?.data?.error || "Failed to remove instructor.");
-      }
-    },
+    title: "Deactivate instructor?",
+    message: `${ins.full_name || ins.email} will no longer be able to sign in. Their courses, exams, and records will be kept.`,
+    confirmText: 'Deactivate',
+    onConfirm: () => updateInstructorActive(ins, false),
   });
+}
+
+async function updateInstructorActive(ins, active) {
+  ins._saving = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { is_active: active }, { headers: getHeaders() });
+    ins.is_active = data.is_active;
+    showActionSuccess(active ? 'Instructor access restored.' : 'Instructor access deactivated.');
+  } catch (e) {
+    showActionError(e?.response?.data?.error || 'Could not update instructor access.');
+  } finally {
+    ins._saving = false;
+  }
 }
 
 async function enrollStudent() {
   studentError.value = "";
-  studentSuccess.value = "";
-  if (!newStudent.value.email) {
-    studentError.value = "Email is required.";
+  newStudent.value.email = newStudent.value.email.trim().toLowerCase();
+  if (!newStudent.value.email.endsWith(`@${schoolDomain}`)) {
+    studentError.value = `Use a @${schoolDomain} email address.`;
     return;
   }
   studentLoading.value = true;
   try {
     const res = await axios.post(`${backendBaseUrl}/api/admin/students/`, newStudent.value, { headers: getHeaders() });
-    studentSuccess.value = `Student "${res.data.email}" enrolled successfully!`;
-    showActionSuccess(`Student "${res.data.email}" enrolled successfully.`);
+    showActionSuccess(res.data.created ? `Student ${res.data.email} was enrolled.` : `Student ${res.data.email} enrollment was updated.`);
     const existing = students.value.find((s) => s.id === res.data.id);
-    if (!existing) students.value.unshift(res.data);
+    if (existing) Object.assign(existing, res.data);
+    else students.value.unshift(res.data);
     clearStudentForm();
-    setTimeout(() => { studentSuccess.value = ""; showAddStudent.value = false; }, 2000);
+    showAddStudent.value = false;
   } catch (e) {
     studentError.value = e?.response?.data?.error || "Failed to enroll student.";
   } finally {
@@ -479,20 +580,30 @@ async function enrollStudent() {
   }
 }
 
-function removeStudent(st) {
+function setStudentEnrollment(st) {
+  if (!st.is_enrolled) {
+    updateStudentEnrollment(st, true);
+    return;
+  }
   openConfirm({
-    title: "Remove Student Enrollment",
-    message: `Are you sure you want to remove "${st.full_name || st.email}" from the system? They will no longer be able to log in.`,
-    onConfirm: async () => {
-      try {
-        await axios.delete(`${backendBaseUrl}/api/admin/students/${st.id}/`, { headers: getHeaders() });
-        students.value = students.value.filter((s) => s.id !== st.id);
-        showActionSuccess('Student removed successfully.');
-      } catch (e) {
-        alert(e?.response?.data?.error || "Failed to remove student.");
-      }
-    },
+    title: "Disable student access?",
+    message: `${st.full_name || st.email} will not be able to sign in. Their exam records will be kept.`,
+    confirmText: 'Disable access',
+    onConfirm: () => updateStudentEnrollment(st, false),
   });
+}
+
+async function updateStudentEnrollment(st, enrolled) {
+  st._saving = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/students/${st.id}/`, { action: 'set_enrollment', is_enrolled: enrolled }, { headers: getHeaders() });
+    st.is_enrolled = data.is_enrolled;
+    showActionSuccess(enrolled ? 'Student access restored.' : 'Student access disabled.');
+  } catch (e) {
+    showActionError(e?.response?.data?.error || 'Could not update student access.');
+  } finally {
+    st._saving = false;
+  }
 }
 
 async function approveFace(st) {
@@ -507,9 +618,10 @@ async function approveFace(st) {
     if (res.data.face_photo_url) st.face_photo_url = res.data.face_photo_url;
     st.face_pending_photo_url = null;
     st.face_reupload_allowed = false;
-    showActionSuccess('Face photo approved successfully.');
+    reviewStudent.value = null;
+    showActionSuccess('Face photo approved.');
   } catch (e) {
-    alert(e?.response?.data?.error || 'Failed to approve face photo.');
+    showActionError(e?.response?.data?.error || 'Could not approve face photo.');
   } finally {
     st._faceLoading = null;
   }
@@ -525,15 +637,16 @@ async function rejectFace(st) {
     );
     st.face_status = res.data.face_status;
     st.face_pending_photo_url = null;
-    showActionSuccess('Face photo rejected. The student may submit a new photo.');
+    reviewStudent.value = null;
+    showActionSuccess('Face photo rejected. The student can submit another.');
   } catch (e) {
-    alert(e?.response?.data?.error || 'Failed to reject face photo.');
+    showActionError(e?.response?.data?.error || 'Could not reject face photo.');
   } finally {
     st._faceLoading = null;
   }
 }
 
-async function toggleReupload(st) {
+async function toggleReupload(st, event) {
   st._faceLoading = 'toggle';
   try {
     const res = await axios.patch(
@@ -549,7 +662,8 @@ async function toggleReupload(st) {
         : 'Face photo re-upload disabled.'
     );
   } catch (e) {
-    alert(e?.response?.data?.error || 'Failed to toggle re-upload.');
+    event.target.checked = st.face_reupload_allowed;
+    showActionError(e?.response?.data?.error || 'Could not change photo upload permission.');
   } finally {
     st._faceLoading = null;
   }
@@ -558,34 +672,37 @@ async function toggleReupload(st) {
 function clearInstructorForm() {
   newInstructor.value = { email: "", first_name: "", last_name: "" };
   instructorError.value = "";
-  instructorSuccess.value = "";
 }
 
 function clearStudentForm() {
   newStudent.value = { email: "", first_name: "", last_name: "" };
   studentError.value = "";
-  studentSuccess.value = "";
 }
 
 const filteredInstructors = computed(() => {
-  const q = instructorSearch.value.toLowerCase();
-  if (!q) return instructors.value;
-  return instructors.value.filter(
-    (i) => (i.full_name || "").toLowerCase().includes(q) || i.email.toLowerCase().includes(q)
-  );
+  const q = instructorSearch.value.trim().toLowerCase();
+  return instructors.value.filter((instructor) => {
+    if (instructorStatusFilter.value === 'active' && !instructor.is_active) return false;
+    if (instructorStatusFilter.value === 'inactive' && instructor.is_active) return false;
+    return !q || (instructor.full_name || '').toLowerCase().includes(q)
+      || instructor.email.toLowerCase().includes(q);
+  }).sort((a, b) => a.email.localeCompare(b.email));
 });
 
 const filteredStudents = computed(() => {
-  const q = studentSearch.value.toLowerCase();
-  if (!q) return students.value;
-  return students.value.filter(
-    (s) => (s.full_name || "").toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
-  );
+  const q = studentSearch.value.trim().toLowerCase();
+  return students.value.filter((student) => {
+    if (studentStatusFilter.value === 'pending' && student.face_status !== 'pending') return false;
+    if (studentStatusFilter.value === 'enrolled' && !student.is_enrolled) return false;
+    if (studentStatusFilter.value === 'disabled' && student.is_enrolled) return false;
+    return !q || (student.full_name || '').toLowerCase().includes(q)
+      || student.email.toLowerCase().includes(q);
+  }).sort((a, b) => a.email.localeCompare(b.email));
 });
 
 function requestLogout() {
   openConfirm({
-    variant: 'logout',
+    variant: 'neutral',
     title: 'Log out?',
     message: 'You will be signed out of the admin panel and returned to the admin login page.',
     confirmText: 'Log out',
@@ -607,63 +724,132 @@ onMounted(() => {
 <style scoped>
 @import '@/assets/dashboard.css';
 
-.action-success-toast {
-  position: fixed;
-  top: 1.25rem;
-  right: 1.25rem;
-  z-index: 1000002;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
-  width: min(390px, calc(100vw - 2rem));
-  padding: 0.9rem 1rem;
-  color: #14532d;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-left: 4px solid #22c55e;
-  border-radius: 10px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
-}
-.action-success-icon { flex: 0 0 auto; font-size: 1rem; font-weight: 800; }
-.action-success-toast div { display: grid; gap: 0.15rem; }
-.action-success-toast strong { font-size: 0.82rem; }
-.action-success-toast span { font-size: 0.86rem; line-height: 1.35; }
-.action-toast-enter-active, .action-toast-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.action-toast-enter-from, .action-toast-leave-to { opacity: 0; transform: translateY(-10px); }
-
 /* Admin specific additions */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
 }
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
-  padding: 1.5rem;
+  min-width: 0;
+  gap: .9rem;
+  padding: 1.4rem;
+  border: 1px solid #e1e7ef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(25, 44, 74, .035);
+}
+.stat-body { min-width: 0; }
+.stat-card:hover { border-color: #c9d6e8; }
+.domain-val {
+  font-size: clamp(1.1rem, 1.7vw, 1.5rem);
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
 }
 .stat-icon {
-  width: 54px;
-  height: 54px;
-  border-radius: 14px;
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
-.instructor-icon { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
-.student-icon { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.domain-icon { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.instructor-icon { background: #e8f1ff; color: #2458d6; }
+.student-icon { background: #e8f5ee; color: #15803d; }
+.domain-icon { background: #fff8d9; color: #a16207; }
+.review-icon { background: #fff0df; color: #c2410c; }
 .stat-label {
   font-size: 0.75rem; color: var(--text-secondary); margin: 0 0 0.25rem;
   font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
 }
 .stat-value {
   font-family: 'Poppins', sans-serif;
-  font-size: 2.2rem; font-weight: 900; color: var(--text-primary);
+  font-size: 2rem; font-weight: 800; color: var(--text-primary);
   margin: 0; letter-spacing: -0.04em; line-height: 1;
 }
+.nav-count { margin-left: auto; padding: .12rem .48rem; border-radius: 999px; background: rgba(255,255,255,.16); font-size: .7rem; font-weight: 700; }
+.overview-actions {
+  margin-top: 1.25rem;
+  padding: 1.7rem;
+  border: 1px solid #e1e7ef;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(25, 44, 74, .035);
+}
+.overview-actions-heading { margin-bottom: 1.25rem; }
+.overview-actions-heading h2 {
+  margin: 0 0 .2rem;
+  color: #192b48;
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 750;
+  letter-spacing: -.025em;
+}
+.overview-actions-heading p { margin: 0; color: #64748b; font-size: .85rem; }
+.action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
+.action-card {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: .8rem;
+  padding: 1rem;
+  border: 1px solid #e1e7ef;
+  border-radius: 14px;
+  background: #f8fafd;
+  color: #233650;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+.action-card:hover { background: #f0f5fc; border-color: #b9cde7; transform: translateY(-2px); }
+.action-card:focus-visible { outline: 3px solid #5b8cde; outline-offset: 2px; }
+.action-icon { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border-radius: 12px; background: #e7effb; color: #2658a1; }
+.action-copy { display: grid; min-width: 0; gap: .2rem; }
+.action-copy strong { font-size: .88rem; font-weight: 750; }
+.action-copy small { color: #6a7b93; font-size: .73rem; }
+.action-arrow { margin-left: auto; color: #6b83a5; font-size: 1.25rem; line-height: 1; }
+.action-count { display: inline-flex; min-width: 1.25rem; height: 1.25rem; justify-content: center; align-items: center; margin-left: .25rem; border-radius: 999px; background: #fff0df; color: #9a3412; font-size: .7rem; }
+@media (max-width: 1100px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .action-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .overview-actions { padding: 1.2rem; }
+}
+.admin-inline-error { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: .85rem; }
+.admin-inline-error button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.admin-filter { min-height: 41px; padding: .55rem .85rem; border: 1px solid #d5dfeb; border-radius: 10px; background: #fff; color: #334155; font: inherit; font-size: .85rem; }
+.admin-entry-form { margin-bottom: 1.25rem; border: 1px solid #dce5f0; border-radius: 14px; background: #f8fafd; padding: 1.35rem; }
+.entry-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.entry-heading .form-title { margin: 0 0 .25rem; color: #142849; }
+.entry-heading p { margin: 0; color: #64748b; font-size: .82rem; }
+.entry-close { border: 0; background: transparent; color: #64748b; font-size: 1.5rem; line-height: 1; cursor: pointer; }
+.admin-entry-form .inline-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .7rem; }
+.entry-field { display: grid; gap: .35rem; min-width: 145px; flex: 1 1 145px; color: #475569; font-size: .75rem; font-weight: 700; }
+.entry-field--email { flex: 2 1 240px; }
+.entry-field input { width: 100%; min-height: 41px; border: 1px solid #d5dfeb; border-radius: 9px; padding: .55rem .7rem; background: white; color: #142849; font: inherit; font-size: .84rem; }
+.form-error { margin: .8rem 0 0; color: #b91c1c; font-size: .82rem; }
+.row-action { border: 1px solid #cbd5e1; border-radius: 8px; padding: .45rem .7rem; background: white; color: #334155; font: inherit; font-size: .76rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.row-action--danger { border-color: #fecaca; color: #b91c1c; }
+.row-action--restore { border-color: #bbdfc8; color: #166534; }
+.row-action:disabled { opacity: .55; cursor: wait; }
+.review-backdrop { position: fixed; inset: 0; z-index: 1000001; display: grid; place-items: center; padding: 1rem; background: rgba(15,23,42,.58); }
+.review-dialog { width: min(100%, 570px); max-height: calc(100vh - 2rem); overflow: auto; padding: 1.5rem; border-radius: 18px; background: white; box-shadow: 0 24px 70px rgba(15,23,42,.25); }
+.review-heading { display: flex; justify-content: space-between; gap: 1rem; }
+.review-heading h2 { margin: 0; color: #142849; font-size: 1.15rem; }
+.review-heading p:last-child { margin: .2rem 0 1rem; color: #64748b; font-size: .82rem; }
+.review-eyebrow { margin: 0 0 .4rem; color: #42618a; font-size: .67rem; font-weight: 700; letter-spacing: .12em; }
+.review-photo { display: grid; place-items: center; min-height: 240px; max-height: 55vh; overflow: hidden; border-radius: 12px; background: #f1f5f9; }
+.review-photo img { display: block; max-width: 100%; max-height: 55vh; object-fit: contain; }
+.review-photo p { padding: 1rem; color: #64748b; text-align: center; }
+.review-guidance { margin: 1rem 0; color: #536276; font-size: .82rem; line-height: 1.5; }
+.review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .55rem; }
+@media (max-width: 700px) { .review-actions > button { flex: 1 1 auto; } }
 
 .modal-backdrop {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -755,7 +941,8 @@ onMounted(() => {
   cursor: pointer;
   user-select: none;
 }
-.face-toggle input { display: none; }
+.face-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.face-toggle input:focus-visible + .face-toggle-slider { outline: 3px solid #93c5fd; outline-offset: 2px; }
 .face-toggle-slider {
   width: 30px; height: 16px;
   border-radius: 999px;

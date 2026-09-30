@@ -24,7 +24,9 @@
 
         <!-- Name + meta -->
         <div class="hero-info">
+          <p class="hero-eyebrow">YOUR PROFILE</p>
           <h1 class="hero-name">{{ displayName }}</h1>
+          <p class="hero-description">Keep your personal details current for your exam account.</p>
           <div class="hero-meta">
             <span class="role-chip">{{ formattedRole }}</span>
             <span class="email-chip">{{ user.email }}</span>
@@ -102,7 +104,7 @@
               </div>
             </div>
             <div class="fid-guidelines">
-              <p class="fid-guide-title">✅ Photo Approved</p>
+              <p class="fid-guide-title">Photo approved</p>
               <p class="fid-locked-note">Your face photo has been verified and locked by the admin. Contact your administrator if you need to update it.</p>
             </div>
           </div>
@@ -124,7 +126,7 @@
               </div>
             </div>
             <div class="fid-guidelines">
-              <p class="fid-guide-title">⏳ Awaiting Admin Review</p>
+              <p class="fid-guide-title">Awaiting review</p>
               <p class="fid-locked-note">Your photo has been submitted and is waiting for the administrator to approve it. You will be able to take exams once it is approved.</p>
             </div>
           </div>
@@ -181,13 +183,13 @@
             </ul>
 
             <p v-if="faceUploadError || faceError" class="fid-error">
-              ⚠️ {{ faceUploadError || faceError }}
+              {{ faceUploadError || faceError }}
             </p>
 
             <!-- Standalone save button when a file is selected -->
             <div v-if="newFaceFile" class="fid-save-row">
               <p class="fid-pending-note">
-                📎 <strong>{{ newFaceFile.name }}</strong>
+                <strong>{{ newFaceFile.name }}</strong>
               </p>
               <button
                 class="fid-save-btn"
@@ -218,7 +220,7 @@
           </div>
           <div class="card-header-text">
             <h2 class="card-title">Personal Information</h2>
-            <p class="card-subtitle">{{ isEditing ? 'Update your details below.' : 'Your personal data is securely stored.' }}</p>
+            <p class="card-subtitle">{{ isEditing ? 'Update your details below.' : 'Review the details linked to your account.' }}</p>
           </div>
           <div v-if="isEditing" class="edit-badge">
             <span class="edit-dot"></span> Editing
@@ -300,43 +302,22 @@
             <div class="ov-icon ov-slate">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
-            <span class="ov-label">Data Security</span>
-            <span class="ov-value">End-to-end encrypted</span>
+            <span class="ov-label">Email Address</span>
+            <span class="ov-value">{{ user.email }}</span>
           </div>
         </div>
       </div>
 
     </div>
 
-    <!-- ── Toast Notifications ──────────────────────────────────── -->
-    <teleport to="body">
-      <div class="toast-stack">
-        <transition name="toast-slide">
-          <div v-if="errorMsg" class="toast toast-error" role="alert">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <div class="toast-body">
-              <strong>Error</strong>
-              <span>{{ errorMsg }}</span>
-            </div>
-          </div>
-        </transition>
-        <transition name="toast-slide">
-          <div v-if="successMsg" class="toast toast-success" role="status">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            <div class="toast-body">
-              <strong>Saved</strong>
-              <span>{{ successMsg }}</span>
-            </div>
-          </div>
-        </transition>
-      </div>
-    </teleport>
+    <NoticeModal :model-value="Boolean(errorMsg || successMsg)" :type="errorMsg ? 'error' : 'success'" :title="errorMsg ? 'Could not save' : 'Profile saved'" :message="errorMsg || successMsg" @close="$emit('dismiss-notice')" />
 
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import NoticeModal from './NoticeModal.vue';
 
 const props = defineProps({
   user:                { type: Object,  required: true },
@@ -350,7 +331,7 @@ const props = defineProps({
   faceReuploadAllowed: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['save-profile']);
+const emit = defineEmits(['save-profile', 'dismiss-notice']);
 
 const isEditing       = ref(false);
 const fileInput       = ref(null);
@@ -474,17 +455,18 @@ function saveFacePhoto() {
 
 /* ─── Root ──────────────────────────────────────────────── */
 .profile-page {
-  max-width: 1080px;
+  max-width: 1040px;
   width: 100%;
   margin: 0 auto;
-  padding-bottom: 5rem;
+  padding-bottom: 3rem;
   font-family: 'Poppins', sans-serif;
 }
 
 /* ─── Hero ──────────────────────────────────────────────── */
 .profile-hero {
-  background: #1D3461;
-  border-radius: 20px;
+  background: #f1f5fb;
+  border: 1px solid #dce5f0;
+  border-radius: 18px;
   margin-bottom: 1.5rem;
   overflow: hidden;
 }
@@ -493,7 +475,7 @@ function saveFacePhoto() {
   display: flex;
   align-items: center;
   gap: 2rem;
-  padding: 2.25rem 2.5rem;
+  padding: 2rem 2.25rem;
 }
 
 /* ─── Avatar ─────────────────────────────────────────────── */
@@ -505,12 +487,12 @@ function saveFacePhoto() {
 .avatar-wrap.editable { cursor: pointer; }
 
 .avatar-ring {
-  width: 120px;
-  height: 120px;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
-  border: 4px solid rgba(255,255,255,0.25);
+  border: 4px solid #fff;
   overflow: hidden;
-  background: #162a4f;
+  background: #1d3461;
   transition: border-color 0.2s ease;
 }
 .avatar-wrap.editable:hover .avatar-ring {
@@ -560,17 +542,19 @@ function saveFacePhoto() {
   width: 15px; height: 15px;
   border-radius: 50%;
   background: #22c55e;
-  border: 3px solid #1D3461;
+  border: 3px solid #fff;
 }
 
 /* ─── Hero Info ──────────────────────────────────────────── */
 .hero-info { flex: 1; min-width: 0; }
+.hero-eyebrow { margin: 0 0 .45rem; color: #42618a; font-size: .7rem; font-weight: 700; letter-spacing: .13em; }
+.hero-description { margin: -.2rem 0 .8rem; color: #61738c; font-size: .85rem; line-height: 1.45; }
 
 .hero-name {
   font-family: 'Poppins', sans-serif;
   font-size: 2.1rem;
   font-weight: 900;
-  color: #fff;
+  color: #142849;
   margin: 0 0 0.65rem;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -588,7 +572,7 @@ function saveFacePhoto() {
   border-radius: 6px;
   font-size: 0.78rem;
   font-weight: 700;
-  background: #fff;
+  background: #e0eaf8;
   color: #1D3461;
   letter-spacing: 0.02em;
 }
@@ -598,9 +582,9 @@ function saveFacePhoto() {
   border-radius: 6px;
   font-size: 0.78rem;
   font-weight: 500;
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.8);
-  border: 1px solid rgba(255,255,255,0.18);
+  background: #fff;
+  color: #52657e;
+  border: 1px solid #dce5f0;
 }
 
 /* ─── Hero Buttons ───────────────────────────────────────── */
@@ -612,9 +596,9 @@ function saveFacePhoto() {
   gap: 0.5rem;
   padding: 0.65rem 1.4rem;
   border-radius: 10px;
-  background: rgba(255,255,255,0.14);
+  background: #1d3461;
   color: #fff;
-  border: 1px solid rgba(255,255,255,0.28);
+  border: 1px solid #1d3461;
   font-family: 'Poppins', sans-serif;
   font-weight: 600;
   font-size: 0.9rem;
@@ -622,8 +606,8 @@ function saveFacePhoto() {
   transition: background 0.18s ease, border-color 0.18s ease;
 }
 .btn-edit-hero:hover {
-  background: rgba(255,255,255,0.22);
-  border-color: rgba(255,255,255,0.45);
+  background: #142849;
+  border-color: #142849;
 }
 
 .hero-edit-actions {
@@ -881,53 +865,6 @@ function saveFacePhoto() {
   background: #22c55e;
   animation: blink 1.5s ease-in-out infinite;
 }
-
-/* ─── Toasts ─────────────────────────────────────────────── */
-.toast-stack {
-  position: fixed;
-  bottom: 2rem;
-  right: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  z-index: 99999;
-}
-
-.toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.9rem 1.1rem;
-  border-radius: 12px;
-  min-width: 260px;
-  max-width: 340px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-  border-left: 4px solid transparent;
-}
-
-.toast-error {
-  background: #fff5f5;
-  color: #991b1b;
-  border-left-color: #ef4444;
-}
-.toast-success {
-  background: #f0fdf4;
-  color: #14532d;
-  border-left-color: #22c55e;
-}
-
-.toast-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-.toast-body strong { font-size: 0.87rem; font-weight: 700; }
-.toast-body span   { font-size: 0.8rem; opacity: 0.8; }
-
-.toast-slide-enter-active { transition: all 0.28s cubic-bezier(0.34,1.56,0.64,1); }
-.toast-slide-leave-active { transition: all 0.18s ease-in; }
-.toast-slide-enter-from   { opacity: 0; transform: translateX(30px); }
-.toast-slide-leave-to     { opacity: 0; transform: translateY(8px); }
 
 /* ─── Responsive ─────────────────────────────────────────── */
 @media (max-width: 860px) {

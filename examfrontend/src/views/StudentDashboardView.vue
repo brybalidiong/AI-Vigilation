@@ -46,10 +46,10 @@
           </div>
           <a href="#" class="nav-item" :class="{ active: activeNav === 'settings' }" @click.prevent="goSettings">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              <circle cx="12" cy="8" r="4"></circle>
+              <path d="M4 21a8 8 0 0 1 16 0"></path>
             </svg>
-            Settings
+            Profile
           </a>
           <a href="#" class="nav-item logout-nav" @click.prevent="requestLogout">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -64,7 +64,7 @@
           <div class="header-titles">
             <span class="dashboard-eyebrow">{{ currentDate }}</span>
             <h1>{{ pageTitle }}</h1>
-            <p v-if="activeNav === 'settings'" class="header-sub">Manage your profile and account preferences.</p>
+            <p v-if="activeNav === 'settings'" class="header-sub">Your personal details and exam ID photo.</p>
             <p v-else class="header-sub">Welcome back, {{ studentFullName }}!</p>
           </div>
           <div class="header-actions">
@@ -113,15 +113,7 @@
               </svg>
               <input v-model.trim="timelineSearch" type="text" class="moodle-search agenda-search" placeholder="Search exams, subjects..." />
             </div>
-            <div class="select-wrapper agenda-filter-select agenda-sort-select">
-              <svg class="agenda-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
-              </svg>
-              <select v-model="timelineSort" class="moodle-select">
-                <option value="due_asc">Sort by dates</option>
-                <option value="title_asc">Sort by title</option>
-              </select>
-            </div>
+            <span class="agenda-order-label">Newest added first</span>
           </div>
 
           <div class="moodle-timeline-list dashboard-timeline-scroll agenda-timeline">
@@ -168,6 +160,7 @@
               :faceStatus="faceStatus"
               :faceReuploadAllowed="faceReuploadAllowed"
               @save-profile="handleProfileUpdate"
+              @dismiss-notice="profileError = ''; profileSuccess = ''"
             />
           </div>
         </div>
@@ -265,7 +258,7 @@
                 />
                 <template v-else>
                   <ExamRow
-                    v-for="exam in flatCourseExams"
+                    v-for="exam in selectedCourseExams"
                     :key="`${exam.subject_id}-${exam.id}`"
                     :dateIso="examTimelineDisplayAt(exam)"
                     :timeText="formatExamTimelineTime(exam)"
@@ -370,6 +363,7 @@
 
         <div v-if="takingExam" class="cam-pip-gaze">
           <span class="cam-pip-gaze-label">AI gaze<span v-if="gazeDetectionStatus"> · {{ gazeDetectionStatus }}</span></span>
+          <span class="cam-pip-gadget-status" :class="{ 'cam-pip-gadget-unavailable': gadgetDetectionStatus === 'unavailable' }">Gadget scanner: {{ gadgetDetectionStatus }}</span>
           <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gadgetWarningCount > 0 || gazeCurrentDirection }">
             away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }} · gadget {{ gadgetWarningCount }}/{{ GADGET_WARNING_LIMIT }}
           </span>
@@ -742,10 +736,7 @@
       @cancel="clearPendingConfirm"
     />
     
-    <!-- TOAST MINI MODAL -->
-    <div class="toast-modal" :class="{'show': toastMessage}">
-      {{ toastMessage }}
-    </div>
+    <NoticeModal :model-value="Boolean(toastMessage)" type="warning" title="Exam notice" :message="toastMessage" @close="toastMessage = ''" />
   </div>
 </template>
 
@@ -756,6 +747,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/firebase";
 import { useRoute, useRouter } from "vue-router";
 import ConfirmModal from "@/components/ConfirmModal.vue";
+import NoticeModal from "@/components/NoticeModal.vue";
 import ExamRow from "@/components/ExamRow.vue";
 import CourseCard from "@/components/CourseCard.vue";
 import ProctoringOverlay from "@/components/ProctoringOverlay.vue";
@@ -766,10 +758,9 @@ import EmptyState from "@/components/EmptyState.vue";
 
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import {
-  examAnchorTimestamp,
+  compareExamsNewestFirst,
   examTimelineDisplayAt,
   formatExamTimelineTime,
-  groupExamsByTimelineDay,
   studentExamOnDashboard,
 } from "@/utils/examTimeline.js";
 
@@ -788,9 +779,6 @@ const toastMessage = ref("");
 
 function showToastMessage(msg) {
   toastMessage.value = msg;
-  setTimeout(() => {
-    toastMessage.value = "";
-  }, 3000);
 }
 
 function openConfirm(opts) {
@@ -885,17 +873,13 @@ async function handleProfileUpdate(formData) {
     }
     if (response.data.face_encoding_error) {
       faceError.value = response.data.face_encoding_error;
-      profileSuccess.value = "Profile saved, but face photo was not accepted (see error below).";
+      profileSuccess.value = "Your profile was saved, but the face photo could not be accepted.";
     } else if (faceStatus.value === 'pending') {
-      profileSuccess.value = "Face photo submitted! Awaiting admin approval.";
+      profileSuccess.value = "Your face photo was submitted for review.";
     } else {
-      profileSuccess.value = "Profile updated successfully!";
+      profileSuccess.value = "Your profile has been updated.";
     }
     
-    // Clear success message after 5 seconds
-    setTimeout(() => {
-      profileSuccess.value = "";
-    }, 5000);
   } catch (err) {
     profileError.value = err?.response?.data?.error || "Failed to update profile.";
   } finally {
@@ -948,6 +932,7 @@ const tabSwitchCount = ref(0);
 const gazeViolationCount = ref(0);
 const gazeNoFaceCount = ref(0);
 const gadgetWarningCount = ref(0);
+const gadgetDetectionStatus = ref('starting');
 const gazeDetectionStatus = ref('');
 const terminateReason = ref('tab');
 const proctoringWarning = ref({ show: false, type: '', title: '', message: '' });
@@ -1028,11 +1013,12 @@ let _proctoringCaptureTimer = null;
 let _gadgetDetectionTimer = null;
 let _gadgetDetectionInFlight = false;
 let _gadgetUnavailableNotified = false;
+let _gadgetFailureCount = 0;
 let _gadgetLoopActive = false;
 /** @type {{ label: string, style: Record<string, string> }[]} */
 const gadgetOverlayBoxes = ref([]);
-const GADGET_FRAME_WIDTH = 256;
-const GADGET_POLL_MS = 200;
+const GADGET_FRAME_WIDTH = 640;
+const GADGET_POLL_MS = 150;
 let _gazeCheckTimer = null;
 let _lastGazeWarningAt = 0;
 let _gazeCheckInFlight = false;
@@ -1369,7 +1355,13 @@ function _stopProctoringCaptureTimer() {
 
 async function _runGadgetDetection() {
   if (!_gadgetLoopActive || !takingExam.value || examTerminated.value || submitting.value) return;
-  if (!_isGadgetDetectionEnabled() || _gadgetDetectionInFlight) {
+  if (!_isGadgetDetectionEnabled()) {
+    gadgetDetectionStatus.value = 'off for this question';
+    _clearGadgetOverlayBoxes();
+    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    return;
+  }
+  if (_gadgetDetectionInFlight) {
     _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
     return;
   }
@@ -1389,7 +1381,7 @@ async function _runGadgetDetection() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.62));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
     if (!blob) return;
 
     const form = new FormData();
@@ -1402,10 +1394,13 @@ async function _runGadgetDetection() {
       { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 65000 },
     );
     if (data.warming) {
+      gadgetDetectionStatus.value = 'starting';
       _clearGadgetOverlayBoxes();
     } else {
+      gadgetDetectionStatus.value = data.enabled === false ? 'off for this question' : 'active';
       _updateGadgetOverlayBoxes(data.detections || [], frameW, frameH);
     }
+    _gadgetFailureCount = 0;
     if (typeof data.warning_count === 'number') {
       gadgetWarningCount.value = data.warning_count;
     }
@@ -1433,9 +1428,13 @@ async function _runGadgetDetection() {
       };
     }
   } catch (err) {
-    if (err?.response?.status === 503 && !_gadgetUnavailableNotified) {
+    _gadgetFailureCount += 1;
+    if (err?.response?.status === 503 || _gadgetFailureCount >= 2) {
+      gadgetDetectionStatus.value = 'unavailable';
+    }
+    if (gadgetDetectionStatus.value === 'unavailable' && !_gadgetUnavailableNotified) {
       _gadgetUnavailableNotified = true;
-      showToastMessage('Gadget detection is temporarily unavailable; other proctoring checks remain active.');
+      showToastMessage('Gadget scanning is unavailable. Check the server connection or contact your instructor.');
     }
   } finally {
     _gadgetDetectionInFlight = false;
@@ -1483,6 +1482,8 @@ function _clearGadgetOverlayBoxes() {
 function _startGadgetDetectionTimer() {
   _stopGadgetDetectionTimer();
   _gadgetUnavailableNotified = false;
+  _gadgetFailureCount = 0;
+  gadgetDetectionStatus.value = 'starting';
   _gadgetLoopActive = true;
   _runGadgetDetection();
 }
@@ -1494,6 +1495,7 @@ function _stopGadgetDetectionTimer() {
     _gadgetDetectionTimer = null;
   }
   _gadgetDetectionInFlight = false;
+  gadgetDetectionStatus.value = 'stopped';
   _clearGadgetOverlayBoxes();
 }
 
@@ -2219,7 +2221,6 @@ const fvAttemptsLeft = ref(2);
 const fvErrorMsg    = ref('');
 const FV_MAX_ATTEMPTS = 3;
 const timelineWindowDays = ref("3650");
-const timelineSort = ref("due_asc");
 const timelineSearch = ref("");
 const courseFilter = ref("all");
 const courseSearch = ref("");
@@ -2362,7 +2363,7 @@ async function fetchMyExams() {
   examsError.value = "";
   try {
     const response = await getWithRetry("/api/student/exams/");
-    exams.value = response.data.exam_sets || [];
+    exams.value = [...(response.data.exam_sets || [])].sort(compareExamsNewestFirst);
   } catch (err) {
     examsError.value = err?.response?.data?.error || "Unable to load exams.";
   } finally {
@@ -2379,7 +2380,7 @@ const isCourseDetailRoute = computed(() => Boolean(route.params.courseId));
 const pageTitle = computed(() => {
   if (activeNav.value === "dashboard") return "Dashboard";
   if (activeNav.value === "courses") return "My Courses";
-  if (activeNav.value === "settings") return "Account Settings";
+  if (activeNav.value === "settings") return "Profile";
   return "AI-Vigilation";
 });
 
@@ -2394,29 +2395,10 @@ const selectedCourse = computed(() => {
   return subjects.value.find((s) => Number(s.id) === Number(selectedSubjectId.value)) || null;
 });
 
-function examCreatedTimestamp(exam) {
-  const createdAt = new Date(exam?.created_at || 0).getTime();
-  return Number.isNaN(createdAt) ? Number(exam?.id || 0) : createdAt;
-}
-
 const selectedCourseExams = computed(() =>
   exams.value
     .filter((exam) => Number(exam.subject_id) === Number(selectedSubjectId.value))
-    .sort((a, b) => examCreatedTimestamp(b) - examCreatedTimestamp(a)),
-);
-
-const groupedCourseExams = computed(() =>
-  groupExamsByTimelineDay(selectedCourseExams.value)
-    .sort((a, b) => {
-      const newestInA = Math.max(...a.exams.map(examCreatedTimestamp));
-      const newestInB = Math.max(...b.exams.map(examCreatedTimestamp));
-      return newestInB - newestInA;
-    }),
-);
-
-/** Flat list for continuous timeline rail (same order as grouped course exams). */
-const flatCourseExams = computed(() =>
-  groupedCourseExams.value.flatMap((group) => group.exams),
+    .sort(compareExamsNewestFirst),
 );
 
 function formatTimeOnly(raw) {
@@ -2474,37 +2456,34 @@ const filteredDueExamTimeline = computed(() => {
     );
   });
 
-  if (timelineSort.value === "title_asc") {
-    rows = rows.sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
-  } else {
-    rows = rows.sort((a, b) => examAnchorTimestamp(a) - examAnchorTimestamp(b));
-  }
-  return rows;
+  return rows.sort(compareExamsNewestFirst);
 });
 
 function getExamStatus(exam) {
+  if (exam?.terminated) return "Terminated";
   if (exam?.is_done) return "Done";
   const now = Date.now();
   const startTs = new Date(exam?.available_from || 0).getTime();
-  const dueTs = new Date(exam?.due_at || exam?.created_at || 0).getTime();
+  const dueTs = exam?.due_at ? new Date(exam.due_at).getTime() : NaN;
 
-  if (exam?.available_from && startTs > now) return "Not yet open";
+  if (exam?.available_from && startTs > now) return "Pending";
   if (Number.isFinite(dueTs) && dueTs > 0 && dueTs < now) return "Not Taken";
-  return "Open";
+  return "Ongoing";
 }
 
 function statusClass(exam) {
   const status = getExamStatus(exam);
   if (status === "Done") return "badge-done";
+  if (status === "Terminated") return "badge-terminated";
   if (status === "Not Taken") return "badge-not-taken";
-  if (status === "Not yet open") return "badge-upcoming";
-  if (status === "Open") return "badge-active";
+  if (status === "Pending") return "badge-pending";
+  if (status === "Ongoing") return "badge-active";
   return "badge-neutral";
 }
 
 async function openTakeExam(exam) {
   _warmGazeModel();
-  if (getExamStatus(exam) === "Not yet open") {
+  if (getExamStatus(exam) === "Pending") {
     showToastMessage("This exam is not yet open to be taken.");
     return;
   }
@@ -2534,7 +2513,10 @@ async function requestMediaPermissions() {
   permissionError.value = "";
   permissionLoading.value = true;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: true,
+    });
     activeMediaStream = stream;
     mediaStreamActive.value = true;
     // Show live preview inside the permission modal.
@@ -3218,7 +3200,6 @@ async function submitExam() {
     );
     closeTakeExam();
     await fetchMyExams();
-    showToastMessage("Exam submitted successfully!");
     const updatedExam = exams.value.find(e => e.id === submittedExam.id) || submittedExam;
     await openResultsModal(updatedExam, data);
   } catch (err) {
@@ -3496,6 +3477,8 @@ async function performLogout() {
 .cam-pip-badge { position: absolute; top: 0.5rem; left: 0.5rem; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.07em; padding: 0.2rem 0.55rem; border-radius: 999px; display: flex; align-items: center; gap: 0.3rem; }
 .cam-pip-gaze { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.85)); padding: 0.5rem 0.45rem 0.4rem; font-size: 0.62rem; color: #e5e7eb; line-height: 1.3; }
 .cam-pip-gaze-label { display: block; font-weight: 800; color: #5eead4; letter-spacing: 0.04em; text-transform: uppercase; }
+.cam-pip-gadget-status { display: block; margin-top: 0.15rem; color: #bfdbfe; font-weight: 700; }
+.cam-pip-gadget-unavailable { color: #fca5a5; }
 .cam-pip-gaze-stats { display: block; margin-top: 0.15rem; opacity: 0.95; }
 .cam-pip-gaze-warn { color: #fcd34d; }
 .cam-pip-gaze-pending { color: #93c5fd; font-style: italic; }
@@ -3562,8 +3545,6 @@ async function performLogout() {
 .dir-alert-enter-from, .dir-alert-leave-to { opacity: 0; transform: translateY(-4px) scaleY(0.9); }
 
 /* Toast */
-.toast-modal { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%) translateY(100px); background: #0f0f0f; color: #fff; padding: 0.85rem 1.5rem; border-radius: 14px; font-weight: 600; font-size: 0.86rem; box-shadow: 0 8px 28px rgba(0,0,0,0.2); z-index: 9999; opacity: 0; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); pointer-events: none; }
-.toast-modal.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
 /* Proctoring overlay */
 .proctor-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.88); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; animation: proctorFadeIn 0.25s ease; }

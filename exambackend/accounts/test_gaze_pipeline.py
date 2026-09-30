@@ -49,6 +49,22 @@ class GazeWarmupTests(TestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class GadgetWarmupStateTests(SimpleTestCase):
+    def test_failed_background_warmup_is_not_ready(self):
+        from concurrent.futures import Future
+        from accounts import gadget_service
+
+        failed = Future()
+        failed.set_exception(RuntimeError('synthetic model failure'))
+        with patch.object(gadget_service, '_warmup_future', failed), patch.object(
+            gadget_service.get_gadget_detector, 'cache_info',
+            return_value=type('CacheInfo', (), {'currsize': 1})(),
+        ):
+            self.assertFalse(gadget_service.gadget_detector_ready())
+            self.assertEqual(str(gadget_service.gadget_detector_error()), 'synthetic model failure')
+            self.assertFalse(gadget_service.warm_gadget_detector())
+
+
 class GazeFrameTests(SimpleTestCase):
     def test_receipt_binds_result_to_image_student_exam_and_expiry(self):
         raw = b'exact analyzed jpeg'
@@ -191,6 +207,45 @@ class GazeFrameTests(SimpleTestCase):
             geo[5] = geo[7] = sign * 0.2
             result = _pick_sideways_from_geometry(geo, 1, 2, 0.1, 0.1, 0.1)
             self.assertEqual(result[0], expected)
+
+    def test_camera_geometry_keeps_head_yaw_and_corrects_eye_direction(self):
+        from gaze_tracker.inference import mirror_correct_geo, pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        for yaw, expected in [(-0.2, 1), (0.2, 2)]:
+            geo = np.zeros(14, dtype=np.float32)
+            geo[0] = geo[11] = yaw
+            corrected = mirror_correct_geo(geo)
+            self.assertAlmostEqual(float(corrected[0]), yaw)
+            self.assertAlmostEqual(float(corrected[11]), yaw)
+            opposite = 2 if expected == 1 else 1
+            probabilities = np.array([0.02, 0.02, 0.02, 0.14, 0.02], dtype=np.float32)
+            probabilities[opposite] = 0.80
+            direction, _ = pick_gaze_label(probabilities, corrected, classes)
+            self.assertEqual(direction, expected)
+
+        geo = np.zeros(14, dtype=np.float32)
+        geo[5] = geo[7] = 0.2
+        corrected = mirror_correct_geo(geo)
+        self.assertLess(corrected[5], 0)
+        self.assertLess(corrected[7], 0)
+
+    def test_small_deliberate_vertical_gaze_reaches_geometry_threshold(self):
+        from gaze_tracker.inference import is_looking_above, is_looking_below
+
+        above = np.zeros(14, dtype=np.float32)
+        above[6] = above[8] = -0.019
+        above[12] = -0.041
+        self.assertTrue(is_looking_above(above))
+
+        below = np.zeros(14, dtype=np.float32)
+        below[6] = below[8] = 0.115
+        below[12] = 0.155
+        self.assertTrue(is_looking_below(below))
 
     def test_strong_geometry_corrects_opposite_horizontal_model_class(self):
         from gaze_tracker.inference import pick_gaze_label
@@ -460,6 +515,17 @@ class GazeEvidenceTests(TestCase):
         self.assertEqual(response.status_code, 202, response.data)
         self.assertTrue(response.data['warming'])
         warm.assert_called_once_with()
+        detect.assert_not_called()
+
+    def test_failed_gadget_warmup_returns_unavailable(self):
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+        with patch('accounts.gadget_service.gadget_detector_error', return_value=RuntimeError('synthetic failure')), \
+                patch('accounts.gadget_service.detect_gadgets') as detect:
+            response = self.client.post(url, {
+                'image': SimpleUploadedFile('gadget.jpg', self.raw, content_type='image/jpeg'),
+            })
+        self.assertEqual(response.status_code, 503, response.data)
+        self.assertIn('synthetic failure', response.data['error'])
         detect.assert_not_called()
 
 

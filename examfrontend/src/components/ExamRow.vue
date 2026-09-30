@@ -60,7 +60,7 @@ const props = defineProps({
   statusClass: { type: [String, Object, Array], default: '' },
   /** ISO / API datetime used for the left date block */
   dateIso: { type: [String, Date, null], default: null },
-  /** Visual accent: blue | amber | rose | slate */
+  /** Visual accent: blue | yellow | green | red | orange */
   tone: { type: String, default: '' },
   centerCopy: { type: Boolean, default: false },
   dateMonth: { type: String, default: '' },
@@ -98,7 +98,7 @@ const dateTitle = computed(() => {
 
 const toneClass = computed(() => {
   const explicit = String(props.tone || '').toLowerCase();
-  if (['blue', 'amber', 'rose', 'slate'].includes(explicit)) {
+  if (['blue', 'yellow', 'green', 'red', 'orange', 'amber', 'rose', 'slate'].includes(explicit)) {
     return `tone-${explicit}`;
   }
   const status = String(props.status || '').toLowerCase();
@@ -107,16 +107,11 @@ const toneClass = computed(() => {
     ? cls.join(' ')
     : (typeof cls === 'object' && cls ? Object.keys(cls).filter((k) => cls[k]).join(' ') : String(cls || ''));
 
-  if (status.includes('open') || classStr.includes('badge-active') || classStr.includes('status-open') || classStr.includes('status-live')) return 'tone-blue';
-  if (status.includes('not yet') || status.includes('draft') || classStr.includes('badge-upcoming') || classStr.includes('status-draft') || classStr.includes('status-upcoming')) return 'tone-amber';
-  if (
-    status.includes('done')
-    || status.includes('not taken')
-    || classStr.includes('badge-done')
-    || classStr.includes('badge-not-taken')
-    || classStr.includes('status-closed')
-    || classStr.includes('status-ended')
-  ) return 'tone-rose';
+  if (status.includes('terminated') || classStr.includes('badge-terminated')) return 'tone-red';
+  if (status.includes('not taken') || classStr.includes('badge-not-taken')) return 'tone-orange';
+  if (status.includes('done') || classStr.includes('badge-done')) return 'tone-green';
+  if (status.includes('pending') || status.includes('not yet') || classStr.includes('badge-pending') || classStr.includes('badge-upcoming')) return 'tone-yellow';
+  if (status.includes('ongoing') || status.includes('open') || classStr.includes('badge-active')) return 'tone-blue';
   return 'tone-blue';
 });
 </script>
@@ -173,6 +168,10 @@ const toneClass = computed(() => {
   --tone-tag-bg: #eef2f7;
   --tone-tag-fg: #475569;
 }
+.timeline-row.tone-green { --tone-soft: #e8f5ee; --tone-ink: #15803d; --tone-tag-bg: #e8f5ee; --tone-tag-fg: #166534; }
+.timeline-row.tone-red { --tone-soft: #feecec; --tone-ink: #dc2626; --tone-tag-bg: #feecec; --tone-tag-fg: #b91c1c; }
+.timeline-row.tone-yellow { --tone-soft: #fff8d9; --tone-ink: #a16207; --tone-tag-bg: #fff8d9; --tone-tag-fg: #854d0e; }
+.timeline-row.tone-orange { --tone-soft: #fff0df; --tone-ink: #c2410c; --tone-tag-bg: #fff0df; --tone-tag-fg: #9a3412; }
 
 .timeline-date {
   grid-area: date;

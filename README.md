@@ -106,6 +106,18 @@ python manage.py migrate
 python manage.py runserver
 ```
 
+On Windows, if this checkout already has a repository-level `.venv`, start the
+backend with that interpreter explicitly from `exambackend/`:
+
+```powershell
+& ..\.venv\Scripts\python.exe -c "import ultralytics"
+& ..\.venv\Scripts\python.exe manage.py runserver
+```
+
+The gadget scanner requires `ultralytics` in the Python environment running
+Django. Launching `manage.py` with a different system Python can leave gadget
+detection unavailable even when the package is installed in `.venv`.
+
 ### Frontend Setup
 
 ```bash

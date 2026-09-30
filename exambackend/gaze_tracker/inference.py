@@ -16,7 +16,7 @@ LEFT_IRIS = [468, 469, 470, 471, 472]
 RIGHT_IRIS = [473, 474, 475, 476, 477]
 POSE_ANCHORS = [1, 152, 33, 263, 61, 291]
 
-_GEO_MIRROR_IDXS = (0, 5, 7, 11)
+_GEO_MIRROR_IDXS = (5, 7)
 
 _CENTER_H = 0.09
 _CENTER_V = 0.10
@@ -41,15 +41,15 @@ _SIDEWAYS_YAW = 0.09
 _HORIZONTAL_MODEL_ONLY_CONFIDENCE = 0.70
 # Above: pitch + iris vertical position + blended vertical
 _ABOVE_PITCH = 0.04          # lowered: fires with smaller upward head tilt
-_ABOVE_IRIS_V = 0.020        # lowered from 0.025 — catch pure eye-up movement without head tilt
-_ABOVE_VERT = 0.045          # lowered from 0.05 — 2-of-3 easier to satisfy
+_ABOVE_IRIS_V = 0.018
+_ABOVE_VERT = 0.040
 # Below thresholds (relying primarily on iris movement to ignore camera angle)
 _BELOW_PITCH = 0.40
-_BELOW_IRIS_V = 0.12         # raised from 0.06: requires clear, obvious downward iris movement
-_BELOW_VERT = 0.16           # raised from 0.10: blended vertical must also be clearly down
+_BELOW_IRIS_V = 0.11
+_BELOW_VERT = 0.15
 # Strong-geometry-only thresholds (fire without model confidence requirement)
 _BELOW_PITCH_STRONG = 0.45  # Unused, pitch is too unreliable
-_BELOW_IRIS_V_STRONG = 0.20  # raised from 0.10: only fires on extremely obvious downward look
+_BELOW_IRIS_V_STRONG = 0.19
 _ABOVE_IRIS_V_STRONG = 0.05  # lowered: geometry-only fires with less iris movement upward
 # Strong-geometry-only sideways: both irises must agree on a clear movement.
 _SIDEWAYS_IRIS_STRONG = 0.10
@@ -74,6 +74,13 @@ def mirror_correct_geo(geo: np.ndarray) -> np.ndarray:
     corrected = geo.copy()
     for idx in _GEO_MIRROR_IDXS:
         corrected[idx] *= -1.0
+    # Iris X is measured in camera coordinates, but solvePnP yaw already has
+    # the student's left/right sign. Rebuild the blended X after correcting
+    # the irises instead of reversing the head pose as well.
+    if geo[5] or geo[7]:
+        iris_weight = max(float(geo[13]), 0.7)
+        iris_h = (float(corrected[5]) + float(corrected[7])) / 2.0
+        corrected[11] = iris_weight * iris_h + (1.0 - iris_weight) * float(corrected[0])
     return corrected
 
 
@@ -252,9 +259,9 @@ def is_looking_above(geo: np.ndarray, min_signals: int = 2) -> bool:
     vert = float(geo[12])
 
     # Eyes-only fast path: iris rolled sharply upward with no head movement needed.
-    # If iris_v is very strongly negative (< -0.038), treat it as 2-of-3 signals
+    # If iris_v is very strongly negative, treat it as 2-of-3 signals
     # so pure eye-up looks (common when reading notes above the screen) are caught.
-    if iris_v < -0.038:
+    if iris_v < -0.035:
         return True
 
     signals = (
@@ -283,7 +290,7 @@ def is_looking_below(geo: np.ndarray) -> bool:
     # Quick-fire shortcut: iris must be very clearly down AND head pitched noticeably.
     # Both thresholds are intentionally high — normal reading or typing posture
     # should never cross both simultaneously.
-    if iris_v > 0.10 and pitch > 0.10:
+    if iris_v > 0.095 and pitch > 0.10:
         return True
 
     signals = (

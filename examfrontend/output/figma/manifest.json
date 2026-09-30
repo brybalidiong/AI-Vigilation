@@ -1,0 +1,585 @@
+{
+  "file": "https://www.figma.com/design/rDJkI8K5S2QF8CcKUqk0aZ/AI-VIGILATION",
+  "groups": [
+    {
+      "page": "90:35",
+      "frames": [
+        {
+          "screen": "login",
+          "id": "104:35",
+          "width": 1440,
+          "height": 1000,
+          "texts": 29,
+          "node": "104:35"
+        },
+        {
+          "screen": "login-admin-flip",
+          "id": "104:158",
+          "width": 1280,
+          "height": 720,
+          "texts": 29,
+          "node": "104:158"
+        },
+        {
+          "screen": "admin-login",
+          "id": "104:282",
+          "width": 1280,
+          "height": 720,
+          "texts": 22,
+          "node": "104:282"
+        },
+        {
+          "screen": "instructor-login",
+          "id": "104:375",
+          "width": 1280,
+          "height": 720,
+          "texts": 15,
+          "node": "104:375"
+        }
+      ]
+    },
+    {
+      "page": "90:36",
+      "frames": [
+        {
+          "id": "118:35",
+          "name": "01 / student dashboard",
+          "screen": "student-dashboard",
+          "width": 1280,
+          "height": 720,
+          "node": "118:35"
+        },
+        {
+          "id": "118:204",
+          "name": "02 / student courses",
+          "screen": "student-courses",
+          "width": 1280,
+          "height": 720,
+          "node": "118:204"
+        },
+        {
+          "id": "118:327",
+          "name": "03 / student course",
+          "screen": "student-course",
+          "width": 1280,
+          "height": 720,
+          "node": "118:327"
+        },
+        {
+          "id": "118:507",
+          "name": "04 / student settings",
+          "screen": "student-settings",
+          "width": 1280,
+          "height": 720,
+          "node": "118:507"
+        },
+        {
+          "id": "118:710",
+          "name": "05 / student results",
+          "screen": "student-results",
+          "width": 1280,
+          "height": 720,
+          "node": "118:710"
+        },
+        {
+          "id": "118:957",
+          "name": "06 / student permissions",
+          "screen": "student-permissions",
+          "width": 1280,
+          "height": 720,
+          "node": "118:957"
+        },
+        {
+          "id": "118:1149",
+          "name": "07 / student exam multiple_choice",
+          "screen": "student-exam-multiple_choice",
+          "width": 1280,
+          "height": 720,
+          "node": "118:1149"
+        },
+        {
+          "id": "118:1410",
+          "name": "08 / student exam identification",
+          "screen": "student-exam-identification",
+          "width": 1280,
+          "height": 720,
+          "node": "118:1410"
+        },
+        {
+          "id": "118:1652",
+          "name": "09 / student exam enumeration",
+          "screen": "student-exam-enumeration",
+          "width": 1280,
+          "height": 720,
+          "node": "118:1652"
+        },
+        {
+          "id": "118:1893",
+          "name": "10 / student exam essay",
+          "screen": "student-exam-essay",
+          "width": 1280,
+          "height": 720,
+          "node": "118:1893"
+        },
+        {
+          "id": "118:2134",
+          "name": "11 / student warning",
+          "screen": "student-warning",
+          "width": 1280,
+          "height": 720,
+          "node": "118:2134"
+        },
+        {
+          "id": "118:2407",
+          "name": "12 / student face verifying",
+          "screen": "student-face-verifying",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:2407"
+        },
+        {
+          "id": "118:2591",
+          "name": "13 / student face success",
+          "screen": "student-face-success",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:2591"
+        },
+        {
+          "id": "118:2771",
+          "name": "14 / student face failed",
+          "screen": "student-face-failed",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:2771"
+        },
+        {
+          "id": "118:2960",
+          "name": "15 / student face no photo",
+          "screen": "student-face-no-photo",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:2960"
+        },
+        {
+          "id": "118:3145",
+          "name": "16 / student face hold",
+          "screen": "student-face-hold",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:3145"
+        },
+        {
+          "id": "118:3412",
+          "name": "17 / student terminated",
+          "screen": "student-terminated",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:3412"
+        },
+        {
+          "id": "118:3605",
+          "name": "18 / student confirm",
+          "screen": "student-confirm",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:3605"
+        },
+        {
+          "id": "118:3790",
+          "name": "19 / student courses empty",
+          "screen": "student-courses-empty",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:3790"
+        },
+        {
+          "id": "118:3869",
+          "name": "20 / student courses loading",
+          "screen": "student-courses-loading",
+          "width": 1440,
+          "height": 1000,
+          "node": "118:3869"
+        }
+      ]
+    },
+    {
+      "page": "90:37",
+      "frames": [
+        {
+          "screen": "instructor-dashboard",
+          "id": "124:35",
+          "width": 1440,
+          "height": 1000,
+          "texts": 38,
+          "node": "124:35"
+        },
+        {
+          "screen": "instructor-courses",
+          "id": "124:204",
+          "width": 1440,
+          "height": 1000,
+          "texts": 30,
+          "node": "124:204"
+        },
+        {
+          "screen": "instructor-course",
+          "id": "124:344",
+          "width": 1440,
+          "height": 1000,
+          "texts": 55,
+          "node": "124:344"
+        },
+        {
+          "screen": "instructor-create",
+          "id": "124:595",
+          "width": 1440,
+          "height": 1000,
+          "texts": 40,
+          "node": "124:595"
+        },
+        {
+          "screen": "instructor-upload",
+          "id": "124:775",
+          "width": 1440,
+          "height": 1143,
+          "texts": 74,
+          "node": "124:775"
+        },
+        {
+          "screen": "instructor-sections",
+          "id": "124:1098",
+          "width": 1440,
+          "height": 1000,
+          "texts": 47,
+          "node": "124:1098"
+        },
+        {
+          "screen": "instructor-batch",
+          "id": "124:1301",
+          "width": 1440,
+          "height": 1000,
+          "texts": 49,
+          "node": "124:1301"
+        },
+        {
+          "screen": "instructor-progress-student",
+          "id": "124:1516",
+          "width": 1440,
+          "height": 1000,
+          "texts": 55,
+          "node": "124:1516"
+        },
+        {
+          "screen": "instructor-progress-exam",
+          "id": "124:1737",
+          "width": 1440,
+          "height": 1000,
+          "texts": 66,
+          "node": "124:1737"
+        },
+        {
+          "screen": "instructor-question-multiple_choice",
+          "id": "124:1991",
+          "width": 1440,
+          "height": 1968,
+          "texts": 84,
+          "node": "124:1991"
+        },
+        {
+          "screen": "instructor-question-identification",
+          "id": "124:2312",
+          "width": 1440,
+          "height": 1968,
+          "texts": 82,
+          "node": "124:2312"
+        },
+        {
+          "screen": "instructor-question-enumeration",
+          "id": "124:2599",
+          "width": 1440,
+          "height": 1968,
+          "texts": 91,
+          "node": "124:2599"
+        },
+        {
+          "screen": "instructor-question-essay",
+          "id": "124:2920",
+          "width": 1440,
+          "height": 1968,
+          "texts": 78,
+          "node": "124:2920"
+        },
+        {
+          "screen": "instructor-stats",
+          "id": "124:3192",
+          "width": 1440,
+          "height": 1000,
+          "texts": 112,
+          "node": "124:3192"
+        },
+        {
+          "screen": "instructor-integrity",
+          "id": "124:3629",
+          "width": 1440,
+          "height": 1000,
+          "texts": 83,
+          "node": "124:3629"
+        },
+        {
+          "screen": "instructor-grading",
+          "id": "124:4021",
+          "width": 1440,
+          "height": 1000,
+          "texts": 77,
+          "node": "124:4021"
+        },
+        {
+          "screen": "instructor-evidence",
+          "id": "124:4375",
+          "width": 1440,
+          "height": 1000,
+          "texts": 77,
+          "node": "124:4375"
+        },
+        {
+          "screen": "instructor-snapshots",
+          "id": "124:4729",
+          "width": 1440,
+          "height": 1000,
+          "texts": 78,
+          "node": "124:4729"
+        },
+        {
+          "screen": "instructor-settings",
+          "id": "124:5089",
+          "width": 1440,
+          "height": 1000,
+          "texts": 38,
+          "node": "124:5089"
+        }
+      ]
+    },
+    {
+      "page": "90:38",
+      "frames": [
+        {
+          "screen": "admin-overview",
+          "node": "139:35",
+          "width": 1440,
+          "height": 1000,
+          "texts": 23,
+          "bindings": 64
+        },
+        {
+          "screen": "admin-instructors",
+          "node": "139:158",
+          "width": 1440,
+          "height": 1000,
+          "texts": 25,
+          "bindings": 57
+        },
+        {
+          "screen": "admin-register",
+          "node": "139:253",
+          "width": 1440,
+          "height": 1000,
+          "texts": 31,
+          "bindings": 74
+        },
+        {
+          "screen": "admin-students",
+          "node": "139:363",
+          "width": 1440,
+          "height": 1000,
+          "texts": 41,
+          "bindings": 85
+        },
+        {
+          "screen": "admin-enroll",
+          "node": "139:507",
+          "width": 1440,
+          "height": 1000,
+          "texts": 48,
+          "bindings": 102
+        }
+      ]
+    },
+    {
+      "page": "90:36",
+      "frames": [
+        {
+          "screen": "student-courses-list",
+          "node": "139:668",
+          "width": 1440,
+          "height": 1000,
+          "texts": 30,
+          "bindings": 55
+        },
+        {
+          "screen": "student-courses-summary",
+          "node": "139:791",
+          "width": 1440,
+          "height": 1000,
+          "texts": 30,
+          "bindings": 55
+        },
+        {
+          "screen": "student-settings-edit",
+          "node": "139:914",
+          "width": 1440,
+          "height": 1142,
+          "texts": 49,
+          "bindings": 70
+        },
+        {
+          "screen": "student-settings-pending",
+          "node": "139:1121",
+          "width": 1440,
+          "height": 1093,
+          "texts": 44,
+          "bindings": 69
+        },
+        {
+          "screen": "student-settings-approved",
+          "node": "139:1313",
+          "width": 1440,
+          "height": 1093,
+          "texts": 44,
+          "bindings": 69
+        }
+      ]
+    },
+    {
+      "page": "90:37",
+      "frames": [
+        {
+          "screen": "instructor-courses-list",
+          "node": "139:1505",
+          "width": 1440,
+          "height": 1000,
+          "texts": 30,
+          "bindings": 65
+        },
+        {
+          "screen": "instructor-courses-summary",
+          "node": "139:1645",
+          "width": 1440,
+          "height": 1000,
+          "texts": 30,
+          "bindings": 65
+        },
+        {
+          "screen": "instructor-settings-edit",
+          "node": "139:1785",
+          "width": 1440,
+          "height": 1000,
+          "texts": 40,
+          "bindings": 63
+        }
+      ]
+    },
+    {
+      "page": "90:40",
+      "frames": [
+        {
+          "screen": "login",
+          "node": "147:35",
+          "width": 390,
+          "height": 844,
+          "texts": 29,
+          "bindings": 60
+        },
+        {
+          "screen": "student-dashboard",
+          "node": "147:160",
+          "width": 390,
+          "height": 844,
+          "texts": 31,
+          "bindings": 31
+        },
+        {
+          "screen": "instructor-dashboard",
+          "node": "147:299",
+          "width": 390,
+          "height": 844,
+          "texts": 31,
+          "bindings": 31
+        },
+        {
+          "screen": "admin-overview",
+          "node": "147:438",
+          "width": 390,
+          "height": 844,
+          "texts": 23,
+          "bindings": 64
+        }
+      ]
+    }
+  ],
+  "references": {
+    "page": "90:39",
+    "frames": [
+      {
+        "label": "Student navigation",
+        "node": "146:35"
+      },
+      {
+        "label": "Instructor navigation",
+        "node": "146:80"
+      },
+      {
+        "label": "Course card",
+        "node": "146:125"
+      },
+      {
+        "label": "Upcoming exam row",
+        "node": "146:145"
+      },
+      {
+        "label": "Completed exam row",
+        "node": "146:181"
+      },
+      {
+        "label": "Course creation form",
+        "node": "146:217"
+      },
+      {
+        "label": "Search and filters",
+        "node": "146:248"
+      },
+      {
+        "label": "Empty courses state",
+        "node": "146:262"
+      },
+      {
+        "label": "Confirmation dialog",
+        "node": "146:274"
+      },
+      {
+        "label": "Face verification dialog",
+        "node": "146:291"
+      },
+      {
+        "label": "Primary action",
+        "node": "146:306"
+      },
+      {
+        "label": "Exam action",
+        "node": "146:313"
+      },
+      {
+        "label": "Course title and summary",
+        "node": "146:317"
+      }
+    ],
+    "colorReference": "146:347",
+    "bindings": 1555
+  },
+  "notes": [
+    "All fixtures use synthetic names and example.test emails.",
+    "Original Figma pages are preserved.",
+    "Product typography remains Poppins; captured Arial native controls use Arimo.",
+    "Temporary capture sources were removed after opacity and layout validation."
+  ]
+}
