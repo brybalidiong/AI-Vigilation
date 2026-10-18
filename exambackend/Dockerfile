@@ -12,7 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# The Azure VM has no GPU. Install CPU-only PyTorch before Ultralytics so pip
+# does not pull multi-gigabyte CUDA wheels into the image.
+RUN pip install torch==2.13.0 torchvision==0.28.0 \
+        --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt
 # Fail the build early if native proctoring packages cannot load on the VM CPU.
 RUN python -c "import cv2, mediapipe, tensorflow, torch; from mediapipe.tasks import python"
 

@@ -28,10 +28,11 @@ list. The local in-memory channel layer supports one backend process. Deployment
 with multiple processes set `REDIS_URL` for a shared Redis channel layer.
 Production settings read credentials, hosts, origins, and media storage from
 environment variables. See [deployment guide](docs/DEPLOYMENT.md).
-The first deployment setup serves Vue from Vercel and Django/Daphne behind
-Caddy on an Oracle Cloud Always Free Arm VM, with Redis for Channels and the
+The planned first deployment serves Vue from Vercel and Django/Daphne behind
+Caddy on an Azure for Students Linux VM, with Redis for Channels and the
 existing Supabase project for PostgreSQL and private S3-compatible media
-storage. Verify the model dependencies on Arm and load test before a real exam.
+storage. Student credit is finite; verify the model dependencies on Linux and
+load test before a real exam.
 
 ## Question grading
 

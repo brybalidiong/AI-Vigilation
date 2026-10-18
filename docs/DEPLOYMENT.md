@@ -1,6 +1,6 @@
 # Deployment guide
 
-## First deployment: Vercel + Oracle Cloud Always Free + Supabase
+## First deployment: Vercel + Azure for Students VM + Supabase
 
 Supabase supplies PostgreSQL and private file storage; Django remains the API,
 WebSocket, and proctoring server. The repository includes
@@ -8,10 +8,13 @@ WebSocket, and proctoring server. The repository includes
 in `exambackend/`. Use this as a **staging deployment first**. The gaze worker
 currently processes one frame at a time per backend process, so even a class of
 20 simultaneous proctored students needs a measured load test before a live exam.
-Oracle's Always Free Arm VM currently allows up to 2 OCPUs and 12 GB RAM on a
-Free Tier account. Availability varies by home region. Select an **Always Free
-eligible** VM and image; a larger trial-only VM can be removed when the trial
-ends. Keep the account on Free Tier if you cannot accept usage charges.
+Azure for Students provides eligible students with a finite $100 credit for
+12 months without a credit card. A continuously running 2-vCPU, 4-GiB Linux
+VM uses a substantial part of that credit each month; managed disk and public
+IP add cost. Check the portal's estimate, set a
+budget alert, and plan a replacement host before the credit runs out. Azure
+disables student resources when the credit is exhausted. This setup does not
+make the backend permanently free.
 
 1. In Supabase, back up the database, then open **Connect** and copy the
    **Session pooler** URI (port 5432). This works over IPv4. A direct connection
@@ -26,17 +29,23 @@ ends. Keep the account on Free Tier if you cannot accept usage charges.
    Existing files stored on a local development disk are **not** moved by this
    deployment; migrate any needed files into the bucket using their existing
    `FileField` object names before relying on old uploads.
-3. Create an **Always Free eligible** Oracle `VM.Standard.A1.Flex` instance in
-   your home region, with Ubuntu for Arm, 2 OCPUs, and 12 GB RAM. Add a public
-   IPv4 address. Save the SSH private key that belongs to the public key you
-   supplied at creation. Allow inbound TCP 80 and 443 in the subnet security
-   list or network security group and in the VM firewall; restrict SSH (22) to
+3. In the Azure portal, create a Linux VM under the **Azure for Students**
+   subscription. Check **Policy > Assignments > Allowed resource deployment
+   regions** first: student subscriptions may restrict regions and VM sizes.
+   In an allowed region, look for an available, affordable x64 VM with at least
+   4 GiB RAM. This subscription allowed `Standard_B2ls_v2` (2 vCPUs, 4 GiB)
+   in Indonesia Central at an estimated $0.0475/hour for the VM; availability
+   and prices can change. Do not select an expensive substitute just to
+   complete provisioning. Use Ubuntu Server 24.04 LTS x64 and validate the
+   model load and simultaneous exam traffic before relying on the VM. Select a
+   64-GiB Standard SSD OS disk and review the total cost before creating the
+   VM. Generate and download an SSH key, then keep its private half off the
+   VM. Add a Standard static public IPv4 address. Allow inbound TCP 80 and
+   443 in the network security group and VM firewall; restrict SSH (22) to
    your own IP. Install Docker Engine and its Compose plugin from Docker's
-   official Ubuntu instructions. Choose an API hostname pointing to the VM's
-   public IP. If you have no domain, an IP-based `sslip.io` hostname such as
-   `api.203-0-113-10.sslip.io` can be used for initial staging; replace the
-   example octets with your actual public IPv4 address. Caddy obtains HTTPS
-   certificates after DNS and ports 80/443 work. Keep the public IP stable.
+   official Ubuntu instructions. Assign an Azure public-IP DNS name label or
+   another stable API hostname to the VM. Caddy obtains HTTPS certificates
+   after DNS and ports 80/443 work. Keep the public IP resource stable.
 4. Copy this repository to the server. In `exambackend/`, copy
    `.env.production.example` to `.env.production` and replace every placeholder.
    Set `API_DOMAIN` and `DJANGO_ALLOWED_HOSTS` to the API hostname, and
@@ -57,9 +66,9 @@ ends. Keep the account on Free Tier if you cannot accept usage charges.
    the `models/` and `gaze_tracker/assets/` directories securely to the server
    after cloning. Restore from the project's training output or backup if a
    file is missing on the deployment machine. The deployment check will fail
-   until the required files are present. Build on the Arm VM and check that the
+   until the required files are present. Build on the Azure x64 VM and check that the
    Python packages and inference models load before inviting students;
-   successful installation on Windows does not establish Arm compatibility.
+   successful installation on Windows does not establish Linux compatibility.
 6. From `exambackend/` on the server, run:
 
    ```sh

@@ -75,7 +75,7 @@ AI-Vigilation/
 
 ## Getting Started
 
-For production setup with Vercel, Oracle Cloud Always Free, and the existing Supabase
+For production setup with Vercel, an Azure for Students VM, and the existing Supabase
 project, see the [Deployment guide](docs/DEPLOYMENT.md). The frontend is a
 Vercel project rooted at `examfrontend/`; the backend uses the Compose setup
 in `exambackend/`. Test proctoring with the expected number of simultaneous
