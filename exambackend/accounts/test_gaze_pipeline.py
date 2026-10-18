@@ -66,6 +66,35 @@ class GadgetWarmupStateTests(SimpleTestCase):
 
 
 class GazeFrameTests(SimpleTestCase):
+    async def test_websocket_rejects_missing_token_before_inference_setup(self):
+        from accounts.consumers import GazeConsumer
+
+        consumer = GazeConsumer()
+        consumer.scope = {'url_route': {'kwargs': {'exam_id': 1}}, 'query_string': b''}
+        consumer.close = AsyncMock()
+        consumer.accept = AsyncMock()
+        await consumer.connect()
+        consumer.close.assert_awaited_once_with(code=4401)
+        consumer.accept.assert_not_awaited()
+
+    async def test_websocket_rejects_student_without_exam_access(self):
+        from accounts.consumers import GazeConsumer
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        token = AccessToken()
+        token['user_id'] = 123
+        consumer = GazeConsumer()
+        consumer.scope = {
+            'url_route': {'kwargs': {'exam_id': 1}},
+            'query_string': f'token={token}'.encode(),
+        }
+        consumer.close = AsyncMock()
+        consumer.accept = AsyncMock()
+        with patch.object(GazeConsumer, '_authorized_student_email', new_callable=AsyncMock, return_value=None):
+            await consumer.connect()
+        consumer.close.assert_awaited_once_with(code=4403)
+        consumer.accept.assert_not_awaited()
+
     def test_receipt_binds_result_to_image_student_exam_and_expiry(self):
         raw = b'exact analyzed jpeg'
         with patch('django.core.signing.time.time', return_value=1000):
@@ -560,6 +589,17 @@ class InstructorLiveSnapshotTests(TestCase):
         self.assertEqual(snapshot.status_code, 200)
         self.assertEqual(snapshot['Content-Type'], 'image/jpeg')
         self.assertEqual(b''.join(snapshot.streaming_content), self.image_bytes)
+
+    def test_new_live_snapshot_removes_replaced_storage_object(self):
+        previous_name = self.submission.latest_snapshot.name
+        storage = self.submission.latest_snapshot.storage
+
+        gaze_service.save_live_snapshot(self.exam.pk, 'student@example.com', b'next synthetic jpeg')
+
+        self.submission.refresh_from_db()
+        self.assertNotEqual(self.submission.latest_snapshot.name, previous_name)
+        self.assertFalse(storage.exists(previous_name))
+        self.assertTrue(storage.exists(self.submission.latest_snapshot.name))
 
     def test_other_instructor_cannot_read_snapshot(self):
         other = User.objects.create(username='other-teacher', is_staff=True)

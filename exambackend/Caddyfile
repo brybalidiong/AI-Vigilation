@@ -1,0 +1,12 @@
+{$API_DOMAIN} {
+    encode zstd gzip
+
+    handle_path /static/* {
+        root * /srv/static
+        file_server
+    }
+
+    handle {
+        reverse_proxy backend:8000
+    }
+}

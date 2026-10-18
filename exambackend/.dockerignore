@@ -1,0 +1,13 @@
+.env
+.env.*
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+media/
+staticfiles/
+secrets/
+models/
+gaze_tracker/assets/*.tflite
+gaze_tracker/assets/*.task
+*.log

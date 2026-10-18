@@ -79,12 +79,47 @@ class AdminAccessWorkflowTests(TestCase):
         self.assertFalse(second.data['face_reupload_allowed'])
         self.assertEqual(second.data['face_status'], UserProfile.FACE_STATUS_APPROVED)
 
+    def test_admin_can_approve_stored_face_photo_without_local_path(self):
+        profile = self.student.profile
+        profile.face_pending_photo = 'face_pending/synthetic.jpg'
+        profile.save(update_fields=['face_pending_photo'])
+        with patch.object(type(profile.face_pending_photo), 'open', return_value=BytesIO(b'synthetic-image')):
+            with patch('accounts.face_service.extract_face_encoding_bytes', return_value=[0.1, 0.2]) as extract:
+                response = self.client.patch(
+                    f'/api/admin/students/{self.student.pk}/',
+                    {'action': 'approve_face'}, format='json',
+                )
+        self.assertEqual(response.status_code, 200, response.data)
+        extract.assert_called_once_with(b'synthetic-image')
+        profile.refresh_from_db()
+        self.assertEqual(profile.face_status, UserProfile.FACE_STATUS_APPROVED)
+        self.assertFalse(profile.face_pending_photo)
+
+    def test_admin_rejects_stored_face_photo_through_storage(self):
+        profile = self.student.profile
+        profile.face_pending_photo = 'face_pending/synthetic.jpg'
+        profile.save(update_fields=['face_pending_photo'])
+        with patch.object(type(profile.face_pending_photo), 'delete') as delete:
+            response = self.client.patch(
+                f'/api/admin/students/{self.student.pk}/',
+                {'action': 'reject_face'}, format='json',
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        delete.assert_called_once_with(save=False)
+
     def test_non_admin_cannot_change_access(self):
         self.client.force_authenticate(self.student)
         response = self.client.patch(
             f'/api/admin/instructors/{self.instructor.pk}/', {'is_active': False}, format='json',
         )
         self.assertEqual(response.status_code, 403)
+
+    @override_settings(ADMIN_PASSWORD='')
+    def test_admin_login_is_disabled_without_configured_password(self):
+        response = APIClient().post('/api/auth/admin/login/', {
+            'username': 'admin', 'password': '',
+        }, format='json')
+        self.assertEqual(response.status_code, 401)
 
     @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
     def test_register_instructor_does_not_promote_existing_student(self):

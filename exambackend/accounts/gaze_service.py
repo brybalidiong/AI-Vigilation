@@ -209,12 +209,22 @@ def save_live_snapshot(exam_set_id, student_email, img_bytes) -> None:
     )
     if not sub:
         return
+    previous_name = sub.latest_snapshot.name
     filename = f"snapshot_{sub.id}.jpg"
     sub.latest_snapshot.save(filename, ContentFile(img_bytes), save=False)
-    ExamSubmission.objects.filter(pk=sub.pk, is_done=False).update(
+    new_name = sub.latest_snapshot.name
+    updated = ExamSubmission.objects.filter(
+        pk=sub.pk, is_done=False, latest_snapshot=previous_name,
+    ).update(
         latest_snapshot=sub.latest_snapshot.name,
         updated_at=timezone.now(),
     )
+    storage = sub.latest_snapshot.storage
+    if not updated:
+        # The attempt ended or a newer snapshot won the race during upload.
+        storage.delete(new_name)
+    elif previous_name and previous_name != new_name:
+        storage.delete(previous_name)
 
 
 def smooth_gaze_probs(

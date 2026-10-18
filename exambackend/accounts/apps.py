@@ -7,4 +7,4 @@ class AccountsConfig(AppConfig):
     def ready(self):
         # Warmup threads for AI models have been disabled to prevent 
         # C++ thread deadlocks with MediaPipe and TensorFlow on Windows.
-        pass
+        from . import deployment_checks  # noqa: F401

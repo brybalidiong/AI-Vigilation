@@ -8,7 +8,7 @@
 
 - 🎓 **Role-based dashboards** — Student, Instructor, and Admin portals
 - 👁️ **AI Gaze Tracking** — Real-time eye-gaze proctoring using a TFLite model + MediaPipe face landmarks
-- 🤳 **Face Verification** — Student identity verified via Microsoft Azure Face API before exams
+- 🤳 **Face Verification** — Student identity verified with OpenCV face models before exams
 - 📊 **Integrity Reports** — Automated proctoring event logs and violation summaries per submission
 - 📝 **Exam Management** — Create, assign, and time-limit exam sets with multiple question types (MCQ, enumeration, essay)
 - 📥 **Aiken Import** — Bulk question import via Aiken-format text files
@@ -24,13 +24,13 @@
 | Technology | Purpose |
 |---|---|
 | Django 6 + DRF | REST API & business logic |
-| Daphne + Django Channels | WebSocket server for live proctoring |
+| Daphne + Django Channels | WebSocket server for live proctoring and exam updates |
 | PostgreSQL (Supabase) | Primary database |
 | Firebase Admin SDK | Authentication & push notifications |
 | MediaPipe + TensorFlow Lite | Gaze direction inference |
 | OpenCV | Frame capture & face cropping |
-| Azure Face API | Face enrollment & verification |
-| Gunicorn | Production WSGI server |
+| OpenCV YuNet + SFace | Face enrollment & verification |
+| Gunicorn | HTTP serving when WebSocket updates are handled by an ASGI server |
 
 ### Frontend
 | Technology | Purpose |
@@ -52,7 +52,7 @@ AI-Vigilation/
 │   │   ├── views.py          # REST API endpoints
 │   │   ├── consumers.py      # WebSocket consumers
 │   │   ├── gaze_service.py   # Gaze AI singleton service
-│   │   ├── face_service.py   # Azure face verification
+│   │   ├── face_service.py   # OpenCV face verification
 │   │   └── grading.py        # Auto-grading logic
 │   ├── gaze_tracker/         # Gaze AI package
 │   │   ├── inference.py      # TFLite model inference
@@ -75,12 +75,19 @@ AI-Vigilation/
 
 ## Getting Started
 
+For production setup with Vercel, Oracle Cloud Always Free, and the existing Supabase
+project, see the [Deployment guide](docs/DEPLOYMENT.md). The frontend is a
+Vercel project rooted at `examfrontend/`; the backend uses the Compose setup
+in `exambackend/`. Test proctoring with the expected number of simultaneous
+students before a live exam.
+
 ### Prerequisites
-- Python 3.11+
-- Node.js 20+
+- Python 3.12+
+- Node.js 20.19+ or 22.12+
 - PostgreSQL (or a Supabase project)
 - Firebase project
-- Azure Face API key
+- Firebase Admin service-account credentials
+- Local face and gaze model assets
 
 ### Backend Setup
 
@@ -97,7 +104,7 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Fill in your DB, Firebase, and Azure credentials in .env
+# Set Firebase credentials and any local database settings in .env
 
 # Run migrations
 python manage.py migrate
@@ -138,18 +145,13 @@ npm run dev
 
 ## Environment Variables
 
-### `exambackend/.env`
-```
-DATABASE_URL=your_supabase_postgres_url
-FIREBASE_CREDENTIALS=path/to/serviceAccountKey.json
-AZURE_FACE_API_KEY=your_azure_key
-AZURE_FACE_ENDPOINT=your_azure_endpoint
-GAZE_ASSETS_DIR=           # optional override for model assets path
-```
+Use [exambackend/.env.example](exambackend/.env.example) for local configuration.
+See the [deployment guide](docs/DEPLOYMENT.md) for production secrets and
+hosting settings.
 
 ### `examfrontend/.env`
 ```
-VITE_API_BASE_URL=http://localhost:8000
+VITE_BACKEND_URL=http://localhost:8000
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=...
@@ -157,10 +159,20 @@ VITE_FIREBASE_PROJECT_ID=...
 
 ---
 
+When an instructor publishes an exam, connected students in that course receive a
+WebSocket update and their dashboard reloads its exam list. Uploading creates a
+draft; students only see published exams assigned to their section. A single
+backend process can use the default in-memory channel layer for local development.
+Set `REDIS_URL` and run an ASGI server such as Daphne when deploying multiple
+backend processes so updates reach every connected student.
+
+---
+
 ## Gaze Model Assets
 
-The AI model files (`.tflite`, `.task`) are excluded from the repository due to file size.
-After cloning, copy them into `exambackend/gaze_tracker/assets/`:
+Some AI model files are excluded from the repository due to file size.
+If gaze assets are missing after cloning, copy them into
+`exambackend/gaze_tracker/assets/`:
 
 ```bash
 python exambackend/scripts/sync_gaze_assets.py

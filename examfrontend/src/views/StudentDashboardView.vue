@@ -2358,17 +2358,97 @@ function toAbsoluteFileUrl(fileUrl) {
   return `${backendBaseUrl}${fileUrl}`;
 }
 
-async function fetchMyExams() {
-  examsLoading.value = true;
-  examsError.value = "";
+let examFetchGeneration = 0;
+
+async function fetchMyExams(background = false) {
+  const generation = ++examFetchGeneration;
+  if (!background) examsLoading.value = true;
+  if (!background) examsError.value = "";
   try {
     const response = await getWithRetry("/api/student/exams/");
+    if (generation !== examFetchGeneration) return;
     exams.value = [...(response.data.exam_sets || [])].sort(compareExamsNewestFirst);
+    examsError.value = "";
   } catch (err) {
-    examsError.value = err?.response?.data?.error || "Unable to load exams.";
+    if (generation !== examFetchGeneration) return;
+    if (!background) examsError.value = err?.response?.data?.error || "Unable to load exams.";
   } finally {
-    examsLoading.value = false;
+    if (generation === examFetchGeneration) examsLoading.value = false;
   }
+}
+
+let examUpdatesSocket = null;
+let examUpdatesRetryTimer = null;
+let examUpdatesStopped = false;
+
+function examUpdatesTokenExpired(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return !payload.exp || payload.exp * 1000 <= Date.now() + 10000;
+  } catch {
+    return true;
+  }
+}
+
+async function connectExamUpdates() {
+  if (examUpdatesStopped || examUpdatesSocket) return;
+  let token = localStorage.getItem('access_token');
+  if (!token) return;
+  if (examUpdatesTokenExpired(token)) {
+    try {
+      token = await refreshAccessToken();
+    } catch {
+      return;
+    }
+    if (examUpdatesStopped || examUpdatesSocket) return;
+  }
+
+  const url = new URL('/ws/student/exams/updates/', backendBaseUrl);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('token', token);
+  const socket = new WebSocket(url.toString());
+  examUpdatesSocket = socket;
+
+  socket.onopen = () => {
+    if (examUpdatesSocket === socket) fetchMyExams(true);
+  };
+  socket.onmessage = (event) => {
+    if (examUpdatesSocket !== socket) return;
+    try {
+      if (JSON.parse(event.data).type === 'exam_published') fetchMyExams(true);
+    } catch {
+      // Ignore malformed update messages.
+    }
+  };
+  socket.onclose = async (event) => {
+    if (examUpdatesSocket !== socket) return;
+    examUpdatesSocket = null;
+    if (examUpdatesStopped || event.code === 4403) return;
+    if (event.code === 4401) {
+      try {
+        await refreshAccessToken();
+      } catch {
+        return;
+      }
+    }
+    examUpdatesRetryTimer = setTimeout(connectExamUpdates, 3000);
+  };
+}
+
+function stopExamUpdates() {
+  examUpdatesStopped = true;
+  clearTimeout(examUpdatesRetryTimer);
+  if (examUpdatesSocket) {
+    examUpdatesSocket.close();
+    examUpdatesSocket = null;
+  }
+  document.removeEventListener('visibilitychange', refreshExamsWhenVisible);
+}
+
+function refreshExamsWhenVisible() {
+  if (document.visibilityState !== 'visible') return;
+  fetchMyExams(true);
+  connectExamUpdates();
 }
 
 const activeNav = computed(() => {
@@ -2662,12 +2742,16 @@ function _startPrecheckWs() {
   const examId = pendingExam.id;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const backendHost = new URL(backendBaseUrl).host;
+  const token = localStorage.getItem('access_token');
+  if (!token) return;
 
   // Enable button immediately once camera is active — real check happens at SFace verification
   precheckFaceVisible.value = true;
   _precheckFramePending = false;
 
-  _precheckWs = new WebSocket(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/`);
+  const url = new URL(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/`);
+  url.searchParams.set('token', token);
+  _precheckWs = new WebSocket(url.toString());
   _precheckWs.onopen = () => {
     _sendPrecheckFrame();
   };
@@ -3303,10 +3387,14 @@ onMounted(async () => {
   timeInterval = setInterval(updateTime, 1000);
   _warmGazeModel();
   await Promise.all([fetchMySubjects(), fetchMyExams()]);
+  if (examUpdatesStopped) return;
   syncStudentCourseFromRoute();
+  connectExamUpdates();
+  document.addEventListener('visibilitychange', refreshExamsWhenVisible);
 });
 
 onUnmounted(() => {
+  stopExamUpdates();
   if (activeMediaStream) {
     activeMediaStream.getTracks().forEach(t => t.stop());
     activeMediaStream = null;

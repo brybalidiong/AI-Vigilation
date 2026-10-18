@@ -1,0 +1,49 @@
+services:
+  backend:
+    build: .
+    env_file: .env.production
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      FACE_MODELS_DIR: /app/models
+      GAZE_ASSETS_DIR: /app/gaze-assets
+      GADGET_MODEL_PATH: /app/models/yolo11n.pt
+      FIREBASE_CREDENTIALS: /run/secrets/firebase-service-account.json
+    volumes:
+      - ./models:/app/models:ro
+      - ./gaze_tracker/assets:/app/gaze-assets:ro
+      - ./secrets/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
+      - staticfiles:/app/staticfiles
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    env_file: .env.production
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - staticfiles:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  staticfiles:
+  caddy_data:
+  caddy_config:

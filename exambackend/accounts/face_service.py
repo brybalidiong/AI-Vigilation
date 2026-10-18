@@ -18,20 +18,14 @@ import numpy as np
 
 from django.conf import settings
 
-# Setup local file logger for face debugging
-face_logger = logging.getLogger("face_debug")
-face_logger.setLevel(logging.DEBUG)
-if not face_logger.handlers:
-    fh = logging.FileHandler("face_debug.log", mode="a")
-    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    face_logger.addHandler(fh)
-
 logger = logging.getLogger(__name__)
+face_logger = logger
 
 # Paths to the ONNX models downloaded to exambackend/models/
 BASE_DIR = getattr(settings, 'BASE_DIR', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-YUNET_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'yunet.onnx')
-SFACE_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'sface.onnx')
+FACE_MODELS_DIR = os.getenv('FACE_MODELS_DIR') or os.path.join(BASE_DIR, 'models')
+YUNET_MODEL_PATH = os.path.join(FACE_MODELS_DIR, 'yunet.onnx')
+SFACE_MODEL_PATH = os.path.join(FACE_MODELS_DIR, 'sface.onnx')
 
 # Thresholds
 # Lower = more permissive. Profile photos vs webcam images need a lenient threshold.
@@ -197,6 +191,15 @@ def extract_face_encoding(image_path):
         face_logger.info(f"Encoding extracted: {len(flat)} dims")
         return flat
     return None
+
+
+def extract_face_encoding_bytes(image_bytes):
+    """Extract features from storage-backed images without requiring a local path."""
+    img = _load_image_bytes(image_bytes)
+    if img is None:
+        return None
+    features = _get_face_features(img, "stored image")
+    return features.flatten().tolist() if features is not None else None
 
 
 def verify_face(stored_encoding_json, webcam_image_path):

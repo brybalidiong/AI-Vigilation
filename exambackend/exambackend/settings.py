@@ -32,19 +32,50 @@ def load_env_file(path):
 load_env_file(BASE_DIR / '.env')
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+from django.core.exceptions import ImproperlyConfigured
+from django.core.management.utils import get_random_secret_key
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-5f^iq*l_zo-eq-a=m7$nh4omv_yzg$_lmu)_$(xkl*7u8_l^9-'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    return default if value is None else value.lower() in ('1', 'true', 'yes', 'on')
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
-# Local dev: set USE_LOCAL_SQLITE=1 in .env when Supabase Postgres is unreachable.
-USE_LOCAL_SQLITE = os.getenv('USE_LOCAL_SQLITE', '').lower() in ('1', 'true', 'yes')
+def _env_list(name, default=''):
+    return [value.strip() for value in os.getenv(name, default).split(',') if value.strip()]
+
+
+# Local SQLite remains an explicit development/testing choice.
+USE_LOCAL_SQLITE = _env_bool('USE_LOCAL_SQLITE')
+DEBUG = _env_bool('DJANGO_DEBUG', default=USE_LOCAL_SQLITE)
+USE_LOCAL_MEDIA = _env_bool('USE_LOCAL_MEDIA', default=DEBUG or USE_LOCAL_SQLITE)
+if not DEBUG and (USE_LOCAL_SQLITE or USE_LOCAL_MEDIA):
+    raise ImproperlyConfigured('Production requires PostgreSQL and persistent media storage.')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '').strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.')
+if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY.startswith('django-insecure-')):
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY must be a new, long random value.')
+
+ALLOWED_HOSTS = _env_list(
+    'DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost' if DEBUG else '',
+)
+if not DEBUG and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS must list the production API host.')
+if '*' in ALLOWED_HOSTS:
+    raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS must not contain a wildcard.')
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = _env_bool('DJANGO_HTTPS_REDIRECT', default=not DEBUG)
+SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_HSTS_SECONDS', '0'))
+if _env_bool('DJANGO_TRUST_PROXY_HTTPS'):
+    # Enable only behind a proxy that overwrites incoming X-Forwarded-Proto.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS')
 
 
 # Application definition
@@ -94,10 +125,12 @@ TEMPLATES = [
 WSGI_APPLICATION = 'exambackend.wsgi.application'
 ASGI_APPLICATION = 'exambackend.asgi.application'
 
+REDIS_URL = os.getenv('REDIS_URL')
 CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer'
-    }
+    'default': (
+        {'BACKEND': 'channels_redis.core.RedisChannelLayer', 'CONFIG': {'hosts': [REDIS_URL]}}
+        if REDIS_URL else {'BACKEND': 'channels.layers.InMemoryChannelLayer'}
+    )
 }
 
 
@@ -145,14 +178,19 @@ if USE_LOCAL_SQLITE:
 elif os.getenv('DATABASE_URL'):
     DATABASES = {'default': _database_from_url(os.environ['DATABASE_URL'])}
 else:
-    # Session pooler (5432) is recommended for Django; transaction pooler uses 6543.
+    required = ('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD')
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        raise ImproperlyConfigured(
+            'Set DATABASE_URL or all of DB_HOST, DB_NAME, DB_USER, DB_PASSWORD.'
+        )
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('DB_NAME', 'postgres'),
-            'USER': os.getenv('DB_USER', 'postgres.nxgxrsyboyvkhpmnkdwc'),
-            'PASSWORD': os.getenv('DB_PASSWORD', 'Nexutech20206'),
-            'HOST': os.getenv('DB_HOST', 'aws-1-ap-northeast-1.pooler.supabase.com'),
+            'NAME': os.environ['DB_NAME'],
+            'USER': os.environ['DB_USER'],
+            'PASSWORD': os.environ['DB_PASSWORD'],
+            'HOST': os.environ['DB_HOST'],
             'PORT': os.getenv('DB_PORT', '5432'),
             'CONN_MAX_AGE': 0,
             'OPTIONS': _postgres_options(),
@@ -199,20 +237,25 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
-# AWS S3 / Supabase Storage Configuration
-AWS_ACCESS_KEY_ID = '5f9f758212c6640226a792fefdb56aef'
-AWS_SECRET_ACCESS_KEY = '1a77f245a3b0a6c78f8868a89d61dcff1815bc419fea759f76e1e355392a675b'
-AWS_STORAGE_BUCKET_NAME = 'media'
-AWS_S3_ENDPOINT_URL = 'https://nxgxrsyboyvkhpmnkdwc.storage.supabase.co/storage/v1/s3'
-AWS_S3_REGION_NAME = 'ap-northeast-1'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Media credentials and bucket settings are supplied by the deployment environment.
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID') or None
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY') or None
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME', 'media' if DEBUG else '')
+AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL') or None
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME') or None
 AWS_S3_FILE_OVERWRITE = False
 AWS_S3_SIGNATURE_VERSION = 's3v4'
+AWS_S3_ADDRESSING_STYLE = 'path'
+if not USE_LOCAL_MEDIA and not AWS_STORAGE_BUCKET_NAME:
+    raise ImproperlyConfigured('AWS_STORAGE_BUCKET_NAME must be set for production media storage.')
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
 
-if USE_LOCAL_SQLITE:
+if USE_LOCAL_MEDIA:
     # Local dev: store proctoring screenshots on disk (no S3 required).
     STORAGES = {
         'default': {
@@ -232,10 +275,10 @@ else:
         },
     }
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://localhost:5174',
-]
+CORS_ALLOWED_ORIGINS = _env_list(
+    'DJANGO_CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,http://localhost:5174' if DEBUG else '',
+)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -245,34 +288,20 @@ REST_FRAMEWORK = {
 
 ALLOWED_SCHOOL_DOMAIN = os.getenv('ALLOWED_SCHOOL_DOMAIN', 'dnsc.edu.ph')
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
-
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '').strip()
+if not DEBUG and len(ADMIN_PASSWORD) < 16:
+    raise ImproperlyConfigured('ADMIN_PASSWORD must be a unique password of at least 16 characters.')
 
 
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'handlers': {
-        'file': {
-            'level': 'DEBUG',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'django_debug.log'),
-        },
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
+        'console': {'class': 'logging.StreamHandler'},
     },
     'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-        'django.request': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
+        'django': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'django.request': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+        'accounts': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }
-

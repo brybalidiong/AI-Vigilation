@@ -18,7 +18,9 @@ exambackend/staticfiles/
 .env
 *.env
 exambackend/.env
+exambackend/.env.production
 exambackend/serviceAccountKey.json
+exambackend/secrets/
 
 # Node / Frontend
 node_modules/

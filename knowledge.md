@@ -17,10 +17,21 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 - **Frontend:** Vue 3, Vite, Vue Router, Axios, and Firebase JavaScript SDK in `examfrontend/`.
 - **Backend:** Django, Django REST Framework, and Channels in `exambackend/`.
 - **Database:** PostgreSQL/Supabase, with an optional local SQLite configuration.
-- **Identity:** Firebase integration and Azure Face API; face verification code lives in `exambackend/accounts/face_service.py`.
+- **Identity:** Firebase integration and OpenCV YuNet/SFace models; face verification code lives in `exambackend/accounts/face_service.py`.
 - **Proctoring:** Gaze tracking uses MediaPipe and TensorFlow Lite; gadget detection lives in `exambackend/accounts/gadget_service.py`.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.
+
+Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
+students enrolled in the course; their open dashboards refetch the authorized exam
+list. The local in-memory channel layer supports one backend process. Deployments
+with multiple processes set `REDIS_URL` for a shared Redis channel layer.
+Production settings read credentials, hosts, origins, and media storage from
+environment variables. See [deployment guide](docs/DEPLOYMENT.md).
+The first deployment setup serves Vue from Vercel and Django/Daphne behind
+Caddy on an Oracle Cloud Always Free Arm VM, with Redis for Channels and the
+existing Supabase project for PostgreSQL and private S3-compatible media
+storage. Verify the model dependencies on Arm and load test before a real exam.
 
 ## Question grading
 

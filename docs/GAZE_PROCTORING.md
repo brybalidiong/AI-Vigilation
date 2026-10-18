@@ -31,7 +31,9 @@ python manage.py migrate
 ## Frontend
 
 During an exam, `StudentDashboardView.vue` streams one JPEG at a time over the gaze
-WebSocket. The next frame is sent after the previous result arrives, so a slow inference
+WebSocket. Both the camera precheck and the exam stream send a student JWT;
+the server accepts only an active, enrolled student assigned to a published exam.
+The next frame is sent after the previous result arrives, so a slow inference
 cannot create a queue of stale frames. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
@@ -46,6 +48,8 @@ The camera requests 1280-by-960 capture where supported. The backend uses YOLO a
 sequential so slow inference cannot build a backlog of old frames. A failed model
 warmup returns an error instead of leaving the scanner in a permanent warming state;
 the exam camera shows whether gadget scanning is starting, active, or unavailable.
+The live instructor snapshot replaces the prior stored snapshot for that attempt;
+separate integrity evidence remains in its own records.
 
 ## Updating the model
 

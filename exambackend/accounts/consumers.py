@@ -5,6 +5,9 @@ import time
 from dataclasses import replace
 from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
+
+from accounts.exam_updates import subject_exam_group
 
 from accounts.gaze_service import (
     GAZE_EXECUTOR, analyze_frame_bytes, schedule_live_snapshot, sign_gaze_result,
@@ -58,6 +61,55 @@ def _ws_direction_enabled(label: str, restrictions: dict) -> bool:
     return True
 
 
+class StudentExamUpdatesConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        query_string = self.scope.get('query_string', b'').decode()
+        token = parse_qs(query_string).get('token', [''])[0]
+        self.groups_joined = []
+
+        try:
+            from rest_framework_simplejwt.tokens import AccessToken
+
+            user_id = AccessToken(token).get('user_id')
+            subject_ids = await self._student_subject_ids(user_id)
+        except Exception:
+            await self.close(code=4401)
+            return
+
+        if subject_ids is None:
+            await self.close(code=4403)
+            return
+
+        for subject_id in subject_ids:
+            group = subject_exam_group(subject_id)
+            await self.channel_layer.group_add(group, self.channel_name)
+            self.groups_joined.append(group)
+        await self.accept()
+
+    @database_sync_to_async
+    def _student_subject_ids(self, user_id):
+        from django.contrib.auth import get_user_model
+        from accounts.models import EnrolledStudent
+
+        user = get_user_model().objects.filter(
+            pk=user_id, is_active=True, profile__role='student', profile__is_enrolled=True,
+        ).first()
+        if user is None:
+            return None
+        return list(
+            EnrolledStudent.objects.filter(
+                email__iexact=user.email, student_set__subject__isnull=False,
+            ).values_list('student_set__subject_id', flat=True).distinct()
+        )
+
+    async def disconnect(self, close_code):
+        for group in getattr(self, 'groups_joined', []):
+            await self.channel_layer.group_discard(group, self.channel_name)
+
+    async def exam_published(self, event):
+        await self.send(text_data=json.dumps({'type': 'exam_published'}))
+
+
 class GazeConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.exam_id = self.scope['url_route']['kwargs']['exam_id']
@@ -73,6 +125,20 @@ class GazeConsumer(AsyncWebsocketConsumer):
             'gaze_right': True,
         }
         self._essay_question_ids = set()
+
+        query_string = self.scope.get('query_string', b'').decode()
+        token = parse_qs(query_string).get('token', [''])[0]
+        try:
+            from rest_framework_simplejwt.tokens import AccessToken
+            user_id = AccessToken(token).get('user_id')
+        except Exception:
+            await self.close(code=4401)
+            return
+
+        self.student_email = await self._authorized_student_email(user_id)
+        if not self.student_email:
+            await self.close(code=4403)
+            return
 
         from asgiref.sync import sync_to_async
         from accounts.models import ExamQuestion, ExamSet
@@ -100,25 +166,23 @@ class GazeConsumer(AsyncWebsocketConsumer):
             thread_sensitive=True,
         )())
 
-        # Extract student email from JWT token passed as query param
-        query_string = self.scope.get('query_string', b'').decode()
-        token = parse_qs(query_string).get('token', [''])[0]
-        if token:
-            try:
-                from rest_framework_simplejwt.tokens import AccessToken
-                access = AccessToken(token)
-                user_id = access.get('user_id')
-                if user_id:
-                    from asgiref.sync import sync_to_async
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
-                    user = await sync_to_async(User.objects.filter(id=user_id).first)()
-                    if user:
-                        self.student_email = (user.email or '').lower()
-            except Exception:
-                pass
-
         await self.accept()
+
+    @database_sync_to_async
+    def _authorized_student_email(self, user_id):
+        from django.contrib.auth import get_user_model
+        from accounts.models import ExamSet
+        from accounts.views import _student_can_access_exam
+
+        user = get_user_model().objects.filter(
+            pk=user_id, is_active=True, profile__role='student', profile__is_enrolled=True,
+        ).first()
+        exam = ExamSet.objects.select_related('subject').filter(
+            pk=self.exam_id, is_final=True,
+        ).first()
+        if not user or not exam or not _student_can_access_exam(user.email, exam):
+            return None
+        return (user.email or '').lower()
 
     async def disconnect(self, close_code):
         self._closed = True

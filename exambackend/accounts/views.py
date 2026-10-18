@@ -9,6 +9,7 @@ from django.utils.crypto import salted_hmac
 from django.utils.dateparse import parse_date, parse_datetime
 from datetime import datetime, time, timedelta
 import re
+import secrets
 from firebase_admin import auth as firebase_auth
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -28,6 +29,7 @@ import accounts.firebase_admin  # noqa: F401
 from decimal import Decimal, InvalidOperation
 
 from .grading import grade_question
+from .exam_updates import notify_exam_published
 from .models import (
     ExamIntegrityReport,
     ExamProctoringEvent,
@@ -610,7 +612,13 @@ def admin_login(request):
     username = request.data.get('username', '')
     password = request.data.get('password', '')
 
-    if username != settings.ADMIN_USERNAME or password != settings.ADMIN_PASSWORD:
+    if (
+        not settings.ADMIN_PASSWORD
+        or not isinstance(username, str)
+        or not isinstance(password, str)
+        or username != settings.ADMIN_USERNAME
+        or not secrets.compare_digest(password, settings.ADMIN_PASSWORD)
+    ):
         return Response({'error': 'Invalid admin credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     admin_user, _ = User.objects.get_or_create(
@@ -890,9 +898,10 @@ def admin_student_detail(request, student_id):
             # If encoding wasn't cached at upload time (older submissions), compute it now.
             if not profile.face_encoding:
                 import json as json_module
-                from .face_service import extract_face_encoding
+                from .face_service import extract_face_encoding_bytes
                 try:
-                    encoding = extract_face_encoding(profile.face_pending_photo.path)
+                    with profile.face_pending_photo.open('rb') as pending_photo:
+                        encoding = extract_face_encoding_bytes(pending_photo.read())
                 except Exception:
                     encoding = None
                 if not encoding:
@@ -918,8 +927,7 @@ def admin_student_detail(request, student_id):
         elif action == 'reject_face':
             if profile.face_pending_photo:
                 try:
-                    import os
-                    os.remove(profile.face_pending_photo.path)
+                    profile.face_pending_photo.delete(save=False)
                 except Exception:
                     pass
             profile.face_pending_photo = None
@@ -2625,6 +2633,7 @@ def finalize_exam(request, subject_id, exam_set_id):
             _enable_all_proctoring_restrictions(exam_set)
         exam_set.is_final = True
         exam_set.save(update_fields=['is_final'])
+        transaction.on_commit(lambda: notify_exam_published(subject.id))
     
     return Response({'message': 'Exam finalized successfully.'}, status=status.HTTP_200_OK)
 
