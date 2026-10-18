@@ -40,7 +40,7 @@ ends. Keep the account on Free Tier if you cannot accept usage charges.
 4. Copy this repository to the server. In `exambackend/`, copy
    `.env.production.example` to `.env.production` and replace every placeholder.
    Set `API_DOMAIN` and `DJANGO_ALLOWED_HOSTS` to the API hostname, and
-   `DJANGO_CORS_ALLOWED_ORIGINS` to the exact HTTPS Vercel production URL.
+   `DJANGO_CORS_ALLOWED_ORIGINS=https://ai-vigilation.vercel.app`.
    Generate a new `DJANGO_SECRET_KEY` with `openssl rand -hex 48` and a unique
    admin password. Rotate the database, S3, Django, and admin credentials that
    were previously embedded in tracked source; Git history still contains
@@ -76,12 +76,11 @@ ends. Keep the account on Free Tier if you cannot accept usage charges.
    reachable. Run migrations against your backed-up Supabase database. The
    bundled Redis and Caddy services are private to the Compose network except
    for Caddy's public HTTP/HTTPS ports.
-7. Import the same repository into Vercel as a separate project. Set **Root
-   Directory** to `examfrontend`, **Build Command** to `npm run build`, and
-   **Output Directory** to `dist`. Copy the `VITE_FIREBASE_*` and
-   `VITE_SCHOOL_DOMAIN` values from your current frontend configuration into
-   Vercel's production environment. Set `VITE_BACKEND_URL` to
-   `https://api.example.com` (no trailing slash), then redeploy. These values
+7. The frontend Vercel project `ai-vigilation` is already connected to the
+   GitHub repository, builds from `examfrontend`, and serves at
+   `https://ai-vigilation.vercel.app`. Its Firebase and school-domain variables
+   are already configured. Set its production `VITE_BACKEND_URL` to
+   `https://YOUR_API_HOSTNAME` (no trailing slash), then redeploy. These values
    are embedded in the built browser code, so never use this prefix for
    server-only credentials. Add the final Vercel domain or custom frontend
    domain to `DJANGO_CORS_ALLOWED_ORIGINS` on the server and restart the
