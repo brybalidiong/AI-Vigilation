@@ -998,7 +998,7 @@ const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
 const GAZE_WS_INTERVAL_MS = 120;          // balance responsive detection with CPU/network load
-const GAZE_FRAME_WIDTH = 480;              // sufficient for landmarks; reduces payload and inference time
+const GAZE_FRAME_WIDTH = 640;              // preserve iris detail for gaze landmarks
 const GAZE_FIRST_CHECK_MS = 50;            // fire first check immediately
 const GAZE_CONFIDENCE_MIN = 0.85;          // general fallback
 const GAZE_ABOVE_CONFIDENCE_MIN = 0.80;    // was 0.90 — matched to lower backend threshold
@@ -1015,10 +1015,12 @@ let _gadgetDetectionInFlight = false;
 let _gadgetUnavailableNotified = false;
 let _gadgetFailureCount = 0;
 let _gadgetLoopActive = false;
+let _gadgetLoopGeneration = 0;
 /** @type {{ label: string, style: Record<string, string> }[]} */
 const gadgetOverlayBoxes = ref([]);
 const GADGET_FRAME_WIDTH = 640;
-const GADGET_POLL_MS = 150;
+const GADGET_IDLE_POLL_MS = 150;
+const GADGET_ACTIVE_POLL_MS = 40;
 let _gazeCheckTimer = null;
 let _lastGazeWarningAt = 0;
 let _gazeCheckInFlight = false;
@@ -1358,20 +1360,21 @@ async function _runGadgetDetection() {
   if (!_isGadgetDetectionEnabled()) {
     gadgetDetectionStatus.value = 'off for this question';
     _clearGadgetOverlayBoxes();
-    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_IDLE_POLL_MS);
     return;
   }
   if (_gadgetDetectionInFlight) {
-    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_IDLE_POLL_MS);
     return;
   }
   const video = _getProctoringVideoEl();
   if (!video || video.readyState < 2 || !video.videoWidth) {
-    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_IDLE_POLL_MS);
     return;
   }
 
   _gadgetDetectionInFlight = true;
+  const generation = _gadgetLoopGeneration;
   const frameW = Math.min(GADGET_FRAME_WIDTH, video.videoWidth);
   const frameH = Math.round((video.videoHeight / video.videoWidth) * frameW);
   try {
@@ -1383,6 +1386,7 @@ async function _runGadgetDetection() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
     if (!blob) return;
+    if (generation !== _gadgetLoopGeneration || !_gadgetLoopActive) return;
 
     const form = new FormData();
     form.append('image', blob, `gadget_${Date.now()}.jpg`);
@@ -1393,6 +1397,7 @@ async function _runGadgetDetection() {
       form,
       { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 65000 },
     );
+    if (generation !== _gadgetLoopGeneration || !_gadgetLoopActive) return;
     if (data.warming) {
       gadgetDetectionStatus.value = 'starting';
       _clearGadgetOverlayBoxes();
@@ -1428,6 +1433,7 @@ async function _runGadgetDetection() {
       };
     }
   } catch (err) {
+    if (generation !== _gadgetLoopGeneration || !_gadgetLoopActive) return;
     _gadgetFailureCount += 1;
     if (err?.response?.status === 503 || _gadgetFailureCount >= 2) {
       gadgetDetectionStatus.value = 'unavailable';
@@ -1437,9 +1443,14 @@ async function _runGadgetDetection() {
       showToastMessage('Gadget scanning is unavailable. Check the server connection or contact your instructor.');
     }
   } finally {
-    _gadgetDetectionInFlight = false;
-    if (_gadgetLoopActive) {
-      _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_POLL_MS);
+    if (generation === _gadgetLoopGeneration) {
+      _gadgetDetectionInFlight = false;
+      if (_gadgetLoopActive) {
+        _gadgetDetectionTimer = setTimeout(
+          _runGadgetDetection,
+          gadgetDetectionStatus.value === 'active' ? GADGET_ACTIVE_POLL_MS : GADGET_IDLE_POLL_MS,
+        );
+      }
     }
   }
 }
@@ -1490,6 +1501,7 @@ function _startGadgetDetectionTimer() {
 
 function _stopGadgetDetectionTimer() {
   _gadgetLoopActive = false;
+  _gadgetLoopGeneration++;
   if (_gadgetDetectionTimer) {
     clearTimeout(_gadgetDetectionTimer);
     _gadgetDetectionTimer = null;
@@ -2155,7 +2167,7 @@ async function _sendWsFrame() {
   ctx.drawImage(video, 0, 0, SEND_W, SEND_H);
   
   // Use canvas.toDataURL for base64 string
-  const base64Image = canvas.toDataURL('image/jpeg', 0.6);
+  const base64Image = canvas.toDataURL('image/jpeg', 0.75);
   const socket = _gazeWs;
   _wsPendingFrame = {
     id: ++_wsFrameId,

@@ -38,10 +38,15 @@ cannot create a queue of stale frames. A one-second HTTP observer remains availa
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
 Head yaw keeps the student's left/right sign; iris X is converted from camera
-coordinates before the two are blended. Up/down geometry thresholds allow a
-slightly smaller deliberate movement than before.
+coordinates before the two are blended. The browser sends a 640-pixel-wide
+gaze JPEG at 0.75 quality to retain iris detail. Strong horizontal geometry
+can correct a mirrored left/right or normal prediction, but does not replace
+a clear up/down model prediction.
 
-Gadget checks send a 640-pixel-wide JPEG roughly every 150 ms after each response.
+Gadget checks send a 640-pixel-wide JPEG 40 ms after each active response;
+starting, disabled, and unavailable checks retry every 150 ms. A new frame is
+captured only after the prior request finishes, and responses from an ended
+exam loop cannot update the next exam's warning state.
 The camera requests 1280-by-960 capture where supported. The backend uses YOLO at
 640 pixels with a 0.25 default confidence threshold;
 `GADGET_IMGSZ` and `GADGET_CONFIDENCE` can override these defaults. Checks stay

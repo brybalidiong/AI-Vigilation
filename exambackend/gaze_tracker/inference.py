@@ -412,10 +412,13 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
         argmax_name = classes[argmax_idx].lower()
         argmax_is_left = "left" in argmax_name and "right" not in argmax_name
         argmax_is_right = "right" in argmax_name and "left" not in argmax_name
-        if ((strong_side == "left" and not argmax_is_left)
+        # Horizontal geometry corrects a mirrored horizontal prediction or a
+        # Normal prediction. It cannot disprove a strong vertical prediction:
+        # a student can look up or down while their head is turned.
+        argmax_is_normal = argmax_idx == normal_idx
+        if (argmax_is_normal or argmax_is_left or argmax_is_right) and (
+                (strong_side == "left" and not argmax_is_left)
                 or (strong_side == "right" and not argmax_is_right)):
-            # Geometry also wins over a Normal argmax when the eye movement is
-            # unambiguous. Keep a conservative but valid confidence value.
             return side_idx, max(float(probs[side_idx]), 0.50)
 
     if argmax_idx == normal_idx:
