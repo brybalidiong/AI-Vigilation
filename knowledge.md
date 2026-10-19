@@ -15,7 +15,7 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 ## Architecture
 
 - **Frontend:** Vue 3, Vite, Vue Router, Axios, and Firebase JavaScript SDK in `examfrontend/`.
-- **Device access:** The frontend entry point shows a blocking message on phones before it initializes the router or Firebase. Users must open the site on a laptop or desktop computer.
+- **Device access:** The frontend entry point shows a blocking message on phones and tablets, including iPads requesting desktop mode, before it initializes the router or Firebase. Users must open the site on a laptop or desktop computer. This client-side check identifies common devices but cannot guarantee exclusion when browser device properties are deliberately spoofed.
 - **Backend:** Django, Django REST Framework, and Channels in `exambackend/`.
 - **Database:** PostgreSQL/Supabase, with an optional local SQLite configuration.
 - **Identity:** Firebase integration and OpenCV YuNet/SFace models; face verification code lives in `exambackend/accounts/face_service.py`.

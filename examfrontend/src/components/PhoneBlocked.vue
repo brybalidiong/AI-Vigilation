@@ -3,7 +3,7 @@
     <div class="phone-blocked__card">
       <p class="phone-blocked__brand">AI-Vigilation</p>
       <h1>Use a computer to access AI-Vigilation</h1>
-      <p>This system is unavailable on phones. Open it on a laptop or desktop computer to sign in and use your account.</p>
+      <p>This system is unavailable on phones and tablets, including iPads in desktop mode. Open it on a laptop or desktop computer to sign in and use your account.</p>
     </div>
   </main>
 </template>
