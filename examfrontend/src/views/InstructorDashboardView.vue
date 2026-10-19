@@ -3706,8 +3706,8 @@ onMounted(async () => {
   width: 100%;
   max-width: 1200px;
   background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 22px;
+  border: 0;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.32);
   display: flex;
@@ -3759,9 +3759,9 @@ onMounted(async () => {
   justify-content: center;
   width: 42px;
   height: 42px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: rgba(255,255,255,.12);
-  border: 1px solid rgba(255,255,255,.24);
+  border: 0;
   color: #fff;
   cursor: pointer;
   transition: background 0.18s;
@@ -3785,13 +3785,13 @@ onMounted(async () => {
   justify-content: center;
   padding: 1.25rem 1.4rem;
   background: #ffffff;
-  border: 1px solid #dbe3ee;
-  border-radius: 15px;
+  border: 0;
+  border-radius: 8px;
   gap: 0.45rem;
-  box-shadow: 0 4px 15px rgba(29,52,97,.04);
+  box-shadow: 0 2px 8px rgba(29,52,97,.06);
 }
-.stats-summary-pill--green { background: #f0faf5; border-color: #d4eddf; }
-.stats-summary-pill--amber { background: #fff9ec; border-color: #f5e4bc; }
+.stats-summary-pill--green { background: #f0faf5; }
+.stats-summary-pill--amber { background: #fff9ec; }
 .ssp-num {
   font-size: 2.15rem;
   font-weight: 800;
@@ -4192,8 +4192,8 @@ onMounted(async () => {
   margin-top: 0;
   padding: 1.5rem;
   background: #ffffff;
-  border: 1px solid #dbe3ee;
-  border-radius: 16px;
+  border: 0;
+  border-radius: 10px;
   box-shadow: 0 6px 22px rgba(29, 52, 97, 0.05);
 }
 .stats-examinees-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.15rem; }
@@ -4208,8 +4208,8 @@ onMounted(async () => {
 }
 .stats-table-wrapper {
   overflow: auto;
-  border: 1px solid #dbe3ee;
-  border-radius: 12px;
+  border: 0;
+  border-radius: 8px;
   background: #ffffff;
 }
 .stats-table { width: 100%; min-width: 830px; border-collapse: collapse; font-size: 0.95rem; text-align: left; }
