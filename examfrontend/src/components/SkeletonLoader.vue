@@ -1,5 +1,5 @@
 <template>
-  <div :class="['skeleton', type]" :style="{ width: width, height: height }"></div>
+  <div :class="['skeleton', type]" :style="{ width, height }" aria-hidden="true"></div>
 </template>
 
 <script setup>
@@ -10,19 +10,19 @@ defineProps({
   },
   width: {
     type: String,
-    default: '100%',
+    default: null,
   },
   height: {
     type: String,
-    default: 'auto',
+    default: null,
   }
 });
 </script>
 
 <style scoped>
 .skeleton {
-  background: #e2e8f0;
-  background: linear-gradient(110deg, #ececec 8%, #f5f5f5 18%, #ececec 33%);
+  width: 100%;
+  background: linear-gradient(110deg, #e2e8f0 8%, #f1f5f9 18%, #e2e8f0 33%);
   border-radius: 5px;
   background-size: 200% 100%;
   animation: 1.5s shine linear infinite;
@@ -56,5 +56,9 @@ defineProps({
   to {
     background-position-x: -200%;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 </style>

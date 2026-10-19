@@ -229,33 +229,34 @@
 
         <div class="form-grid">
           <div class="field-wrap">
-            <label class="field-label">First Name</label>
+            <label class="field-label" for="profile-first-name">First Name</label>
             <div class="field-box" :class="{ locked: !isEditing }">
-              <input type="text" v-model="form.first_name" :readonly="!isEditing" placeholder="Enter first name" />
+              <input id="profile-first-name" type="text" v-model="form.first_name" :readonly="!isEditing" autocomplete="given-name" placeholder="Enter first name" />
             </div>
           </div>
 
           <div class="field-wrap">
-            <label class="field-label">Last Name</label>
+            <label class="field-label" for="profile-last-name">Last Name</label>
             <div class="field-box" :class="{ locked: !isEditing }">
-              <input type="text" v-model="form.last_name" :readonly="!isEditing" placeholder="Enter last name" />
+              <input id="profile-last-name" type="text" v-model="form.last_name" :readonly="!isEditing" autocomplete="family-name" placeholder="Enter last name" />
             </div>
           </div>
 
           <div class="field-wrap">
-            <label class="field-label">Mobile Number</label>
+            <label class="field-label" for="profile-mobile-number">Mobile Number</label>
             <div class="field-box" :class="{ locked: !isEditing }">
-              <input type="tel" v-model="form.mobile_number" :readonly="!isEditing" placeholder="Add mobile number" />
+              <input id="profile-mobile-number" type="tel" v-model="form.mobile_number" :readonly="!isEditing" autocomplete="tel" inputmode="tel" maxlength="20" placeholder="+63 912 345 6789" aria-describedby="profile-mobile-hint" @blur="formatMobileNumber" />
             </div>
+            <p id="profile-mobile-hint" class="field-hint">Philippine numbers are formatted automatically; other country codes are accepted.</p>
           </div>
 
           <div class="field-wrap">
-            <label class="field-label">
+            <label class="field-label" for="profile-email">
               Email Address
               <span class="field-tag">Permanent</span>
             </label>
             <div class="field-box locked permanent">
-              <input type="email" :value="user.email" readonly />
+              <input id="profile-email" type="email" :value="user.email" readonly autocomplete="email" />
               <svg class="lock-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -384,6 +385,15 @@ const formattedRole = computed(() => {
 
 function startEditing()  { isEditing.value = true; }
 function cancelEditing() { isEditing.value = false; resetForm(); }
+
+function formatMobileNumber() {
+  if (!isEditing.value) return;
+  const digits = form.value.mobile_number.replace(/\D/g, '');
+  const local = digits.startsWith('63') ? digits.slice(2) : digits.startsWith('0') ? digits.slice(1) : digits;
+  if (/^9\d{9}$/.test(local) && [10, 11, 12].includes(digits.length)) {
+    form.value.mobile_number = `+63 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+  }
+}
 
 function triggerFileInput() {
   if (isEditing.value && fileInput.value) fileInput.value.click();
@@ -762,6 +772,7 @@ function saveFacePhoto() {
   align-items: center;
   gap: 0.45rem;
 }
+.field-hint { margin: 0; color: #64748b; font-size: 0.72rem; line-height: 1.45; }
 
 .field-tag {
   background: #f1f5f9;

@@ -424,35 +424,35 @@
                 <form @submit.prevent="createExamSet">
                   <div class="upload-exam-grid">
                     <div class="create-panel__field" style="grid-column: 1 / -1;">
-                      <label class="create-panel__label">Exam Title</label>
-                      <input v-model="newExamTitle" type="text" class="create-panel__input" placeholder="e.g. Midterm Examination" required />
+                      <label class="create-panel__label" for="new-exam-title">Exam Title</label>
+                      <input id="new-exam-title" v-model="newExamTitle" type="text" class="create-panel__input" placeholder="e.g. Midterm Examination" required />
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Starts At</label>
-                      <input v-model="newExamStartAt" type="datetime-local" class="create-panel__input" required />
+                      <label class="create-panel__label" for="new-exam-start">Starts At</label>
+                      <input id="new-exam-start" v-model="newExamStartAt" type="datetime-local" class="create-panel__input" required />
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Ends At</label>
-                      <input v-model="newExamDueAt" type="datetime-local" class="create-panel__input" required />
+                      <label class="create-panel__label" for="new-exam-end">Ends At</label>
+                      <input id="new-exam-end" v-model="newExamDueAt" type="datetime-local" class="create-panel__input" required />
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Max Attempts</label>
-                      <input v-model="newExamMaxAttempts" type="number" min="1" step="1" class="create-panel__input" required />
+                      <label class="create-panel__label" for="new-exam-attempts">Max Attempts</label>
+                      <input id="new-exam-attempts" v-model="newExamMaxAttempts" type="number" min="1" step="1" class="create-panel__input" required />
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Time Limit <span style="font-weight:400;color:#94a3b8">(mins, 0 = none)</span></label>
-                      <input v-model="newExamTimeLimit" type="number" min="0" step="1" class="create-panel__input" placeholder="60" required />
+                      <label class="create-panel__label" for="new-exam-time-limit">Time Limit <span style="font-weight:400;color:#94a3b8">(mins, 0 = none)</span></label>
+                      <input id="new-exam-time-limit" v-model="newExamTimeLimit" type="number" min="0" step="1" class="create-panel__input" placeholder="60" required />
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Assign to Section</label>
-                      <select v-model="newExamAssignedSet" class="create-panel__input">
+                      <label class="create-panel__label" for="new-exam-section">Assign to Section</label>
+                      <select id="new-exam-section" v-model="newExamAssignedSet" class="create-panel__input">
                         <option value="">All Sets (Entire Course)</option>
                         <option v-for="s in subjectSets" :key="s.id" :value="s.id">{{ s.name }}</option>
                       </select>
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Question Format</label>
-                      <select v-model="newExamFileFormat" class="create-panel__input">
+                      <label class="create-panel__label" for="new-exam-format">Question Format</label>
+                      <select id="new-exam-format" v-model="newExamFileFormat" class="create-panel__input">
                         <option value="aiken">Multiple Choice (Aiken)</option>
                         <option value="essay">Essay prompts</option>
                       </select>
@@ -1400,9 +1400,10 @@
 
           <!-- Body -->
           <div class="stats-body">
-            <div v-if="statsLoading" class="stats-loading-state">
-              <div class="stats-spinner"></div>
-              <p>Loading statistics...</p>
+            <div v-if="statsLoading" class="stats-loading-state" role="status" aria-label="Loading statistics">
+              <SkeletonLoader type="text" width="35%" height="1.5rem" />
+              <SkeletonLoader type="row" v-for="i in 4" :key="i" />
+              <span class="visually-hidden">Loading statistics</span>
             </div>
             <!-- Live examinees stay visible even when no one has started yet. -->
             <div v-else class="stats-examinees-section">
@@ -3808,20 +3809,9 @@ onMounted(async () => {
 /* Body */
 .stats-body { padding: 0 2rem 2rem; overflow-y: auto; flex: 1; background: #f7f9fc; }
 .stats-loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 3rem 0;
-  color: #64748b;
-}
-.stats-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #e2e8f0;
-  border-top-color: #6366f1;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.5rem 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .stats-empty {

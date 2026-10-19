@@ -75,7 +75,8 @@
               </div>
               <div class="stat-body">
                 <p class="stat-label">Active Instructors</p>
-                <h2 class="stat-value">{{ activeInstructorCount }}</h2>
+                <SkeletonLoader v-if="loadingInstructors" type="text" width="4rem" height="2rem" />
+                <h2 v-else class="stat-value">{{ activeInstructorCount }}</h2>
               </div>
             </div>
             <div class="stat-card" id="stat-students">
@@ -86,26 +87,27 @@
               </div>
               <div class="stat-body">
                 <p class="stat-label">Enrolled Students</p>
-                <h2 class="stat-value">{{ enrolledStudentCount }}</h2>
+                <SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" />
+                <h2 v-else class="stat-value">{{ enrolledStudentCount }}</h2>
               </div>
+            </div>
+            <div class="stat-card" :class="{ 'stat-card--attention': pendingFaceCount > 0 }" id="stat-review">
+              <div class="stat-icon review-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg>
+              </div>
+              <div class="stat-body"><p class="stat-label">Photos to Review</p><SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" /><h2 v-else class="stat-value">{{ pendingFaceCount }}</h2></div>
             </div>
             <div class="stat-card" id="stat-domain">
               <div class="stat-icon domain-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
               </div>
               <div class="stat-body">
                 <p class="stat-label">Allowed Domain</p>
                 <h2 class="stat-value domain-val">@{{ schoolDomain }}</h2>
               </div>
-            </div>
-            <div class="stat-card" id="stat-review">
-              <div class="stat-icon review-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg>
-              </div>
-              <div class="stat-body"><p class="stat-label">Photos to Review</p><h2 class="stat-value">{{ pendingFaceCount }}</h2></div>
             </div>
           </div>
 
@@ -144,14 +146,16 @@
 
         <!-- Instructors Tab -->
         <section v-if="activeTab === 'instructors'">
-          <div class="moodle-filters">
+          <div class="moodle-filters admin-filters">
              <button class="primary-btn" @click="openInstructorForm" id="add-instructor-btn">
                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                </svg>
                Register Instructor
              </button>
-             <input v-model="instructorSearch" type="search" class="moodle-search" placeholder="Search by name or email" aria-label="Search instructors" id="instructor-search"/>
+             <label class="admin-filter-field" for="instructor-search">Search instructors
+               <input v-model="instructorSearch" type="search" class="moodle-search" placeholder="Name or school email" id="instructor-search"/>
+             </label>
              <select v-model="instructorStatusFilter" class="admin-filter" aria-label="Filter instructors">
                <option value="all">All instructors</option>
                <option value="active">Active</option>
@@ -176,7 +180,11 @@
 
           <!-- Instructors Table -->
           <div class="data-table-container">
-            <table class="data-table" v-if="filteredInstructors.length > 0">
+            <div v-if="loadingInstructors" class="table-skeleton" role="status" aria-label="Loading instructors">
+              <SkeletonLoader type="row" v-for="i in 3" :key="i" />
+              <span class="visually-hidden">Loading instructors</span>
+            </div>
+            <table class="data-table" v-else-if="filteredInstructors.length > 0">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -196,21 +204,22 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else-if="loadingInstructors" class="table-meta" style="text-align: center;">Loading instructors...</div>
             <div v-else class="table-meta" style="text-align: center;">{{ instructorSearch || instructorStatusFilter !== 'all' ? 'No instructors match this view.' : 'No instructors registered yet.' }}</div>
           </div>
         </section>
 
         <!-- Students Tab -->
         <section v-if="activeTab === 'students'">
-          <div class="moodle-filters">
+          <div class="moodle-filters admin-filters">
              <button class="primary-btn" @click="openStudentForm" id="add-student-btn">
                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                </svg>
                Enroll Student
              </button>
-             <input v-model="studentSearch" type="search" class="moodle-search" placeholder="Search by name or email" aria-label="Search students" id="student-search"/>
+             <label class="admin-filter-field" for="student-search">Search students
+               <input v-model="studentSearch" type="search" class="moodle-search" placeholder="Name or school email" id="student-search"/>
+             </label>
              <select v-model="studentStatusFilter" class="admin-filter" aria-label="Filter students">
                <option value="all">All students</option>
                <option value="enrolled">Enrolled</option>
@@ -236,7 +245,11 @@
 
         <!-- Students Table -->
           <div class="data-table-container">
-            <table class="data-table" v-if="filteredStudents.length > 0">
+            <div v-if="loadingStudents" class="table-skeleton" role="status" aria-label="Loading students">
+              <SkeletonLoader type="row" v-for="i in 3" :key="i" />
+              <span class="visually-hidden">Loading students</span>
+            </div>
+            <table class="data-table" v-else-if="filteredStudents.length > 0">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -303,7 +316,6 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else-if="loadingStudents" class="table-meta" style="text-align: center;">Loading students...</div>
             <div v-else class="table-meta" style="text-align: center;">{{ studentSearch || studentStatusFilter !== 'all' ? 'No students match this view.' : 'No students enrolled yet.' }}</div>
           </div>
         </section>
@@ -350,6 +362,7 @@ import { useRouter } from "vue-router";
 import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
 import NoticeModal from "@/components/NoticeModal.vue";
+import SkeletonLoader from "@/components/SkeletonLoader.vue";
 
 const router = useRouter();
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -379,7 +392,7 @@ const tabs = computed(() => [
 
 // Instructors
 const instructors = ref([]);
-const loadingInstructors = ref(false);
+const loadingInstructors = ref(true);
 const showAddInstructor = ref(false);
 const instructorLoading = ref(false);
 const instructorError = ref("");
@@ -389,7 +402,7 @@ const newInstructor = ref({ email: "", first_name: "", last_name: "" });
 
 // Students
 const students = ref([]);
-const loadingStudents = ref(false);
+const loadingStudents = ref(true);
 const showAddStudent = ref(false);
 const studentLoading = ref(false);
 const studentError = ref("");
@@ -743,6 +756,7 @@ onMounted(() => {
 }
 .stat-body { min-width: 0; }
 .stat-card:hover { border-color: #c9d6e8; }
+.stat-card--attention { border-color: #f4c56d; background: #fffbf2; }
 .domain-val {
   font-size: clamp(1.1rem, 1.7vw, 1.5rem);
   letter-spacing: -.035em;
@@ -824,6 +838,11 @@ onMounted(() => {
 .admin-inline-error { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: .85rem; }
 .admin-inline-error button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
 .admin-filter { min-height: 41px; padding: .55rem .85rem; border: 1px solid #d5dfeb; border-radius: 10px; background: #fff; color: #334155; font: inherit; font-size: .85rem; }
+.admin-filters { justify-content: flex-start; align-items: flex-end; }
+.admin-filter-field { display: grid; gap: .35rem; min-width: min(100%, 240px); color: #475569; font-size: .75rem; font-weight: 700; }
+.admin-filter-field .moodle-search { width: 100%; }
+.table-skeleton { display: grid; gap: .35rem; padding: 1rem; }
+.table-skeleton .skeleton { margin-bottom: 0; }
 .admin-entry-form { margin-bottom: 1.25rem; border: 1px solid #dce5f0; border-radius: 14px; background: #f8fafd; padding: 1.35rem; }
 .entry-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .entry-heading .form-title { margin: 0 0 .25rem; color: #142849; }
