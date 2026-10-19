@@ -50,8 +50,8 @@ make the backend permanently free.
    `.env.production.example` to `.env.production` and replace every placeholder.
    Set `API_DOMAIN` and `DJANGO_ALLOWED_HOSTS` to the API hostname, and
    `DJANGO_CORS_ALLOWED_ORIGINS=https://ai-vigilation.vercel.app`.
-   Generate a new `DJANGO_SECRET_KEY` with `openssl rand -hex 48` and a unique
-   admin password. Rotate the database, S3, Django, and admin credentials that
+   Generate a new `DJANGO_SECRET_KEY` with `openssl rand -hex 48`.
+   Rotate the database, S3, Django, and admin credentials that
    were previously embedded in tracked source; Git history still contains
    the old values. Never put production secrets in Git or Vercel frontend
    variables. `API_DOMAIN` and `DJANGO_ALLOWED_HOSTS` must both use the exact
@@ -80,6 +80,19 @@ make the backend permanently free.
    docker compose -f compose.production.yaml ps
    curl https://YOUR_API_HOSTNAME/healthz/
    ```
+
+   Admin login now checks the Django `auth_user` password hash in Supabase
+   PostgreSQL. On an upgrade, migration `0035` copies the old `ADMIN_USERNAME`
+   and `ADMIN_PASSWORD` from the server's `.env.production` into that table
+   once. Keep those two values in the server file until the migration succeeds.
+   Then reset the password interactively with
+   `docker compose -f compose.production.yaml exec backend python manage.py changepassword admin`
+   (replace `admin` if your username differs), remove both legacy variables
+   from `.env.production`, and recreate the backend container. For a fresh
+   deployment with no legacy admin credentials, run
+   `docker compose -f compose.production.yaml exec backend python manage.py createsuperuser`
+   after migration. Admin passwords are hashed in the database; do not put
+   them in environment files or Git.
 
    The health endpoint returns `{"status":"ok"}` only when PostgreSQL is
    reachable. Run migrations against your backed-up Supabase database. The
@@ -138,8 +151,8 @@ API share an origin, CORS can remain empty. Set `DJANGO_CSRF_TRUSTED_ORIGINS`
 if cross-origin cookie-based forms are used.
 
 Provide `DATABASE_URL` or all of `DB_HOST`, `DB_NAME`, `DB_USER`, and
-`DB_PASSWORD`. Configure `ADMIN_PASSWORD` as a long, unique secret; production
-startup fails when it is absent. Provide either `FIREBASE_CREDENTIALS`
+`DB_PASSWORD`. Create a Django superuser in the Supabase database after
+migrations; use `changepassword` to reset an existing admin account. Provide either `FIREBASE_CREDENTIALS`
 as an absolute path to a mounted service-account JSON file or
 `FIREBASE_CREDENTIALS_JSON` as a platform secret containing the JSON.
 

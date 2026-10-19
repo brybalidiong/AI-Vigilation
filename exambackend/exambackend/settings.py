@@ -287,10 +287,6 @@ REST_FRAMEWORK = {
 }
 
 ALLOWED_SCHOOL_DOMAIN = os.getenv('ALLOWED_SCHOOL_DOMAIN', 'dnsc.edu.ph')
-ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '').strip()
-if not DEBUG and len(ADMIN_PASSWORD) < 16:
-    raise ImproperlyConfigured('ADMIN_PASSWORD must be a unique password of at least 16 characters.')
 
 
 LOGGING = {

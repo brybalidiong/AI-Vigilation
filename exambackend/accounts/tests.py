@@ -1,11 +1,15 @@
 from django.contrib.auth.models import User
+from django.apps import apps
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 from decimal import Decimal
 from datetime import timedelta
 from io import BytesIO
+from importlib import import_module
+from types import SimpleNamespace
 from unittest.mock import patch
 from django.utils import timezone
 
@@ -157,12 +161,72 @@ class AdminAccessWorkflowTests(TestCase):
         self.student.profile.refresh_from_db()
         self.assertEqual(self.student.profile.institute, 'ILEGG')
 
-    @override_settings(ADMIN_PASSWORD='')
-    def test_admin_login_is_disabled_without_configured_password(self):
-        response = APIClient().post('/api/auth/admin/login/', {
-            'username': 'admin', 'password': '',
+    def test_admin_login_uses_database_password_and_requires_superuser(self):
+        self.admin.is_staff = True
+        self.admin.set_password('synthetic-admin-password')
+        self.admin.save(update_fields=['is_staff', 'password'])
+        client = APIClient()
+        url = '/api/auth/admin/login/'
+
+        wrong = client.post(url, {'username': self.admin.username, 'password': 'wrong'}, format='json')
+        self.assertEqual(wrong.status_code, 401)
+        self.assertFalse(UserProfile.objects.filter(user=self.admin).exists())
+
+        success = client.post(url, {
+            'username': self.admin.username, 'password': 'synthetic-admin-password',
         }, format='json')
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(success.status_code, 200, success.data)
+        self.assertIn('access_token', success.data)
+        self.assertEqual(self.admin.profile.role, 'admin')
+
+        self.admin.is_staff = False
+        self.admin.save(update_fields=['is_staff'])
+        denied = client.post(url, {
+            'username': self.admin.username, 'password': 'synthetic-admin-password',
+        }, format='json')
+        self.assertEqual(denied.status_code, 401)
+
+        self.student.set_password('synthetic-student-password')
+        self.student.save(update_fields=['password'])
+        student_login = client.post(url, {
+            'username': self.student.username, 'password': 'synthetic-student-password',
+        }, format='json')
+        self.assertEqual(student_login.status_code, 401)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_superuser)
+
+    def test_legacy_admin_migration_hashes_password_without_promoting_other_users(self):
+        migration = import_module('accounts.migrations.0035_move_admin_credentials_to_database')
+        schema_editor = SimpleNamespace(connection=connection)
+        self.admin.is_staff = True
+        self.admin.save(update_fields=['is_staff'])
+        with patch.dict('os.environ', {
+            'ADMIN_USERNAME': self.admin.username,
+            'ADMIN_PASSWORD': 'synthetic-legacy-secret',
+        }):
+            migration.move_admin_credentials(apps, schema_editor)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.check_password('synthetic-legacy-secret'))
+        self.assertEqual(self.admin.profile.role, 'admin')
+
+        with patch.dict('os.environ', {
+            'ADMIN_USERNAME': self.student.username,
+            'ADMIN_PASSWORD': 'synthetic-legacy-secret',
+        }):
+            with self.assertRaises(RuntimeError):
+                migration.move_admin_credentials(apps, schema_editor)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_superuser)
+
+        with patch.dict('os.environ', {
+            'ADMIN_USERNAME': 'new-admin',
+            'ADMIN_PASSWORD': 'synthetic-new-secret',
+        }):
+            migration.move_admin_credentials(apps, schema_editor)
+        new_admin = User.objects.get(username='new-admin')
+        self.assertTrue(new_admin.is_staff and new_admin.is_superuser)
+        self.assertTrue(new_admin.check_password('synthetic-new-secret'))
+        self.assertEqual(new_admin.profile.role, 'admin')
 
     @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
     def test_register_instructor_does_not_promote_existing_student(self):

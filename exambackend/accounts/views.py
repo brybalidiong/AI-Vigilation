@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
@@ -9,7 +10,6 @@ from django.utils.crypto import salted_hmac
 from django.utils.dateparse import parse_date, parse_datetime
 from datetime import datetime, time, timedelta
 import re
-import secrets
 from firebase_admin import auth as firebase_auth
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -613,26 +613,16 @@ def admin_login(request):
     password = request.data.get('password', '')
 
     if (
-        not settings.ADMIN_PASSWORD
-        or not isinstance(username, str)
+        not isinstance(username, str)
         or not isinstance(password, str)
-        or username != settings.ADMIN_USERNAME
-        or not secrets.compare_digest(password, settings.ADMIN_PASSWORD)
+        or not username.strip()
+        or not password
     ):
         return Response({'error': 'Invalid admin credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-    admin_user, _ = User.objects.get_or_create(
-        username=settings.ADMIN_USERNAME,
-        defaults={
-            'is_staff': True,
-            'is_superuser': True,
-            'email': '',
-        },
-    )
-    if not admin_user.is_superuser:
-        admin_user.is_superuser = True
-        admin_user.is_staff = True
-        admin_user.save(update_fields=['is_staff', 'is_superuser'])
+    admin_user = authenticate(request, username=username.strip(), password=password)
+    if not admin_user or not admin_user.is_staff or not admin_user.is_superuser:
+        return Response({'error': 'Invalid admin credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     profile, _ = UserProfile.objects.get_or_create(
         user=admin_user,

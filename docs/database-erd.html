@@ -472,7 +472,7 @@ erDiagram
         <td>Django user accounts: username, email, password hash, staff/superuser flags.</td>
         <td>1:1 <strong>accounts_userprofile</strong>; referenced by subjects &amp; rosters</td>
         <td>All roles</td>
-        <td><strong>Primary login table.</strong> Populated via Google OAuth, instructor login, or admin login.</td>
+        <td><strong>Primary login table.</strong> The admin username and password hash live here in Supabase PostgreSQL; Google users also have Django accounts.</td>
       </tr>
       <tr>
         <td><strong>auth_group</strong></td>
