@@ -562,7 +562,7 @@ function saveFacePhoto() {
 
 .hero-name {
   font-family: 'Poppins', sans-serif;
-  font-size: 2.1rem;
+  font-size: 1.85rem;
   font-weight: 900;
   color: #142849;
   margin: 0 0 0.65rem;

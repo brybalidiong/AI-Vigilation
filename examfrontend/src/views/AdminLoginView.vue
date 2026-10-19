@@ -282,7 +282,7 @@ async function loginAdmin() {
 .hero-content h1 {
   font-family: 'Poppins', sans-serif;
   color: #1D3461;
-  font-size: 3.8rem;
+  font-size: 3.3rem;
   font-weight: 900;
   line-height: 1.1;
   margin-bottom: 1.25rem;
@@ -324,7 +324,7 @@ async function loginAdmin() {
 
 .login-card-header h2 {
   font-family: 'Poppins', sans-serif;
-  font-size: 1.9rem;
+  font-size: 1.7rem;
   font-weight: 800;
   color: #1D3461;
   margin-bottom: 0.4rem;

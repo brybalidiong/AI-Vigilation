@@ -3740,7 +3740,7 @@ onMounted(async () => {
 }
 .stats-title {
   margin: 0;
-  font-size: clamp(1.55rem, 2.3vw, 2.05rem);
+  font-size: clamp(1.45rem, 2.1vw, 1.85rem);
   font-weight: 800;
   font-family: 'Poppins', sans-serif;
   letter-spacing: -0.01em;

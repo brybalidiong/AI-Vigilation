@@ -444,7 +444,7 @@
       <div style="width: 100%; max-width: 100%; padding: 3rem 5%; padding-bottom: 8rem;">
         
         <!-- Header / Course Name -->
-        <h1 style="font-size: 2.2rem; font-weight: 700; color: #37302a; margin-bottom: 2rem; border-bottom: 1px solid #d4d4d4; padding-bottom: 1rem;">
+        <h1 style="font-size: 1.9rem; font-weight: 700; color: #37302a; margin-bottom: 2rem; border-bottom: 1px solid #d4d4d4; padding-bottom: 1rem;">
           {{ takingExam.subject_code ? takingExam.subject_code + '_' : '' }}{{ takingExam.title?.toUpperCase().replace(/\s+/g, '_') }}
         </h1>
         

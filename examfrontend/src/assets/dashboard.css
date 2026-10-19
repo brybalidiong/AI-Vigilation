@@ -2858,7 +2858,7 @@
   display: inline-block;
 }
 .cw-hero__title {
-  font-size: clamp(1.4rem, 2.8vw, 2rem);
+  font-size: clamp(1.35rem, 2.5vw, 1.8rem);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -3279,7 +3279,7 @@
 .dashboard-role .header-titles h1 {
   margin: 0;
   color: #14213a;
-  font-size: clamp(1.8rem, 3vw, 2.45rem);
+  font-size: clamp(1.65rem, 2.6vw, 2.15rem);
   line-height: 1.08;
 }
 .dashboard-role .header-sub { color: #68778d; font-size: 0.9rem; }
@@ -3324,7 +3324,7 @@
   max-width: 680px;
   color: #fff;
   font-family: 'Poppins', sans-serif;
-  font-size: clamp(1.65rem, 3vw, 2.45rem);
+  font-size: clamp(1.5rem, 2.6vw, 2.15rem);
   font-weight: 800;
   letter-spacing: -0.035em;
   line-height: 1.08;
@@ -3409,7 +3409,7 @@
   margin: 0;
   padding: 0;
   color: #1e3a5f;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 750;
   letter-spacing: -0.02em;
 }
