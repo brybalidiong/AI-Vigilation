@@ -50,7 +50,7 @@
             <template v-if="activeNav === 'courses' && isCourseDetailRoute">
               <button type="button" class="cw-back-btn cw-back-btn--light" @click="goCourses" id="back-to-courses">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                All courses
+                Back
               </button>
               <div class="cw-title-row">
                 <span v-if="selectedCourse" class="cw-code-pill">{{ selectedCourse.code }}</span>
@@ -314,7 +314,7 @@
               <div class="cw-hero__nav">
                 <button type="button" class="cw-back-btn" @click="goCourses" id="back-to-courses-hero">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                  All Courses
+                  Back
                 </button>
               </div>
               <div class="cw-hero__main">
@@ -1015,7 +1015,7 @@
           <div class="qe-header__copy">
             <button type="button" class="cw-back-btn cw-back-btn--light" @click="closeManageQuestions">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-              Back to exams
+              Back
             </button>
             <div class="cw-title-row">
               <span class="exam-item__badge" :class="examIsFinal ? 'exam-item__badge--pub' : 'exam-item__badge--draft'">{{ examIsFinal ? 'Published' : 'Draft' }}</span>

@@ -223,7 +223,7 @@
               <nav class="cw-hero__nav">
                 <button type="button" class="cw-back-btn" @click="backToStudentCourses">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                  All courses
+                  Back
                 </button>
               </nav>
               <div class="cw-title-row" style="color:#fff;">
@@ -718,7 +718,7 @@
         <!-- Footer -->
         <div class="results-footer">
           <p class="results-note">Review of answers is not permitted after submission.</p>
-          <button class="results-back-btn" @click="closeResultsModal">← Back to course</button>
+          <button class="results-back-btn" @click="closeResultsModal">← Back</button>
         </div>
 
       </div>

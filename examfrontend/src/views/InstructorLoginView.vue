@@ -69,7 +69,7 @@
           {{ error }}
         </p>
 
-        <button class="btn-back" @click="router.push('/')">← Back to Student Login</button>
+        <button class="btn-back" @click="router.push('/')">← Back</button>
       </div>
     </div>
   </div>
