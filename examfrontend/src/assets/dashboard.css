@@ -1456,7 +1456,7 @@
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0;
 }
 .cw-hero__code {
   display: inline-block;
@@ -2843,9 +2843,9 @@
   pointer-events: none;
 }
 .cw-hero__content {
-  padding: 1.75rem 2rem 2rem;
+  padding: 1.25rem 2rem 1.35rem;
 }
-.cw-hero__nav { margin-bottom: 1.25rem; }
+.cw-hero__nav { margin-bottom: 0.75rem; }
 .cw-hero__code {
   font-size: 0.72rem;
   font-weight: 800;
@@ -2855,7 +2855,7 @@
   background: rgba(255,255,255,0.14);
   border: 1px solid rgba(255,255,255,0.22);
   border-radius: 8px;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.35rem;
   display: inline-block;
 }
 .cw-hero__title {
@@ -2866,7 +2866,7 @@
   margin: 0;
 }
 .cw-hero__stats {
-  margin-top: 1.25rem;
+  margin-top: 0.75rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
