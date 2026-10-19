@@ -18,7 +18,7 @@
             class="nav-item"
             :class="{ active: activeTab === tab.key }"
             :aria-pressed="activeTab === tab.key"
-            @click="activeTab = tab.key"
+            @click="selectAdminSection(tab.key)"
             :id="`nav-${tab.key}`"
           >
             <component :is="'svg'" class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" v-html="tab.icon"/>
@@ -75,13 +75,13 @@
               <h2>Keep your campus ready for every exam.</h2>
               <p>Manage instructor and student access, assign institutes, and review identity photos in one place.</p>
             </div>
-            <button type="button" class="dashboard-welcome__action" @click="pendingFaceCount ? openPendingReviews() : (activeTab = 'students')">
+            <button type="button" class="dashboard-welcome__action" @click="pendingFaceCount ? openPendingReviews() : selectAdminSection('students')">
               {{ pendingFaceCount ? `Review ${pendingFaceCount} photo${pendingFaceCount === 1 ? '' : 's'}` : 'Manage students' }}
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
             </button>
           </div>
           <div class="stats-grid">
-            <button type="button" class="stat-card stat-card--link" id="stat-instructors" :aria-label="`View ${activeInstructorCount} active instructors`" @click="activeTab = 'instructors'">
+            <button type="button" class="stat-card stat-card--link" id="stat-instructors" :aria-label="`View ${activeInstructorCount} active instructors`" @click="selectAdminSection('instructors')">
               <div class="stat-icon instructor-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -94,7 +94,7 @@
                 <h2 v-else class="stat-value">{{ activeInstructorCount }}</h2>
               </div>
             </button>
-            <button type="button" class="stat-card stat-card--link" id="stat-students" :aria-label="`View ${enrolledStudentCount} enrolled students`" @click="activeTab = 'students'">
+            <button type="button" class="stat-card stat-card--link" id="stat-students" :aria-label="`View ${enrolledStudentCount} enrolled students`" @click="selectAdminSection('students')">
               <div class="stat-icon student-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -164,14 +164,15 @@
           <div class="admin-section-heading">
             <div>
               <span class="admin-section-kicker">People & access</span>
-              <h2>Instructor directory</h2>
+              <h2>Instructor management</h2>
               <p>Register school accounts, assign institutes, and control access.</p>
             </div>
-            <button type="button" class="primary-btn" @click="openInstructorForm" id="add-instructor-btn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Register instructor
-            </button>
           </div>
+          <div class="course-tabstrip admin-page-tabs" role="tablist" aria-label="Instructor management">
+            <button type="button" id="instructor-list-tab" class="course-tab" :class="{ active: !showAddInstructor }" role="tab" :aria-selected="!showAddInstructor" aria-controls="instructor-list-panel" @click="closeInstructorForm">Instructor list <span class="course-tab__count">{{ instructors.length }}</span></button>
+            <button type="button" id="add-instructor-btn" class="course-tab" :class="{ active: showAddInstructor }" role="tab" :aria-selected="showAddInstructor" aria-controls="instructor-register-panel" @click="openInstructorForm">Register instructor</button>
+          </div>
+          <div v-if="!showAddInstructor" id="instructor-list-panel" role="tabpanel" aria-labelledby="instructor-list-tab">
           <div class="moodle-filters admin-filters">
              <label class="admin-filter-field" for="instructor-search">Search instructors
                <input v-model="instructorSearch" type="search" class="moodle-search" placeholder="Name or school email" id="instructor-search"/>
@@ -188,29 +189,6 @@
              </select>
              <button v-if="hasInstructorFilters" type="button" class="admin-clear-filters" @click="clearInstructorFilters">Clear filters</button>
           </div>
-
-          <!-- Add Instructor Form -->
-          <form v-if="showAddInstructor" class="create-form-wrapper admin-entry-form" id="instructor-form" @submit.prevent="registerInstructor">
-            <div class="entry-heading"><div><h3 class="form-title">Register instructor</h3><p>Use the instructor's school email. They will sign in with Google.</p></div><button type="button" class="entry-close" aria-label="Close form" @click="closeInstructorForm">×</button></div>
-            <div class="inline-form">
-              <label class="entry-field" for="instructor-first-name">First name<input v-model="newInstructor.first_name" type="text" autocomplete="given-name" id="instructor-first-name"/></label>
-              <label class="entry-field" for="instructor-last-name">Last name<input v-model="newInstructor.last_name" type="text" autocomplete="family-name" id="instructor-last-name"/></label>
-              <label class="entry-field entry-field--email" for="instructor-email">School email<input v-model="newInstructor.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="instructor-email"/></label>
-              <label class="entry-field entry-field--institute" for="instructor-institute">Institute
-                <select v-model="newInstructor.institute" id="instructor-institute" required>
-                  <option value="" disabled>Select institute</option>
-                  <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
-                </select>
-              </label>
-            </div>
-            <div class="entry-actions">
-              <button type="button" class="ghost-btn shrink-btn" @click="closeInstructorForm">Cancel</button>
-              <button type="submit" class="primary-btn shrink-btn" :disabled="instructorLoading" id="submit-instructor-btn">
-                {{ instructorLoading ? 'Registering...' : 'Register' }}
-              </button>
-            </div>
-            <p v-if="instructorError" class="form-error" role="alert">{{ instructorError }}</p>
-          </form>
 
           <!-- Instructors Table -->
           <p v-if="!loadingInstructors" class="admin-results-count" role="status">Showing {{ filteredInstructors.length }} of {{ instructors.length }} instructors</p>
@@ -252,6 +230,26 @@
               <button type="button" class="ghost-btn" @click="hasInstructorFilters ? clearInstructorFilters() : openInstructorForm()">{{ hasInstructorFilters ? 'Clear filters' : 'Register instructor' }}</button>
             </div>
           </div>
+          </div>
+          <form v-else id="instructor-register-panel" class="create-form-wrapper admin-entry-form" role="tabpanel" aria-labelledby="add-instructor-btn" @submit.prevent="registerInstructor">
+            <div class="entry-heading"><div><h3 class="form-title">Register instructor</h3><p>Use the instructor's school email. They will sign in with Google.</p></div></div>
+            <div class="inline-form">
+              <label class="entry-field" for="instructor-first-name">First name<input v-model="newInstructor.first_name" type="text" autocomplete="given-name" id="instructor-first-name"/></label>
+              <label class="entry-field" for="instructor-last-name">Last name<input v-model="newInstructor.last_name" type="text" autocomplete="family-name" id="instructor-last-name"/></label>
+              <label class="entry-field entry-field--email" for="instructor-email">School email<input v-model="newInstructor.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="instructor-email"/></label>
+              <label class="entry-field entry-field--institute" for="instructor-institute">Institute
+                <select v-model="newInstructor.institute" id="instructor-institute" required>
+                  <option value="" disabled>Select institute</option>
+                  <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+                </select>
+              </label>
+            </div>
+            <div class="entry-actions">
+              <button type="button" class="ghost-btn shrink-btn" @click="closeInstructorForm">Cancel</button>
+              <button type="submit" class="primary-btn shrink-btn" :disabled="instructorLoading" id="submit-instructor-btn">{{ instructorLoading ? 'Registering...' : 'Register' }}</button>
+            </div>
+            <p v-if="instructorError" class="form-error" role="alert">{{ instructorError }}</p>
+          </form>
         </section>
 
         <!-- Students Tab -->
@@ -259,14 +257,15 @@
           <div class="admin-section-heading">
             <div>
               <span class="admin-section-kicker">People & access</span>
-              <h2>Student directory</h2>
+              <h2>Student management</h2>
               <p>Manage enrollment, institutes, and identity photo reviews.</p>
             </div>
-            <button type="button" class="primary-btn" @click="openStudentForm" id="add-student-btn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Enroll student
-            </button>
           </div>
+          <div class="course-tabstrip admin-page-tabs" role="tablist" aria-label="Student management">
+            <button type="button" id="student-list-tab" class="course-tab" :class="{ active: !showAddStudent }" role="tab" :aria-selected="!showAddStudent" aria-controls="student-list-panel" @click="closeStudentForm">Student list <span class="course-tab__count">{{ students.length }}</span></button>
+            <button type="button" id="add-student-btn" class="course-tab" :class="{ active: showAddStudent }" role="tab" :aria-selected="showAddStudent" aria-controls="student-register-panel" @click="openStudentForm">Register student</button>
+          </div>
+          <div v-if="!showAddStudent" id="student-list-panel" role="tabpanel" aria-labelledby="student-list-tab">
           <div class="moodle-filters admin-filters">
              <label class="admin-filter-field" for="student-search">Search students
                <input v-model="studentSearch" type="search" class="moodle-search" placeholder="Name or school email" id="student-search"/>
@@ -284,29 +283,6 @@
              </select>
              <button v-if="hasStudentFilters" type="button" class="admin-clear-filters" @click="clearStudentFilters">Clear filters</button>
           </div>
-
-          <!-- Add Student Form -->
-          <form v-if="showAddStudent" class="create-form-wrapper admin-entry-form" id="student-form" @submit.prevent="enrollStudent">
-            <div class="entry-heading"><div><h3 class="form-title">Enroll student</h3><p>Use the student's school email to allow Google sign-in.</p></div><button type="button" class="entry-close" aria-label="Close form" @click="closeStudentForm">×</button></div>
-            <div class="inline-form">
-              <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name"/></label>
-              <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name"/></label>
-              <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="student-email"/></label>
-              <label class="entry-field entry-field--institute" for="student-institute">Institute
-                <select v-model="newStudent.institute" id="student-institute" required>
-                  <option value="" disabled>Select institute</option>
-                  <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
-                </select>
-              </label>
-            </div>
-            <div class="entry-actions">
-              <button type="button" class="ghost-btn shrink-btn" @click="closeStudentForm">Cancel</button>
-              <button type="submit" class="primary-btn shrink-btn" :disabled="studentLoading" id="submit-student-btn">
-                {{ studentLoading ? 'Enrolling...' : 'Enroll' }}
-              </button>
-            </div>
-            <p v-if="studentError" class="form-error" role="alert">{{ studentError }}</p>
-          </form>
 
         <!-- Students Table -->
           <p v-if="!loadingStudents" class="admin-results-count" role="status">Showing {{ filteredStudents.length }} of {{ students.length }} students</p>
@@ -395,6 +371,26 @@
               <button type="button" class="ghost-btn" @click="hasStudentFilters ? clearStudentFilters() : openStudentForm()">{{ hasStudentFilters ? 'Clear filters' : 'Enroll student' }}</button>
             </div>
           </div>
+          </div>
+          <form v-else id="student-register-panel" class="create-form-wrapper admin-entry-form" role="tabpanel" aria-labelledby="add-student-btn" @submit.prevent="enrollStudent">
+            <div class="entry-heading"><div><h3 class="form-title">Register student</h3><p>Use the student's school email to allow Google sign-in.</p></div></div>
+            <div class="inline-form">
+              <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name"/></label>
+              <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name"/></label>
+              <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="student-email"/></label>
+              <label class="entry-field entry-field--institute" for="student-institute">Institute
+                <select v-model="newStudent.institute" id="student-institute" required>
+                  <option value="" disabled>Select institute</option>
+                  <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+                </select>
+              </label>
+            </div>
+            <div class="entry-actions">
+              <button type="button" class="ghost-btn shrink-btn" @click="closeStudentForm">Cancel</button>
+              <button type="submit" class="primary-btn shrink-btn" :disabled="studentLoading" id="submit-student-btn">{{ studentLoading ? 'Enrolling...' : 'Register' }}</button>
+            </div>
+            <p v-if="studentError" class="form-error" role="alert">{{ studentError }}</p>
+          </form>
         </section>
       </main>
 
@@ -517,6 +513,12 @@ function showActionError(text) {
 const studentSearch = ref("");
 const newStudent = ref({ email: "", first_name: "", last_name: "", institute: "" });
 
+function selectAdminSection(section) {
+  activeTab.value = section;
+  if (section === 'instructors') closeInstructorForm();
+  if (section === 'students') closeStudentForm();
+}
+
 function openInstructorForm() {
   activeTab.value = 'instructors';
   showAddInstructor.value = true;
@@ -556,6 +558,7 @@ function closeStudentForm() {
 
 function openPendingReviews() {
   activeTab.value = 'students';
+  closeStudentForm();
   studentStatusFilter.value = 'pending';
   studentInstituteFilter.value = 'all';
   studentSearch.value = '';
@@ -1001,7 +1004,8 @@ onMounted(() => {
 .admin-section-kicker { color: #58739a; font-size: .69rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .admin-section-heading h2 { margin: .25rem 0; color: #172b4a; font-family: 'Poppins', sans-serif; font-size: 1.4rem; letter-spacing: -.025em; }
 .admin-section-heading p { margin: 0; color: #68778d; font-size: .85rem; }
-.admin-section-heading .primary-btn { flex: 0 0 auto; }
+.admin-page-tabs { margin-bottom: 1.25rem; overflow: hidden; border: 1px solid #e1e8f1; border-radius: 14px; }
+.admin-page-tabs .course-tab { min-height: 52px; }
 .admin-results-count { margin: .25rem 0 .65rem; color: #68778d; font-size: .78rem; font-weight: 650; }
 .admin-empty-state { display: grid; justify-items: center; gap: .55rem; padding: 3.5rem 1.25rem; text-align: center; }
 .admin-empty-state h3 { margin: 0; color: #1d3461; font-family: 'Poppins', sans-serif; font-size: 1.05rem; }
@@ -1018,7 +1022,8 @@ onMounted(() => {
 }
 .admin-inline-error { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: .85rem; }
 .admin-inline-error button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
-.admin-filter { min-height: 41px; padding: .55rem .85rem; border: 1px solid #d5dfeb; border-radius: 10px; background: #fff; color: #334155; font: inherit; font-size: .85rem; }
+.admin-filter { min-height: 41px; padding: .55rem .85rem; border: 1px solid #d5dfeb; border-radius: 10px; background-color: #fff; color: #334155; font: inherit; font-size: .85rem; }
+.admin-filter:is(select) { padding-right: 2.65rem; }
 .admin-filters { display: flex; justify-content: flex-start; align-items: flex-end; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
 .admin-filter-field { display: grid; gap: .35rem; flex: 1 1 250px; min-width: min(100%, 240px); color: #475569; font-size: .75rem; font-weight: 700; }
 .admin-filters > .admin-filter { flex: 0 1 195px; width: 195px; min-width: 0; }
@@ -1035,6 +1040,7 @@ onMounted(() => {
 .entry-field { display: grid; gap: .35rem; min-width: 0; color: #475569; font-size: .75rem; font-weight: 700; }
 .entry-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e8edf5; }
 .entry-field input, .entry-field select { width: 100%; min-height: 41px; border: 1px solid #d5dfeb; border-radius: 9px; padding: .55rem .7rem; background: white; color: #142849; font: inherit; font-size: .84rem; }
+.entry-field select { appearance: none; padding-right: 2.65rem; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right .95rem center; background-size: .95rem; }
 .entry-field input:focus, .entry-field select:focus, .admin-filter:focus { border-color: #1d3461; outline: 3px solid rgba(29, 52, 97, .14); }
 .institute-picker { max-width: 200px; width: 100%; font-size: .76rem; }
 .form-error { margin: .8rem 0 0; color: #b91c1c; font-size: .82rem; }
@@ -1179,7 +1185,7 @@ onMounted(() => {
   .dashboard-role--admin .sidebar-footer-nav { flex: 0 0 auto; }
   .dashboard-role--admin .nav-count { display: none; }
   .admin-section-heading { align-items: stretch; flex-direction: column; }
-  .admin-section-heading .primary-btn { align-self: flex-start; }
+  .admin-page-tabs .course-tab { flex: 1 1 0; justify-content: center; padding: .85rem .65rem; font-size: .8rem; }
   .admin-filters .admin-filter, .admin-filter-field { width: 100%; }
 }
 @media (max-width: 620px) {

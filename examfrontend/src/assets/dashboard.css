@@ -336,10 +336,10 @@
   box-shadow: var(--shadow-sm);
 }
 .moodle-select {
-  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' width%3D'24' height%3D'24' viewBox%3D'0 0 24 24' fill%3D'none' stroke%3D'%2364748b' stroke-width%3D'2'%3E%3Cpolyline points%3D'6 9 12 15 18 9'%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
-  background-position: right 1rem center;
-  background-size: 1.2em;
+  background-position: right 0.95rem center;
+  background-size: 0.95rem;
 }
 .moodle-search { 
   padding: 0.75rem 1.25rem; 
@@ -348,14 +348,14 @@
 }
 .moodle-select:hover, .moodle-search:hover {
   border-color: #94a3b8;
-  background: #fff;
+  background-color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
 }
 .moodle-select:focus, .moodle-search:focus {
   border-color: var(--brand-accent);
   box-shadow: 0 0 0 4px var(--brand-accent-muted), 0 4px 12px rgba(0,0,0,0.05);
-  background: #fff;
+  background-color: #fff;
 }
 
 /* Timeline */
@@ -635,7 +635,7 @@
   outline: none;
   transition: all 0.3s;
   flex: 1;
-  background: rgba(255,255,255,0.7);
+  background-color: rgba(255,255,255,0.7);
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
 }
 .inline-form input:focus,
@@ -1364,7 +1364,7 @@
 .create-panel__input:focus {
   border-color: var(--brand-accent);
   box-shadow: 0 0 0 3px var(--brand-accent-muted);
-  background: #fff;
+  background-color: #fff;
 }
 .create-panel__actions {
   display: flex;
@@ -3466,12 +3466,12 @@
   min-height: 42px;
   border-radius: 999px;
   border-color: #dde3ec;
-  background: #fff;
+  background-color: #fff;
   box-shadow: none;
   color: #334155;
 }
 .dashboard-role .dashboard-agenda .agenda-filter-select .moodle-select {
-  padding-right: 2rem;
+  padding-right: 2.65rem;
   min-width: 8.5rem;
 }
 .dashboard-role .dashboard-agenda .agenda-order-label {
