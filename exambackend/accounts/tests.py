@@ -114,6 +114,49 @@ class AdminAccessWorkflowTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_registration_requires_valid_institute_and_lists_assignment(self):
+        for url in ('/api/admin/instructors/', '/api/admin/students/'):
+            email = ('new-instructor' if 'instructors' in url else 'new-student') + '@dnsc.edu.ph'
+            missing = self.client.post(url, {'email': email}, format='json')
+            self.assertEqual(missing.status_code, 400, missing.data)
+            invalid = self.client.post(url, {'email': email, 'institute': 'OTHER'}, format='json')
+            self.assertEqual(invalid.status_code, 400, invalid.data)
+            self.assertFalse(User.objects.filter(username=email).exists())
+
+            created = self.client.post(url, {'email': email, 'institute': 'IC'}, format='json')
+            self.assertEqual(created.status_code, 201, created.data)
+            self.assertEqual(created.data['institute'], 'IC')
+            listed = self.client.get(url)
+            rows = listed.data['instructors' if 'instructors' in url else 'students']
+            self.assertEqual(next(row for row in rows if row['id'] == created.data['id'])['institute'], 'IC')
+            self.assertEqual(User.objects.get(username=email).profile.institute, 'IC')
+
+    def test_admin_can_assign_existing_accounts_to_institutes(self):
+        for account, url in (
+            (self.instructor, f'/api/admin/instructors/{self.instructor.pk}/'),
+            (self.student, f'/api/admin/students/{self.student.pk}/'),
+        ):
+            invalid = self.client.patch(url, {'action': 'set_institute', 'institute': 'OTHER'}, format='json')
+            self.assertEqual(invalid.status_code, 400, invalid.data)
+            updated = self.client.patch(url, {'action': 'set_institute', 'institute': 'ITED'}, format='json')
+            self.assertEqual(updated.status_code, 200, updated.data)
+            account.profile.refresh_from_db()
+            self.assertEqual(account.profile.institute, 'ITED')
+            self.client.force_authenticate(self.student)
+            denied = self.client.patch(url, {'action': 'set_institute', 'institute': 'IASS'}, format='json')
+            self.assertEqual(denied.status_code, 403)
+            self.client.force_authenticate(self.admin)
+
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_reenrolling_student_updates_institute(self):
+        response = self.client.post('/api/admin/students/', {
+            'email': self.student.email, 'institute': 'ILEGG',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.student.profile.refresh_from_db()
+        self.assertEqual(self.student.profile.institute, 'ILEGG')
+
     @override_settings(ADMIN_PASSWORD='')
     def test_admin_login_is_disabled_without_configured_password(self):
         response = APIClient().post('/api/auth/admin/login/', {
@@ -124,7 +167,7 @@ class AdminAccessWorkflowTests(TestCase):
     @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
     def test_register_instructor_does_not_promote_existing_student(self):
         response = self.client.post('/api/admin/instructors/', {
-            'email': self.student.email, 'first_name': 'Student',
+            'email': self.student.email, 'first_name': 'Student', 'institute': 'IC',
         }, format='json')
         self.assertEqual(response.status_code, 409, response.data)
         self.student.refresh_from_db()
@@ -134,7 +177,7 @@ class AdminAccessWorkflowTests(TestCase):
     @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
     def test_enroll_student_does_not_convert_existing_instructor(self):
         response = self.client.post('/api/admin/students/', {
-            'email': self.instructor.email,
+            'email': self.instructor.email, 'institute': 'IC',
         }, format='json')
         self.assertEqual(response.status_code, 409, response.data)
         self.instructor.refresh_from_db()

@@ -216,6 +216,7 @@ erDiagram
         bigint id PK
         int user_id FK
         varchar role
+        varchar institute
         boolean is_enrolled
         varchar google_photo
     }
@@ -362,10 +363,10 @@ erDiagram
     <tbody>
       <tr>
         <td><strong>accounts_userprofile</strong></td>
-        <td>Extends login with role (admin / instructor / student), enrollment status, and Google profile photo URL.</td>
+        <td>Extends login with role (admin / instructor / student), institute, enrollment status, and Google profile photo URL.</td>
         <td>1:1 with <strong>auth_user</strong></td>
         <td>All roles</td>
-        <td>Created on first Google login; drives access control in the API.</td>
+        <td>Created during admin registration or first Google login; drives access control in the API. Legacy accounts may have no institute until an admin assigns one.</td>
       </tr>
       <tr>
         <td><strong>accounts_subject</strong></td>

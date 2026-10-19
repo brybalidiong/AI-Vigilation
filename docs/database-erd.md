@@ -47,6 +47,7 @@ erDiagram
         bigint id PK
         int user_id FK
         varchar role
+        varchar institute
         boolean is_enrolled
     }
 

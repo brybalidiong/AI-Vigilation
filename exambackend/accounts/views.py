@@ -661,6 +661,10 @@ def _is_admin(user):
     return bool(user and user.is_authenticated and user.is_superuser)
 
 
+def _valid_institute(value):
+    return isinstance(value, str) and value in dict(UserProfile.INSTITUTE_CHOICES)
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def admin_instructors(request):
@@ -682,15 +686,19 @@ def admin_instructors(request):
                 'last_name': u.last_name,
                 'full_name': u.get_full_name() or u.username,
                 'is_active': u.is_active,
+                'institute': u.profile.institute if hasattr(u, 'profile') else '',
             })
         return Response({'instructors': data}, status=status.HTTP_200_OK)
 
     email = (request.data.get('email') or '').strip().lower()
     first_name = (request.data.get('first_name') or '').strip()
     last_name = (request.data.get('last_name') or '').strip()
+    institute = request.data.get('institute')
 
     if not email:
         return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not _valid_institute(institute):
+        return Response({'error': 'Choose a valid institute.'}, status=status.HTTP_400_BAD_REQUEST)
     if not email.endswith(f"@{settings.ALLOWED_SCHOOL_DOMAIN}"):
         return Response(
             {'error': f"Only @{settings.ALLOWED_SCHOOL_DOMAIN} emails are allowed."},
@@ -715,7 +723,7 @@ def admin_instructors(request):
 
     profile, _ = UserProfile.objects.get_or_create(
         user=user,
-        defaults={'role': 'instructor', 'is_enrolled': False},
+        defaults={'role': 'instructor', 'is_enrolled': False, 'institute': institute},
     )
     if profile.role != 'instructor':
         profile.role = 'instructor'
@@ -730,6 +738,7 @@ def admin_instructors(request):
             'full_name': user.get_full_name() or user.username,
             'created': created,
             'is_active': user.is_active,
+            'institute': profile.institute,
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
@@ -738,7 +747,7 @@ def admin_instructors(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def admin_instructor_detail(request, instructor_id):
-    """Admin: deactivate or restore an instructor without deleting course records."""
+    """Admin: manage an instructor's access and institute."""
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -747,6 +756,16 @@ def admin_instructor_detail(request, instructor_id):
     ).first()
     if not instructor:
         return Response({'error': 'Instructor not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if request.data.get('action') == 'set_institute':
+        institute = request.data.get('institute')
+        if not _valid_institute(institute):
+            return Response({'error': 'Choose a valid institute.'}, status=status.HTTP_400_BAD_REQUEST)
+        profile, _ = UserProfile.objects.get_or_create(
+            user=instructor, defaults={'role': 'instructor', 'is_enrolled': False},
+        )
+        profile.institute = institute
+        profile.save(update_fields=['institute'])
+        return Response({'id': instructor.id, 'institute': institute})
     active = request.data.get('is_active')
     if not isinstance(active, bool):
         return Response({'error': 'is_active must be a boolean.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -791,6 +810,7 @@ def admin_students(request):
                 'last_name': u.last_name,
                 'full_name': u.get_full_name() or u.email,
                 'is_enrolled': p and p.is_enrolled,
+                'institute': p.institute if p else '',
                 'face_status': p.face_status if p else 'none',
                 'face_reupload_allowed': p.face_reupload_allowed if p else False,
                 'face_photo_url': face_photo_url,
@@ -801,9 +821,12 @@ def admin_students(request):
     email = (request.data.get('email') or '').strip().lower()
     first_name = (request.data.get('first_name') or '').strip()
     last_name = (request.data.get('last_name') or '').strip()
+    institute = request.data.get('institute')
 
     if not email:
         return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not _valid_institute(institute):
+        return Response({'error': 'Choose a valid institute.'}, status=status.HTTP_400_BAD_REQUEST)
     if not email.endswith(f"@{settings.ALLOWED_SCHOOL_DOMAIN}"):
         return Response(
             {'error': f"Only @{settings.ALLOWED_SCHOOL_DOMAIN} emails are allowed."},
@@ -837,13 +860,14 @@ def admin_students(request):
 
     profile, _ = UserProfile.objects.get_or_create(
         user=user,
-        defaults={'role': 'student', 'is_enrolled': True},
+        defaults={'role': 'student', 'is_enrolled': True, 'institute': institute},
     )
     profile.is_enrolled = True
+    profile.institute = institute
     if profile.role != 'student':
         profile.role = 'student'
     with transaction.atomic():
-        profile.save(update_fields=['role', 'is_enrolled'])
+        profile.save(update_fields=['role', 'is_enrolled', 'institute'])
         if not user.is_active:
             user.is_active = True
             user.save(update_fields=['is_active'])
@@ -856,6 +880,7 @@ def admin_students(request):
             'last_name': user.last_name,
             'full_name': user.get_full_name() or user.email,
             'is_enrolled': True,
+            'institute': profile.institute,
             'created': created,
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -882,6 +907,7 @@ def admin_student_detail(request, student_id):
             'id': student.id,
             'email': student.email,
             'full_name': student.get_full_name() or student.email,
+            'institute': profile.institute,
             'face_status': profile.face_status,
             'face_reupload_allowed': profile.face_reupload_allowed,
             'face_photo_url': face_photo_url,
@@ -890,6 +916,14 @@ def admin_student_detail(request, student_id):
 
     if request.method == 'PATCH':
         action = request.data.get('action')
+
+        if action == 'set_institute':
+            institute = request.data.get('institute')
+            if not _valid_institute(institute):
+                return Response({'error': 'Choose a valid institute.'}, status=status.HTTP_400_BAD_REQUEST)
+            profile.institute = institute
+            profile.save(update_fields=['institute'])
+            return Response({'id': student.id, 'institute': institute})
 
         if action == 'approve_face':
             if not profile.face_pending_photo:

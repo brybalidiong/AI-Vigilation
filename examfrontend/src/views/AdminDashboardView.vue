@@ -161,6 +161,11 @@
                <option value="active">Active</option>
                <option value="inactive">Inactive</option>
              </select>
+             <select v-model="instructorInstituteFilter" class="admin-filter" aria-label="Filter instructors by institute">
+               <option value="all">All institutes</option>
+               <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+               <option value="unassigned">Unassigned</option>
+             </select>
           </div>
 
           <!-- Add Instructor Form -->
@@ -170,6 +175,12 @@
               <label class="entry-field" for="instructor-first-name">First name<input v-model="newInstructor.first_name" type="text" autocomplete="given-name" id="instructor-first-name"/></label>
               <label class="entry-field" for="instructor-last-name">Last name<input v-model="newInstructor.last_name" type="text" autocomplete="family-name" id="instructor-last-name"/></label>
               <label class="entry-field entry-field--email" for="instructor-email">School email<input v-model="newInstructor.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="instructor-email"/></label>
+              <label class="entry-field entry-field--institute" for="instructor-institute">Institute
+                <select v-model="newInstructor.institute" id="instructor-institute" required>
+                  <option value="" disabled>Select institute</option>
+                  <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+                </select>
+              </label>
               <button type="submit" class="primary-btn shrink-btn" :disabled="instructorLoading" id="submit-instructor-btn">
                 {{ instructorLoading ? 'Registering...' : 'Register' }}
               </button>
@@ -189,6 +200,7 @@
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
+                  <th>Institute</th>
                   <th>Status</th>
                   <th style="text-align: right;">Actions</th>
                 </tr>
@@ -197,6 +209,12 @@
                 <tr v-for="ins in filteredInstructors" :key="ins.id">
                   <td class="bold-td">{{ ins.full_name || '—' }}</td>
                   <td>{{ ins.email }}</td>
+                  <td>
+                    <select class="admin-filter institute-picker" :value="ins.institute || ''" :disabled="ins._saving" :aria-label="`Institute for ${ins.full_name || ins.email}`" @change="updateInstructorInstitute(ins, $event)">
+                      <option value="" disabled>Unassigned</option>
+                      <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+                    </select>
+                  </td>
                   <td><span class="status-badge" :class="ins.is_active ? 'badge-done' : 'badge-neutral'">{{ ins.is_active ? 'Active' : 'Inactive' }}</span></td>
                   <td style="text-align: right;">
                     <button class="row-action" :class="ins.is_active ? 'row-action--danger' : 'row-action--restore'" :disabled="ins._saving" @click="setInstructorActive(ins)" :id="`remove-instructor-${ins.id}`">{{ ins._saving ? 'Saving…' : ins.is_active ? 'Deactivate' : 'Restore access' }}</button>
@@ -204,7 +222,7 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else class="table-meta" style="text-align: center;">{{ instructorSearch || instructorStatusFilter !== 'all' ? 'No instructors match this view.' : 'No instructors registered yet.' }}</div>
+            <div v-else class="table-meta" style="text-align: center;">{{ instructorSearch || instructorStatusFilter !== 'all' || instructorInstituteFilter !== 'all' ? 'No instructors match this view.' : 'No instructors registered yet.' }}</div>
           </div>
         </section>
 
@@ -226,6 +244,11 @@
                <option value="disabled">Access disabled</option>
                <option value="pending">Photos pending review</option>
              </select>
+             <select v-model="studentInstituteFilter" class="admin-filter" aria-label="Filter students by institute">
+               <option value="all">All institutes</option>
+               <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+               <option value="unassigned">Unassigned</option>
+             </select>
           </div>
 
           <!-- Add Student Form -->
@@ -235,6 +258,12 @@
               <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name"/></label>
               <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name"/></label>
               <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="student-email"/></label>
+              <label class="entry-field entry-field--institute" for="student-institute">Institute
+                <select v-model="newStudent.institute" id="student-institute" required>
+                  <option value="" disabled>Select institute</option>
+                  <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+                </select>
+              </label>
               <button type="submit" class="primary-btn shrink-btn" :disabled="studentLoading" id="submit-student-btn">
                 {{ studentLoading ? 'Enrolling...' : 'Enroll' }}
               </button>
@@ -254,6 +283,7 @@
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
+                  <th>Institute</th>
                   <th>Status</th>
                   <th style="min-width:200px">Face ID</th>
                   <th style="text-align: right;">Actions</th>
@@ -263,6 +293,12 @@
                 <tr v-for="st in filteredStudents" :key="st.id">
                   <td class="bold-td">{{ st.full_name || '—' }}</td>
                   <td>{{ st.email }}</td>
+                  <td>
+                    <select class="admin-filter institute-picker" :value="st.institute || ''" :disabled="st._saving" :aria-label="`Institute for ${st.full_name || st.email}`" @change="updateStudentInstitute(st, $event)">
+                      <option value="" disabled>Unassigned</option>
+                      <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
+                    </select>
+                  </td>
                   <td>
                     <span class="status-badge" :class="st.is_enrolled ? 'badge-done' : 'badge-neutral'">
                       {{ st.is_enrolled ? 'Enrolled' : 'Access disabled' }}
@@ -316,7 +352,7 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else class="table-meta" style="text-align: center;">{{ studentSearch || studentStatusFilter !== 'all' ? 'No students match this view.' : 'No students enrolled yet.' }}</div>
+            <div v-else class="table-meta" style="text-align: center;">{{ studentSearch || studentStatusFilter !== 'all' || studentInstituteFilter !== 'all' ? 'No students match this view.' : 'No students enrolled yet.' }}</div>
           </div>
         </section>
       </main>
@@ -367,6 +403,12 @@ import SkeletonLoader from "@/components/SkeletonLoader.vue";
 const router = useRouter();
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const schoolDomain = import.meta.env.VITE_SCHOOL_DOMAIN || "dnsc.edu.ph";
+const institutes = [
+  { code: 'IC', name: 'Institute of Computing' },
+  { code: 'ITED', name: 'Institute of Teachers Education' },
+  { code: 'IASS', name: 'Institute of Acquatic and Applied Sciences' },
+  { code: 'ILEGG', name: 'Institute of Leadership, Entrepreneurship and Good Governance' },
+];
 
 const activeTab = ref("overview");
 
@@ -398,7 +440,8 @@ const instructorLoading = ref(false);
 const instructorError = ref("");
 const instructorSearch = ref("");
 const instructorStatusFilter = ref('all');
-const newInstructor = ref({ email: "", first_name: "", last_name: "" });
+const instructorInstituteFilter = ref('all');
+const newInstructor = ref({ email: "", first_name: "", last_name: "", institute: "" });
 
 // Students
 const students = ref([]);
@@ -412,6 +455,7 @@ const actionError = ref("");
 const loadError = ref("");
 const reviewStudent = ref(null);
 const studentStatusFilter = ref('all');
+const studentInstituteFilter = ref('all');
 const pendingFaceCount = computed(() => students.value.filter((student) => student.face_status === 'pending').length);
 const activeInstructorCount = computed(() => instructors.value.filter((instructor) => instructor.is_active).length);
 const enrolledStudentCount = computed(() => students.value.filter((student) => student.is_enrolled).length);
@@ -425,7 +469,7 @@ function showActionError(text) {
   actionError.value = text;
 }
 const studentSearch = ref("");
-const newStudent = ref({ email: "", first_name: "", last_name: "" });
+const newStudent = ref({ email: "", first_name: "", last_name: "", institute: "" });
 
 function openInstructorForm() {
   activeTab.value = 'instructors';
@@ -453,6 +497,7 @@ function closeStudentForm() {
 function openPendingReviews() {
   activeTab.value = 'students';
   studentStatusFilter.value = 'pending';
+  studentInstituteFilter.value = 'all';
   studentSearch.value = '';
 }
 
@@ -537,6 +582,7 @@ async function registerInstructor() {
     const res = await axios.post(`${backendBaseUrl}/api/admin/instructors/`, newInstructor.value, { headers: getHeaders() });
     showActionSuccess('Instructor registered', `Instructor ${res.data.email} was registered.`);
     instructors.value.unshift(res.data);
+    instructorInstituteFilter.value = res.data.institute;
     clearInstructorForm();
     showAddInstructor.value = false;
   } catch (e) {
@@ -572,6 +618,21 @@ async function updateInstructorActive(ins, active) {
   }
 }
 
+async function updateInstructorInstitute(ins, event) {
+  const institute = event.target.value;
+  ins._saving = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { action: 'set_institute', institute }, { headers: getHeaders() });
+    ins.institute = data.institute;
+    showActionSuccess('Institute updated', `${ins.full_name || ins.email} is now assigned to ${institute}.`);
+  } catch (e) {
+    event.target.value = ins.institute || '';
+    showActionError(e?.response?.data?.error || 'Could not update instructor institute.');
+  } finally {
+    ins._saving = false;
+  }
+}
+
 async function enrollStudent() {
   studentError.value = "";
   newStudent.value.email = newStudent.value.email.trim().toLowerCase();
@@ -586,6 +647,7 @@ async function enrollStudent() {
     const existing = students.value.find((s) => s.id === res.data.id);
     if (existing) Object.assign(existing, res.data);
     else students.value.unshift(res.data);
+    studentInstituteFilter.value = res.data.institute;
     clearStudentForm();
     showAddStudent.value = false;
   } catch (e) {
@@ -616,6 +678,21 @@ async function updateStudentEnrollment(st, enrolled) {
     showActionSuccess(enrolled ? 'Student access restored' : 'Student access disabled', enrolled ? 'Student access restored.' : 'Student access disabled.');
   } catch (e) {
     showActionError(e?.response?.data?.error || 'Could not update student access.');
+  } finally {
+    st._saving = false;
+  }
+}
+
+async function updateStudentInstitute(st, event) {
+  const institute = event.target.value;
+  st._saving = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/students/${st.id}/`, { action: 'set_institute', institute }, { headers: getHeaders() });
+    st.institute = data.institute;
+    showActionSuccess('Institute updated', `${st.full_name || st.email} is now assigned to ${institute}.`);
+  } catch (e) {
+    event.target.value = st.institute || '';
+    showActionError(e?.response?.data?.error || 'Could not update student institute.');
   } finally {
     st._saving = false;
   }
@@ -686,12 +763,12 @@ async function toggleReupload(st, event) {
 }
 
 function clearInstructorForm() {
-  newInstructor.value = { email: "", first_name: "", last_name: "" };
+  newInstructor.value = { email: "", first_name: "", last_name: "", institute: "" };
   instructorError.value = "";
 }
 
 function clearStudentForm() {
-  newStudent.value = { email: "", first_name: "", last_name: "" };
+  newStudent.value = { email: "", first_name: "", last_name: "", institute: "" };
   studentError.value = "";
 }
 
@@ -700,6 +777,8 @@ const filteredInstructors = computed(() => {
   return instructors.value.filter((instructor) => {
     if (instructorStatusFilter.value === 'active' && !instructor.is_active) return false;
     if (instructorStatusFilter.value === 'inactive' && instructor.is_active) return false;
+    if (instructorInstituteFilter.value === 'unassigned' && instructor.institute) return false;
+    if (instructorInstituteFilter.value !== 'all' && instructorInstituteFilter.value !== 'unassigned' && instructor.institute !== instructorInstituteFilter.value) return false;
     return !q || (instructor.full_name || '').toLowerCase().includes(q)
       || instructor.email.toLowerCase().includes(q);
   }).sort((a, b) => a.email.localeCompare(b.email));
@@ -711,6 +790,8 @@ const filteredStudents = computed(() => {
     if (studentStatusFilter.value === 'pending' && student.face_status !== 'pending') return false;
     if (studentStatusFilter.value === 'enrolled' && !student.is_enrolled) return false;
     if (studentStatusFilter.value === 'disabled' && student.is_enrolled) return false;
+    if (studentInstituteFilter.value === 'unassigned' && student.institute) return false;
+    if (studentInstituteFilter.value !== 'all' && studentInstituteFilter.value !== 'unassigned' && student.institute !== studentInstituteFilter.value) return false;
     return !q || (student.full_name || '').toLowerCase().includes(q)
       || student.email.toLowerCase().includes(q);
   }).sort((a, b) => a.email.localeCompare(b.email));
@@ -854,7 +935,9 @@ onMounted(() => {
 .admin-entry-form .inline-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .7rem; }
 .entry-field { display: grid; gap: .35rem; min-width: 145px; flex: 1 1 145px; color: #475569; font-size: .75rem; font-weight: 700; }
 .entry-field--email { flex: 2 1 240px; }
-.entry-field input { width: 100%; min-height: 41px; border: 1px solid #d5dfeb; border-radius: 9px; padding: .55rem .7rem; background: white; color: #142849; font: inherit; font-size: .84rem; }
+.entry-field--institute { flex: 2 1 240px; }
+.entry-field input, .entry-field select { width: 100%; min-height: 41px; border: 1px solid #d5dfeb; border-radius: 9px; padding: .55rem .7rem; background: white; color: #142849; font: inherit; font-size: .84rem; }
+.institute-picker { max-width: 200px; width: 100%; font-size: .76rem; }
 .form-error { margin: .8rem 0 0; color: #b91c1c; font-size: .82rem; }
 .row-action { border: 1px solid #cbd5e1; border-radius: 8px; padding: .45rem .7rem; background: white; color: #334155; font: inherit; font-size: .76rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .row-action--danger { border-color: #fecaca; color: #b91c1c; }

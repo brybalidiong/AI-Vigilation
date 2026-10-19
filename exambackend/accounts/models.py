@@ -8,6 +8,12 @@ class UserProfile(models.Model):
         ('instructor', 'Instructor'),
         ('student', 'Student'),
     ]
+    INSTITUTE_CHOICES = [
+        ('IC', 'Institute of Computing'),
+        ('ITED', 'Institute of Teachers Education'),
+        ('IASS', 'Institute of Acquatic and Applied Sciences'),
+        ('ILEGG', 'Institute of Leadership, Entrepreneurship and Good Governance'),
+    ]
 
     FACE_STATUS_NONE     = 'none'
     FACE_STATUS_PENDING  = 'pending'
@@ -20,6 +26,7 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
+    institute = models.CharField(max_length=5, choices=INSTITUTE_CHOICES, blank=True, default='')
     is_enrolled = models.BooleanField(default=False)
     google_photo = models.URLField(blank=True, null=True)
     custom_photo = models.ImageField(upload_to='profile_photos/', null=True, blank=True)
