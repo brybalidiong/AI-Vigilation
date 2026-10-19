@@ -302,7 +302,7 @@
             </svg>
           </div>
           <h2>System Pre-Check</h2>
-          <p>This exam requires your camera and microphone. Your face is checked continuously by AI. Please ensure proper lighting and that your face is clearly visible to the camera before proceeding.</p>
+          <p>This exam requires your camera and microphone. Sit close enough for your face to be clearly detected before continuing.</p>
         </div>
 
         <div class="perm-preview-wrap">
@@ -318,15 +318,18 @@
           </div>
         </div>
 
+        <p class="perm-caution">Caution: Sitting too far from the camera may cause "face not detected" violations during the exam.</p>
+        <p v-if="mediaStreamActive" class="perm-face-status" :class="`perm-face-status--${precheckStatus}`" role="status">{{ precheckMessage }}</p>
         <p v-if="permissionError" class="perm-error">⚠️ {{ permissionError }}</p>
 
         <div class="perm-actions">
           <button class="ghost-btn" @click="cancelPermissionModal" :disabled="permissionLoading">Cancel</button>
+          <button v-if="mediaStreamActive && precheckStatus === 'unavailable'" class="ghost-btn" @click="_startPrecheckWs">Retry face check</button>
           
           <template v-if="mediaStreamActive">
              <button class="primary-btn perm-allow-btn" @click="proceedFromPermissionModal()" :disabled="!precheckFaceVisible">
-               <span v-if="!precheckFaceVisible" class="perm-spinner"></span>
-               {{ precheckFaceVisible ? 'Continue to Exam' : 'Detecting face...' }}
+               <span v-if="precheckStatus === 'checking'" class="perm-spinner"></span>
+               {{ precheckFaceVisible ? 'Continue to Exam' : precheckStatus === 'too_far' ? 'Move closer to continue' : 'Checking face...' }}
              </button>
           </template>
           <template v-else>
@@ -757,6 +760,7 @@ import SkeletonLoader from "@/components/SkeletonLoader.vue";
 import EmptyState from "@/components/EmptyState.vue";
 
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
+import { nextPrecheckFaceState } from "@/utils/precheckFace.js";
 import {
   compareExamsNewestFirst,
   examTimelineDisplayAt,
@@ -2221,10 +2225,21 @@ let pendingExam = null;
 const permVideoEl = ref(null);
 const examVideoEl = ref(null);
 const precheckFaceVisible = ref(false);
+const precheckStatus = ref('checking');
+const precheckMessage = computed(() => ({
+  checking: 'Checking your face position. Keep your face centered and well lit.',
+  ready: 'Face clearly detected. You can continue.',
+  too_far: 'Too far or face not detected. Move closer to the camera and check the lighting.',
+  multiple_faces: 'More than one face detected. Only you should be visible.',
+  unavailable: 'Face check unavailable. Retry the check before continuing.',
+})[precheckStatus.value]);
 let _precheckWs = null;
 let _precheckWsTimer = null;
+let _precheckConnectTimer = null;
+let _precheckResponseTimer = null;
 let _precheckFramePending = false;
 let _precheckFrameId = 0;
+let _precheckReadyStreak = 0;
 
 // --- Face Verification state ---
 const fvShow        = ref(false);
@@ -2589,16 +2604,17 @@ async function openTakeExam(exam) {
     return;
   }
 
-  // Require camera + mic before opening the exam.
-  if (!mediaStreamActive.value) {
-    pendingExam = exam;
-    permissionError.value = "";
-    precheckFaceVisible.value = false;
-    showPermissionModal.value = true;
-    return;
+  // Recheck face position for every exam, including when the camera is already active.
+  pendingExam = exam;
+  permissionError.value = "";
+  precheckFaceVisible.value = false;
+  precheckStatus.value = 'checking';
+  showPermissionModal.value = true;
+  if (mediaStreamActive.value && activeMediaStream) {
+    await nextTick();
+    if (permVideoEl.value) permVideoEl.value.srcObject = activeMediaStream;
+    _startPrecheckWs();
   }
-
-  await _doOpenExam(exam);
 }
 
 async function requestMediaPermissions() {
@@ -2634,7 +2650,7 @@ async function requestMediaPermissions() {
 }
 
 async function proceedFromPermissionModal() {
-  if (!mediaStreamActive.value || !precheckFaceVisible.value) return;
+  if (!mediaStreamActive.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') return;
   showPermissionModal.value = false;
   // Keep the precheck socket alive while face verification runs. Its first
   // inference warms the gaze model before the exam socket is opened.
@@ -2687,6 +2703,12 @@ async function _runFaceVerification() {
       // Briefly confirm success, then proceed without making the student wait.
       setTimeout(async () => {
         fvShow.value = false;
+        if (!precheckFaceVisible.value || precheckStatus.value !== 'ready') {
+          showPermissionModal.value = true;
+          await nextTick();
+          if (permVideoEl.value && activeMediaStream) permVideoEl.value.srcObject = activeMediaStream;
+          return;
+        }
         pendingExam = null;
         await _doOpenExam(exam);
         await nextTick();
@@ -2751,50 +2773,73 @@ function cancelPermissionModal() {
 
 function _startPrecheckWs() {
   if (!pendingExam || !permVideoEl.value) return;
+  _stopPrecheckWs();
   const examId = pendingExam.id;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const backendHost = new URL(backendBaseUrl).host;
   const token = localStorage.getItem('access_token');
+  precheckFaceVisible.value = false;
+  precheckStatus.value = token ? 'checking' : 'unavailable';
+  _precheckReadyStreak = 0;
   if (!token) return;
-
-  // Enable button immediately once camera is active — real check happens at SFace verification
-  precheckFaceVisible.value = true;
-  _precheckFramePending = false;
 
   const url = new URL(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/`);
   url.searchParams.set('token', token);
-  _precheckWs = new WebSocket(url.toString());
-  _precheckWs.onopen = () => {
+  const socket = new WebSocket(url.toString());
+  _precheckWs = socket;
+  _precheckConnectTimer = setTimeout(() => {
+    if (socket !== _precheckWs || precheckStatus.value !== 'checking') return;
+    precheckStatus.value = 'unavailable';
+    precheckFaceVisible.value = false;
+    _stopPrecheckWs();
+  }, 45000);
+  socket.onopen = () => {
+    if (socket !== _precheckWs) return;
     _sendPrecheckFrame();
   };
-  _precheckWs.onmessage = (event) => {
-    _precheckFramePending = false;
+  socket.onmessage = (event) => {
+    if (socket !== _precheckWs) return;
     try {
       const data = JSON.parse(event.data);
-      // Just keep track of face state for display — don't block the button
-      if (data.face_detected && data.label !== 'no_face' && data.label !== 'multiple_people') {
-        precheckFaceVisible.value = true;
-      }
-      // Note: we intentionally do NOT set precheckFaceVisible = false here
-      // The "Continue to Exam" button stays enabled once camera is active.
-      // The actual face identity check happens at the SFace verification step.
-    } catch {}
+      if (data.frame_id !== _precheckFrameId && !data.error) return;
+      clearTimeout(_precheckConnectTimer);
+      clearTimeout(_precheckResponseTimer);
+      _precheckFramePending = false;
+      const nextState = nextPrecheckFaceState(_precheckReadyStreak, data);
+      _precheckReadyStreak = nextState.readyStreak;
+      precheckFaceVisible.value = nextState.faceVisible;
+      precheckStatus.value = nextState.status;
+    } catch {
+      _precheckReadyStreak = 0;
+      precheckStatus.value = 'unavailable';
+      precheckFaceVisible.value = false;
+      _stopPrecheckWs();
+      return;
+    }
     clearTimeout(_precheckWsTimer);
     _precheckWsTimer = setTimeout(_sendPrecheckFrame, 250);
   };
-  _precheckWs.onclose = () => {
+  socket.onclose = () => {
+    if (socket !== _precheckWs) return;
     clearTimeout(_precheckWsTimer);
+    clearTimeout(_precheckConnectTimer);
+    clearTimeout(_precheckResponseTimer);
     _precheckFramePending = false;
+    _precheckReadyStreak = 0;
+    precheckFaceVisible.value = false;
+    precheckStatus.value = 'unavailable';
   };
-  _precheckWs.onerror = () => {
-    // If WS fails, still allow the student to proceed — SFace will do the real check
-    precheckFaceVisible.value = true;
+  socket.onerror = () => {
+    if (socket !== _precheckWs) return;
+    _precheckReadyStreak = 0;
+    precheckFaceVisible.value = false;
+    precheckStatus.value = 'unavailable';
   };
 }
 
 function _sendPrecheckFrame() {
   if (!_precheckWs || _precheckWs.readyState !== WebSocket.OPEN || _precheckFramePending) return;
-  const video = permVideoEl.value;
+  const video = permVideoEl.value || examVideoEl.value;
   if (!video || video.readyState < 2 || !video.videoWidth) {
     _precheckWsTimer = setTimeout(_sendPrecheckFrame, 200);
     return;
@@ -2811,7 +2856,15 @@ function _sendPrecheckFrame() {
   const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
   
   _precheckFramePending = true;
-  _precheckWs.send(JSON.stringify({ image: dataUrl, frame_id: ++_precheckFrameId }));
+  const socket = _precheckWs;
+  const frameId = ++_precheckFrameId;
+  socket.send(JSON.stringify({ image: dataUrl, frame_id: frameId }));
+  _precheckResponseTimer = setTimeout(() => {
+    if (socket !== _precheckWs || frameId !== _precheckFrameId) return;
+    precheckFaceVisible.value = false;
+    precheckStatus.value = 'unavailable';
+    _stopPrecheckWs();
+  }, 45000);
 }
 
 function _warmGazeModel() {
@@ -2824,10 +2877,13 @@ function _warmGazeModel() {
 
 function _stopPrecheckWs() {
   clearTimeout(_precheckWsTimer);
+  clearTimeout(_precheckConnectTimer);
+  clearTimeout(_precheckResponseTimer);
   _precheckFramePending = false;
   if (_precheckWs) {
-    _precheckWs.close();
+    const socket = _precheckWs;
     _precheckWs = null;
+    socket.close();
   }
 }
 
@@ -3526,7 +3582,7 @@ async function performLogout() {
 }
 
 /* Permission modal */
-.perm-card { max-width: 480px !important; padding: 2.5rem 2rem; gap: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; border-radius: 20px !important; }
+.perm-card { max-width: 480px !important; max-height: calc(100vh - 2rem); overflow-y: auto; padding: 2rem; gap: 1rem; display: flex; flex-direction: column; align-items: center; text-align: center; border-radius: 20px !important; }
 .perm-header { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
 .perm-icon-ring { width: 72px; height: 72px; border-radius: 50%; background: #d1fae5; display: flex; align-items: center; justify-content: center; color: #059669; }
 .perm-header h2 { margin: 0; font-size: 1.22rem; color: #0f0f0f; font-weight: 800; }
@@ -3538,7 +3594,11 @@ async function performLogout() {
 .perm-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; display: inline-block; animation: pulseDot 1.2s infinite; }
 @keyframes pulseDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.75); } }
 .perm-error { color: #dc2626; font-size: 0.84rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 0.6rem 1rem; width: 100%; text-align: left; margin: 0; }
-.perm-actions { display: flex; gap: 0.75rem; width: 100%; justify-content: flex-end; }
+.perm-caution { width: 100%; margin: 0; padding: 0.7rem 0.85rem; border: 1px solid #f4d28a; border-radius: 10px; background: #fffbeb; color: #854d0e; font-size: 0.79rem; line-height: 1.5; text-align: left; }
+.perm-face-status { width: 100%; margin: 0; padding: 0.7rem 0.85rem; border-radius: 10px; background: #eff6ff; color: #1e40af; font-size: 0.82rem; font-weight: 600; text-align: left; }
+.perm-face-status--ready { background: #ecfdf5; color: #166534; }
+.perm-face-status--too_far, .perm-face-status--multiple_faces, .perm-face-status--unavailable { background: #fef2f2; color: #b91c1c; }
+.perm-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; width: 100%; justify-content: flex-end; }
 .perm-allow-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.4rem; }
 .perm-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }

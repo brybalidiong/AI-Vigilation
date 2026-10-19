@@ -37,6 +37,12 @@ The next frame is sent after the previous result arrives, so a slow inference
 cannot create a queue of stale frames. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
+Before each exam, the camera precheck uses the WebSocket's normalized face box.
+Continue stays disabled until two consecutive frames show one face at least 16% of
+the frame width and 22% of its height. A smaller or undetected face prompts the
+student to move closer; multiple faces or unavailable inference also block entry.
+The precheck warns that excessive distance can cause no-face violations during
+the exam. Face identity verification still follows the precheck.
 Head yaw keeps the student's left/right sign; iris X is converted from camera
 coordinates before the two are blended. The browser sends a 640-pixel-wide
 gaze JPEG at 0.75 quality to retain iris detail. Strong horizontal geometry
