@@ -2317,11 +2317,11 @@
 .ep-assessment-panel { min-width: 0; }
 .ep-table-scroll {
   width: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 .ep-assessment-table {
   width: 100%;
-  min-width: 0;
+  min-width: 900px;
   table-layout: fixed;
 }
 .ep-assessment-table th,
@@ -2331,12 +2331,13 @@
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.ep-assessment-table th:nth-child(1) { width: 29%; }
-.ep-assessment-table th:nth-child(2) { width: 16%; }
-.ep-assessment-table th:nth-child(3) { width: 13%; }
-.ep-assessment-table th:nth-child(4) { width: 15%; }
-.ep-assessment-table th:nth-child(5) { width: 12%; }
-.ep-assessment-table th:nth-child(6) { width: 15%; }
+.ep-assessment-table th:nth-child(1) { width: 26%; }
+.ep-assessment-table th:nth-child(2) { width: 15%; }
+.ep-assessment-table th:nth-child(3) { width: 11%; }
+.ep-assessment-table th:nth-child(4) { width: 13%; }
+.ep-assessment-table th:nth-child(5) { width: 21%; }
+.ep-assessment-table th:nth-child(6) { width: 14%; }
+.ep-student-results-table { min-width: 800px; }
 .ep-assessment-table .student-row { min-width: 0; }
 .ep-assessment-table .ep-flags {
   width: 100%;

@@ -311,7 +311,7 @@
 
     </div>
 
-    <NoticeModal :model-value="Boolean(errorMsg || successMsg)" :type="errorMsg ? 'error' : 'success'" :title="errorMsg ? 'Could not save' : 'Profile saved'" :message="errorMsg || successMsg" @close="$emit('dismiss-notice')" />
+    <NoticeModal :model-value="Boolean(errorMsg || successMsg)" :type="errorMsg ? 'error' : 'success'" :title="errorMsg ? 'Could not save' : successTitle" :message="errorMsg || successMsg" @close="$emit('dismiss-notice')" />
 
   </div>
 </template>
@@ -333,6 +333,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['save-profile', 'dismiss-notice']);
+const successTitle = computed(() => {
+  if (props.successMsg.includes('face photo could not')) return 'Profile saved; photo needs attention';
+  if (props.successMsg.includes('face photo was submitted')) return 'Face photo submitted';
+  return 'Profile updated';
+});
 
 const isEditing       = ref(false);
 const fileInput       = ref(null);
@@ -828,7 +833,8 @@ function saveFacePhoto() {
 }
 
 .overview-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(60px, 0.8fr) minmax(0, 1.7fr);
   align-items: center;
   gap: 0.85rem;
   padding: 0.8rem 1.5rem;
@@ -850,13 +856,15 @@ function saveFacePhoto() {
 .ov-slate  { background: #f8fafc; color: #475569; }
 
 .ov-label {
-  flex: 1;
+  min-width: 0;
   font-size: 0.82rem;
   color: #94a3b8;
   font-weight: 500;
 }
 
 .ov-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.88rem;
   color: #0f172a;
   font-weight: 600;

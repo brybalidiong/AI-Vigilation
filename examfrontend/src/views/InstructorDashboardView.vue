@@ -785,7 +785,8 @@
                       <p class="ep-results-header__sub">All assigned exams for this section</p>
                     </div>
                   </div>
-                  <table v-if="selectedProgressStudentEmail" class="data-table ep-table">
+                  <div v-if="selectedProgressStudentEmail" class="ep-table-scroll">
+                  <table class="data-table ep-table ep-student-results-table">
                   <thead>
                     <tr>
                       <th>Exam</th>
@@ -872,6 +873,7 @@
                     </tr>
                   </tbody>
                 </table>
+                </div>
                 </div>
               </div>
 
@@ -997,7 +999,7 @@
         </template>
 
         <!-- GLOBAL MESSAGES -->
-        <NoticeModal :model-value="Boolean(message)" :message="message" @close="message = ''" />
+        <NoticeModal :model-value="Boolean(message)" :title="messageTitle" :message="message" @close="message = ''" />
         <p v-if="error" class="error global">{{ error }}</p>
 
       </main>
@@ -1888,7 +1890,7 @@ async function saveAnnouncement() {
     selectedCourse.value.announcements = courseAnnouncement.value;
 
     courseAnnouncement.value = "";
-    message.value = "Announcement posted successfully!";
+    showSuccess('Announcement posted', 'Your announcement is now visible to students.');
   } catch (err) {
     console.error("Failed to save announcement");
     error.value = "Failed to post announcement.";
@@ -1950,7 +1952,7 @@ async function deleteAnnouncement() {
     });
     selectedCourse.value.announcements = "";
     courseAnnouncement.value = "";
-    message.value = "Announcement deleted!";
+    showSuccess('Announcement deleted', 'The announcement was removed.');
   } catch (err) {
     console.error("Failed to delete announcement");
     error.value = "Failed to delete announcement.";
@@ -2180,6 +2182,11 @@ const subjectSetsLoaded = ref(false);
 const examProgressLoaded = ref(false);
 
 const message = ref("");
+const messageTitle = ref("");
+function showSuccess(title, detail) {
+  messageTitle.value = title;
+  message.value = detail;
+}
 const error = ref("");
 
 const activeCourseLabel = computed(() => {
@@ -2809,7 +2816,7 @@ async function createSubject() {
     await apiClient.post("/api/instructor/subjects/", fd, {
       headers: { "Content-Type": "multipart/form-data" }
     });
-    message.value = "Course created.";
+    showSuccess('Course created', 'The new course is ready to manage.');
     newSubjectName.value = "";
     newSubjectCode.value = "";
     newSubjectPhoto.value = null;
@@ -2834,7 +2841,7 @@ async function enrollStudentToSubject() {
       email: subjectStudentEmail.value.trim(),
       student_set_id: selectedSubjectSetId.value,
     });
-    message.value = "Student enrolled.";
+    showSuccess('Student enrolled', 'The student was added to this course.');
     subjectStudentEmail.value = "";
     await fetchSubjects();
     await refreshSetsView();
@@ -2863,7 +2870,7 @@ async function bulkEnrollToSet() {
       { emails: bulkEnrollEmails.value },
     );
     bulkEnrollResult.value = data;
-    message.value = "Batch enrollment finished.";
+    showSuccess('Students enrolled', 'Batch enrollment finished.');
     bulkEnrollEmails.value = "";
     await fetchSubjects();
     await refreshSetsView();
@@ -2896,7 +2903,7 @@ async function onXlsxUpload(event) {
       { headers: { "Content-Type": "multipart/form-data" } },
     );
     bulkEnrollResult.value = data;
-    message.value = `Excel import finished: ${data.added?.length || 0} student(s) enrolled.`;
+    showSuccess('Students imported', `${data.added?.length || 0} student(s) enrolled from the Excel file.`);
     await fetchSubjects();
     await refreshSetsView();
   } catch (err) {
@@ -2956,7 +2963,7 @@ async function createSubjectSet() {
     await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/sets/`, {
       name: newSubjectSetName.value.trim(),
     });
-    message.value = "Set created.";
+    showSuccess('Set created', 'The new set was added to this course.');
     newSubjectSetName.value = "";
     await fetchSubjects();
     await refreshSetsView();
@@ -2982,7 +2989,7 @@ async function removeSubjectSetImpl(setId) {
   message.value = "";
   try {
     await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/sets/${setId}/`);
-    message.value = "Set deleted.";
+    showSuccess('Set deleted', 'The set was removed from this course.');
     if (Number(selectedSubjectSetId.value) === Number(setId)) {
       selectedSubjectSetId.value = "";
       subjectStudents.value = [];
@@ -3009,7 +3016,7 @@ async function removeSubjectStudentImpl(enrollmentId) {
   message.value = "";
   try {
     await apiClient.delete(`/api/instructor/students/${enrollmentId}/`);
-    message.value = "Student removed from set.";
+    showSuccess('Student removed from set', 'The student is no longer assigned to this set.');
     await refreshSetsView();
   } catch (err) {
     error.value = err?.response?.data?.error || "Unable to remove student.";
@@ -3032,7 +3039,7 @@ async function deleteSubjectImpl() {
   message.value = "";
   try {
     await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/`);
-    message.value = "Course deleted successfully.";
+    showSuccess('Course deleted', 'The course was removed.');
     goCourses(); // Return to course list
     await fetchSubjects(); // Refresh list
   } catch (err) {
@@ -3070,7 +3077,7 @@ async function createExamSet() {
     payload.append("assigned_sets", JSON.stringify(setsArray));
     if (newExamFile.value) payload.append("exam_file", newExamFile.value);
     await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/`, payload);
-    message.value = "Exam uploaded.";
+    showSuccess('Exam uploaded', 'The exam was added as a draft.');
     newExamTitle.value = "";
     newExamStartAt.value = "";
     newExamDueAt.value = "";
@@ -3105,7 +3112,7 @@ async function removeExamSetImpl(examSetId) {
   message.value = "";
   try {
     await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${examSetId}/`);
-    message.value = "Exam and related student records deleted.";
+    showSuccess('Exam deleted', 'The exam and related student records were removed.');
     // Drop local progress rows for this exam immediately, then refresh lists.
     examProgressRows.value = (examProgressRows.value || []).filter(
       (row) => Number(row.exam_set_id) !== Number(examSetId),
@@ -3207,7 +3214,7 @@ async function saveExamRestrictions() {
       { proctoring_restrictions: { ...examRestrictions.value } },
     );
     examRestrictions.value = { ...data.proctoring_restrictions };
-    message.value = 'Proctoring restrictions saved.';
+    showSuccess('Proctoring restrictions saved', 'The exam’s proctoring settings were updated.');
   } catch (err) {
     error.value = err?.response?.data?.error || 'Failed to save proctoring restrictions.';
     await fetchExamQuestions();
@@ -3247,7 +3254,7 @@ async function addExamQuestion() {
   error.value = "";
   try {
     await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/`, payload);
-    message.value = "Question added.";
+    showSuccess('Question added', 'The question was added to the exam.');
     newQ.value = { type: newQ.value.type, text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: newQ.value.caseSensitive };
     await fetchExamQuestions();
   } catch (err) {
@@ -3263,7 +3270,7 @@ async function deleteExamQuestion(questionId) {
   error.value = "";
   try {
     await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/${questionId}/`);
-    message.value = "Question deleted successfully.";
+    showSuccess('Question deleted', 'The question was removed from the exam.');
     await fetchExamQuestions();
   } catch (err) {
     error.value = "Failed to delete question.";
@@ -3330,7 +3337,7 @@ async function processBulkQuestions() {
     }
     bulkText.value = "";
     aikenFileName.value = "";
-    message.value = `Successfully imported ${addedCount} questions.`;
+    showSuccess('Questions imported', `${addedCount} question(s) were added to the exam.`);
     error.value = "";
     await fetchExamQuestions();
   } catch (err) {
@@ -3347,7 +3354,7 @@ async function finalizeExam() {
   error.value = "";
   try {
     await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/finalize/`);
-    message.value = "Exam finalized successfully. Students can now see it on their dashboard.";
+    showSuccess('Exam published', 'Students can now see the exam on their dashboard.');
     examIsFinal.value = true;
     await fetchExamQuestions();
     await fetchExamSets();

@@ -350,7 +350,7 @@
           </div>
         </section>
       </div>
-      <NoticeModal :model-value="Boolean(actionSuccess)" title="Update complete" :message="actionSuccess" @close="actionSuccess = ''" />
+      <NoticeModal :model-value="Boolean(actionSuccess)" :title="actionSuccessTitle" :message="actionSuccess" @close="actionSuccess = ''" />
       <NoticeModal :model-value="Boolean(actionError)" type="error" title="Action failed" :message="actionError" @close="actionError = ''" />
     </div>
   </div>
@@ -407,6 +407,7 @@ const showAddStudent = ref(false);
 const studentLoading = ref(false);
 const studentError = ref("");
 const actionSuccess = ref("");
+const actionSuccessTitle = ref("");
 const actionError = ref("");
 const loadError = ref("");
 const reviewStudent = ref(null);
@@ -414,8 +415,9 @@ const studentStatusFilter = ref('all');
 const pendingFaceCount = computed(() => students.value.filter((student) => student.face_status === 'pending').length);
 const activeInstructorCount = computed(() => instructors.value.filter((instructor) => instructor.is_active).length);
 const enrolledStudentCount = computed(() => students.value.filter((student) => student.is_enrolled).length);
-function showActionSuccess(text) {
+function showActionSuccess(title, text) {
   actionError.value = '';
+  actionSuccessTitle.value = title;
   actionSuccess.value = text;
 }
 function showActionError(text) {
@@ -533,7 +535,7 @@ async function registerInstructor() {
   instructorLoading.value = true;
   try {
     const res = await axios.post(`${backendBaseUrl}/api/admin/instructors/`, newInstructor.value, { headers: getHeaders() });
-    showActionSuccess(`Instructor ${res.data.email} was registered.`);
+    showActionSuccess('Instructor registered', `Instructor ${res.data.email} was registered.`);
     instructors.value.unshift(res.data);
     clearInstructorForm();
     showAddInstructor.value = false;
@@ -562,7 +564,7 @@ async function updateInstructorActive(ins, active) {
   try {
     const { data } = await axios.patch(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { is_active: active }, { headers: getHeaders() });
     ins.is_active = data.is_active;
-    showActionSuccess(active ? 'Instructor access restored.' : 'Instructor access deactivated.');
+    showActionSuccess(active ? 'Instructor access restored' : 'Instructor access deactivated', active ? 'Instructor access restored.' : 'Instructor access deactivated.');
   } catch (e) {
     showActionError(e?.response?.data?.error || 'Could not update instructor access.');
   } finally {
@@ -580,7 +582,7 @@ async function enrollStudent() {
   studentLoading.value = true;
   try {
     const res = await axios.post(`${backendBaseUrl}/api/admin/students/`, newStudent.value, { headers: getHeaders() });
-    showActionSuccess(res.data.created ? `Student ${res.data.email} was enrolled.` : `Student ${res.data.email} enrollment was updated.`);
+    showActionSuccess(res.data.created ? 'Student enrolled' : 'Student enrollment updated', res.data.created ? `Student ${res.data.email} was enrolled.` : `Student ${res.data.email} enrollment was updated.`);
     const existing = students.value.find((s) => s.id === res.data.id);
     if (existing) Object.assign(existing, res.data);
     else students.value.unshift(res.data);
@@ -611,7 +613,7 @@ async function updateStudentEnrollment(st, enrolled) {
   try {
     const { data } = await axios.patch(`${backendBaseUrl}/api/admin/students/${st.id}/`, { action: 'set_enrollment', is_enrolled: enrolled }, { headers: getHeaders() });
     st.is_enrolled = data.is_enrolled;
-    showActionSuccess(enrolled ? 'Student access restored.' : 'Student access disabled.');
+    showActionSuccess(enrolled ? 'Student access restored' : 'Student access disabled', enrolled ? 'Student access restored.' : 'Student access disabled.');
   } catch (e) {
     showActionError(e?.response?.data?.error || 'Could not update student access.');
   } finally {
@@ -632,7 +634,7 @@ async function approveFace(st) {
     st.face_pending_photo_url = null;
     st.face_reupload_allowed = false;
     reviewStudent.value = null;
-    showActionSuccess('Face photo approved.');
+    showActionSuccess('Face photo approved', 'The student’s face photo was approved.');
   } catch (e) {
     showActionError(e?.response?.data?.error || 'Could not approve face photo.');
   } finally {
@@ -651,7 +653,7 @@ async function rejectFace(st) {
     st.face_status = res.data.face_status;
     st.face_pending_photo_url = null;
     reviewStudent.value = null;
-    showActionSuccess('Face photo rejected. The student can submit another.');
+    showActionSuccess('Face photo rejected', 'The student can submit another face photo.');
   } catch (e) {
     showActionError(e?.response?.data?.error || 'Could not reject face photo.');
   } finally {
@@ -670,6 +672,7 @@ async function toggleReupload(st, event) {
     st.face_reupload_allowed = res.data.face_reupload_allowed;
     st.face_status = res.data.face_status;
     showActionSuccess(
+      res.data.face_reupload_allowed ? 'Photo re-upload enabled' : 'Photo re-upload disabled',
       res.data.face_reupload_allowed
         ? 'Face photo re-upload enabled.'
         : 'Face photo re-upload disabled.'
