@@ -303,13 +303,14 @@ def _gaze_strike_counts(submission, force_refresh: bool = False):
 
 
 def _bulk_gaze_strike_counts(submissions):
-    """Load current-attempt gaze counts for many submissions in one query."""
+    """Load current-attempt gaze and gadget flag counts in one query."""
     submissions = list(submissions)
     attempts = {submission.id: submission.attempt_count for submission in submissions}
     counts = {
         submission.id: {
             'gaze_violation_count': 0,
             'gaze_no_face_count': 0,
+            'gadget_detection_count': 0,
         }
         for submission in submissions
     }
@@ -322,6 +323,7 @@ def _bulk_gaze_strike_counts(submissions):
             event_type__in=(
                 ExamProctoringEvent.EVENT_GAZE_VIOLATION,
                 ExamProctoringEvent.EVENT_GAZE_NO_FACE,
+                ExamProctoringEvent.EVENT_GADGET_DETECTED,
             ),
         )
         .values('submission_id', 'attempt_number', 'event_type')
@@ -331,11 +333,11 @@ def _bulk_gaze_strike_counts(submissions):
         submission_id = row['submission_id']
         if row['attempt_number'] != attempts.get(submission_id):
             continue
-        key = (
-            'gaze_violation_count'
-            if row['event_type'] == ExamProctoringEvent.EVENT_GAZE_VIOLATION
-            else 'gaze_no_face_count'
-        )
+        key = {
+            ExamProctoringEvent.EVENT_GAZE_VIOLATION: 'gaze_violation_count',
+            ExamProctoringEvent.EVENT_GAZE_NO_FACE: 'gaze_no_face_count',
+            ExamProctoringEvent.EVENT_GADGET_DETECTED: 'gadget_detection_count',
+        }[row['event_type']]
         counts[submission_id][key] = row['total']
         _GAZE_STRIKE_CACHE[(submission_id, row['attempt_number'])] = counts[submission_id]
     return counts
@@ -1921,10 +1923,12 @@ def subject_exam_progress(request, subject_id):
             sub = submission_map.get((exam.id, email.lower()))
             gaze_v = 0
             gaze_nf = 0
+            gadget_count = 0
             if sub:
                 strikes = gaze_counts[sub.id]
                 gaze_v = strikes['gaze_violation_count']
                 gaze_nf = strikes['gaze_no_face_count']
+                gadget_count = strikes['gadget_detection_count']
             graded_subjective_count = graded_subjective_counts.get((exam.id, email), 0)
             pending_subjective_count = max(
                 0,
@@ -1949,6 +1953,7 @@ def subject_exam_progress(request, subject_id):
                     'tab_switches': sub.tab_switches if sub else 0,
                     'gaze_violation_count': gaze_v,
                     'gaze_no_face_count': gaze_nf,
+                    'gadget_detection_count': gadget_count,
                     'subjective_count': len(subjective_question_ids),
                     'pending_subjective_count': pending_subjective_count,
                     'manual_grading_complete': bool(subjective_question_ids) and pending_subjective_count == 0,
@@ -3674,6 +3679,35 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
 # ---------------------------------------------------------------------------
 # Face Verification Endpoints
 # ---------------------------------------------------------------------------
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def student_precheck_face(request, exam_id):
+    """Check webcam face size before an exam without starting an attempt."""
+    profile = getattr(request.user, 'profile', None)
+    if not request.user.is_active or not profile or profile.role != 'student' or not profile.is_enrolled:
+        return Response({'error': 'Student access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    exam_set = ExamSet.objects.select_related('subject').filter(pk=exam_id, is_final=True).first()
+    if not exam_set:
+        return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if not _student_can_access_exam(request.user.email, exam_set):
+        return Response({'error': 'You are not enrolled in this exam.'}, status=status.HTTP_403_FORBIDDEN)
+
+    image = request.FILES.get('image')
+    if not image:
+        return Response({'error': 'Webcam image is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    from .face_service import detect_face_position_bytes
+    try:
+        return Response(detect_face_position_bytes(image.read()))
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Face precheck failed')
+        return Response({'error': 'Face check unavailable. Please retry.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

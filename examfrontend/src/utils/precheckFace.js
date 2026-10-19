@@ -1,4 +1,4 @@
-// Face boxes from the gaze socket are [x1, y1, x2, y2] relative to the frame.
+// Face boxes are [x1, y1, x2, y2] relative to the webcam frame.
 // A face smaller than this is likely to disappear during the exam as the student moves.
 export const MIN_PRECHECK_FACE_WIDTH = 0.16;
 export const MIN_PRECHECK_FACE_HEIGHT = 0.22;

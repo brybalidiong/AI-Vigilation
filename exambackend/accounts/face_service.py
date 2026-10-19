@@ -121,6 +121,37 @@ def _load_image_bytes(raw: bytes) -> np.ndarray | None:
     return img
 
 
+def detect_face_position_bytes(image_bytes):
+    """Return one YuNet face box normalized to the webcam frame, without storing it."""
+    img = _load_image_bytes(image_bytes)
+    if img is None:
+        raise ValueError('Could not read webcam image.')
+    height, width = img.shape[:2]
+    scale = min(1.0, _YUNET_MAX_SIZE / max(height, width))
+    resized_width = max(1, round(width * scale))
+    resized_height = max(1, round(height * scale))
+    detector = _get_detector(resized_width, resized_height)
+    if detector is None:
+        raise RuntimeError('Face detection model unavailable.')
+    resized = cv2.resize(img, (resized_width, resized_height)) if scale != 1.0 else img
+    _, faces = detector.detect(resized)
+    if faces is None or len(faces) == 0:
+        return {'label': 'no_face', 'face_detected': False, 'face_bbox': None}
+    if len(faces) > 1:
+        return {'label': 'multiple_people', 'face_detected': True, 'face_bbox': None}
+
+    x, y, box_width, box_height = [float(value) for value in faces[0][:4]]
+    x1 = max(0.0, min(1.0, x / resized_width))
+    y1 = max(0.0, min(1.0, y / resized_height))
+    x2 = max(0.0, min(1.0, (x + box_width) / resized_width))
+    y2 = max(0.0, min(1.0, (y + box_height) / resized_height))
+    return {
+        'label': 'normal',
+        'face_detected': True,
+        'face_bbox': [round(x1, 4), round(y1, 4), round(x2, 4), round(y2, 4)],
+    }
+
+
 def _get_face_features(img, label="image"):
     """
     Detects the largest face using YuNet and extracts a 128-dim SFace embedding.

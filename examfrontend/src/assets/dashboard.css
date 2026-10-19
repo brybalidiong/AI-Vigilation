@@ -2317,33 +2317,41 @@
 .ep-assessment-panel { min-width: 0; }
 .ep-table-scroll {
   width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
 }
-.ep-assessment-table {
+.ep-assessment-table,
+.ep-student-results-table {
   width: 100%;
-  min-width: 900px;
+  min-width: 0;
   table-layout: fixed;
 }
-.ep-assessment-table th,
-.ep-assessment-table td {
-  padding-right: clamp(0.5rem, 1.5vw, 1.25rem);
-  padding-left: clamp(0.5rem, 1.5vw, 1.25rem);
+.ep-table th,
+.ep-table td {
+  padding-right: clamp(0.4rem, 0.8vw, 0.8rem);
+  padding-left: clamp(0.4rem, 0.8vw, 0.8rem);
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.ep-assessment-table th:nth-child(1) { width: 26%; }
-.ep-assessment-table th:nth-child(2) { width: 15%; }
+.ep-assessment-table th:nth-child(1) { width: 25%; }
+.ep-assessment-table th:nth-child(2) { width: 14%; }
 .ep-assessment-table th:nth-child(3) { width: 11%; }
 .ep-assessment-table th:nth-child(4) { width: 13%; }
-.ep-assessment-table th:nth-child(5) { width: 21%; }
-.ep-assessment-table th:nth-child(6) { width: 14%; }
-.ep-student-results-table { min-width: 800px; }
+.ep-assessment-table th:nth-child(5) { width: 24%; }
+.ep-assessment-table th:nth-child(6) { width: 13%; }
+.ep-student-results-table th:nth-child(1) { width: 19%; }
+.ep-student-results-table th:nth-child(2) { width: 14%; }
+.ep-student-results-table th:nth-child(3) { width: 9%; }
+.ep-student-results-table th:nth-child(4) { width: 12%; }
+.ep-student-results-table th:nth-child(5) { width: 31%; }
+.ep-student-results-table th:nth-child(6) { width: 15%; }
+.ep-student-results-table .ep-exam-name { max-width: none; }
+.ep-table .status-badge { max-width: 100%; padding: 0.3rem 0.45rem; font-size: 0.68rem; white-space: normal; overflow-wrap: anywhere; justify-content: center; text-align: center; }
 .ep-assessment-table .student-row { min-width: 0; }
-.ep-assessment-table .ep-flags {
+.ep-table .ep-flags {
   width: 100%;
   min-width: 0;
 }
-.ep-assessment-table .ep-flag {
+.ep-table .ep-flag {
   box-sizing: border-box;
   max-width: 100%;
   justify-content: center;
@@ -2352,7 +2360,7 @@
   overflow-wrap: anywhere;
   line-height: 1.2;
 }
-.ep-assessment-table .ep-report-btn {
+.ep-table .ep-report-btn {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
@@ -2447,11 +2455,11 @@
 
 .ep-split {
   display: grid;
-  grid-template-columns: minmax(240px, 280px) 1fr;
+  grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .ep-split { grid-template-columns: 1fr; }
 }
 
@@ -2549,6 +2557,7 @@
 }
 
 .ep-results-panel {
+  min-width: 0;
   background: #fff;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);

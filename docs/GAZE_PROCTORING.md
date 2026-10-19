@@ -31,13 +31,16 @@ python manage.py migrate
 ## Frontend
 
 During an exam, `StudentDashboardView.vue` streams one JPEG at a time over the gaze
-WebSocket. Both the camera precheck and the exam stream send a student JWT;
-the server accepts only an active, enrolled student assigned to a published exam.
+WebSocket. The camera precheck uses an authenticated HTTP request, while the
+exam gaze stream sends a student JWT through its WebSocket; both require an
+active, enrolled student assigned to a published exam.
 The next frame is sent after the previous result arrives, so a slow inference
 cannot create a queue of stale frames. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
-Before each exam, the camera precheck uses the WebSocket's normalized face box.
+Before each exam, the camera precheck posts webcam frames to the authenticated
+`/api/student/exams/<exam_id>/precheck-face/` endpoint. YuNet returns a
+normalized face box without starting an exam attempt or storing the frame.
 Continue stays disabled until two consecutive frames show one face at least 16% of
 the frame width and 22% of its height. A smaller or undetected face prompts the
 student to move closer; multiple faces or unavailable inference also block entry.

@@ -324,7 +324,7 @@
 
         <div class="perm-actions">
           <button class="ghost-btn" @click="cancelPermissionModal" :disabled="permissionLoading">Cancel</button>
-          <button v-if="mediaStreamActive && precheckStatus === 'unavailable'" class="ghost-btn" @click="_startPrecheckWs">Retry face check</button>
+          <button v-if="mediaStreamActive && precheckStatus === 'unavailable'" class="ghost-btn" @click="_startPrecheckFaceCheck">Retry face check</button>
           
           <template v-if="mediaStreamActive">
              <button class="primary-btn perm-allow-btn" @click="proceedFromPermissionModal()" :disabled="!precheckFaceVisible">
@@ -2233,12 +2233,9 @@ const precheckMessage = computed(() => ({
   multiple_faces: 'More than one face detected. Only you should be visible.',
   unavailable: 'Face check unavailable. Retry the check before continuing.',
 })[precheckStatus.value]);
-let _precheckWs = null;
-let _precheckWsTimer = null;
-let _precheckConnectTimer = null;
-let _precheckResponseTimer = null;
-let _precheckFramePending = false;
-let _precheckFrameId = 0;
+let _precheckTimer = null;
+let _precheckController = null;
+let _precheckRunId = 0;
 let _precheckReadyStreak = 0;
 
 // --- Face Verification state ---
@@ -2613,7 +2610,7 @@ async function openTakeExam(exam) {
   if (mediaStreamActive.value && activeMediaStream) {
     await nextTick();
     if (permVideoEl.value) permVideoEl.value.srcObject = activeMediaStream;
-    _startPrecheckWs();
+    _startPrecheckFaceCheck();
   }
 }
 
@@ -2632,7 +2629,7 @@ async function requestMediaPermissions() {
     if (permVideoEl.value) {
       permVideoEl.value.srcObject = stream;
     }
-    _startPrecheckWs();
+    _startPrecheckFaceCheck();
   } catch (err) {
     let msg = "Camera or microphone access was denied.";
     if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
@@ -2652,8 +2649,7 @@ async function requestMediaPermissions() {
 async function proceedFromPermissionModal() {
   if (!mediaStreamActive.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') return;
   showPermissionModal.value = false;
-  // Keep the precheck socket alive while face verification runs. Its first
-  // inference warms the gaze model before the exam socket is opened.
+  // Keep checking face position while identity verification runs.
   fvAttemptsLeft.value = FV_MAX_ATTEMPTS - 1;
   await _runFaceVerification();
 }
@@ -2747,7 +2743,7 @@ function _onFaceVerifyRetry() {
 }
 
 function _onFaceVerifyCancel() {
-  _stopPrecheckWs();
+  _stopPrecheckFaceCheck();
   fvShow.value = false;
   pendingExam = null;
   // Stop the media stream since the student cancelled.
@@ -2759,7 +2755,7 @@ function _onFaceVerifyCancel() {
 }
 
 function cancelPermissionModal() {
-  _stopPrecheckWs();
+  _stopPrecheckFaceCheck();
   showPermissionModal.value = false;
   permissionError.value = "";
   pendingExam = null;
@@ -2771,100 +2767,56 @@ function cancelPermissionModal() {
   }
 }
 
-function _startPrecheckWs() {
-  if (!pendingExam || !permVideoEl.value) return;
-  _stopPrecheckWs();
-  const examId = pendingExam.id;
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const backendHost = new URL(backendBaseUrl).host;
-  const token = localStorage.getItem('access_token');
+function _startPrecheckFaceCheck() {
+  if (!pendingExam || !activeMediaStream) return;
+  _stopPrecheckFaceCheck();
   precheckFaceVisible.value = false;
-  precheckStatus.value = token ? 'checking' : 'unavailable';
+  precheckStatus.value = 'checking';
   _precheckReadyStreak = 0;
-  if (!token) return;
-
-  const url = new URL(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/`);
-  url.searchParams.set('token', token);
-  const socket = new WebSocket(url.toString());
-  _precheckWs = socket;
-  _precheckConnectTimer = setTimeout(() => {
-    if (socket !== _precheckWs || precheckStatus.value !== 'checking') return;
-    precheckStatus.value = 'unavailable';
-    precheckFaceVisible.value = false;
-    _stopPrecheckWs();
-  }, 45000);
-  socket.onopen = () => {
-    if (socket !== _precheckWs) return;
-    _sendPrecheckFrame();
-  };
-  socket.onmessage = (event) => {
-    if (socket !== _precheckWs) return;
-    try {
-      const data = JSON.parse(event.data);
-      if (data.frame_id !== _precheckFrameId && !data.error) return;
-      clearTimeout(_precheckConnectTimer);
-      clearTimeout(_precheckResponseTimer);
-      _precheckFramePending = false;
-      const nextState = nextPrecheckFaceState(_precheckReadyStreak, data);
-      _precheckReadyStreak = nextState.readyStreak;
-      precheckFaceVisible.value = nextState.faceVisible;
-      precheckStatus.value = nextState.status;
-    } catch {
-      _precheckReadyStreak = 0;
-      precheckStatus.value = 'unavailable';
-      precheckFaceVisible.value = false;
-      _stopPrecheckWs();
-      return;
-    }
-    clearTimeout(_precheckWsTimer);
-    _precheckWsTimer = setTimeout(_sendPrecheckFrame, 250);
-  };
-  socket.onclose = () => {
-    if (socket !== _precheckWs) return;
-    clearTimeout(_precheckWsTimer);
-    clearTimeout(_precheckConnectTimer);
-    clearTimeout(_precheckResponseTimer);
-    _precheckFramePending = false;
-    _precheckReadyStreak = 0;
-    precheckFaceVisible.value = false;
-    precheckStatus.value = 'unavailable';
-  };
-  socket.onerror = () => {
-    if (socket !== _precheckWs) return;
-    _precheckReadyStreak = 0;
-    precheckFaceVisible.value = false;
-    precheckStatus.value = 'unavailable';
-  };
+  _checkPrecheckFace(_precheckRunId);
 }
 
-function _sendPrecheckFrame() {
-  if (!_precheckWs || _precheckWs.readyState !== WebSocket.OPEN || _precheckFramePending) return;
-  const video = permVideoEl.value || examVideoEl.value;
+async function _checkPrecheckFace(runId) {
+  if (runId !== _precheckRunId || !pendingExam || (!showPermissionModal.value && !fvShow.value)) return;
+  const video = permVideoEl.value?.videoWidth ? permVideoEl.value : examVideoEl.value;
   if (!video || video.readyState < 2 || !video.videoWidth) {
-    _precheckWsTimer = setTimeout(_sendPrecheckFrame, 200);
+    _precheckTimer = setTimeout(() => _checkPrecheckFace(runId), 250);
     return;
   }
-  
-  const canvas = document.createElement("canvas");
-  const targetWidth = 320;
-  const scale = targetWidth / video.videoWidth;
-  canvas.width = targetWidth;
-  canvas.height = video.videoHeight * scale;
-  
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-  
-  _precheckFramePending = true;
-  const socket = _precheckWs;
-  const frameId = ++_precheckFrameId;
-  socket.send(JSON.stringify({ image: dataUrl, frame_id: frameId }));
-  _precheckResponseTimer = setTimeout(() => {
-    if (socket !== _precheckWs || frameId !== _precheckFrameId) return;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.min(640, video.videoWidth);
+  canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+  if (runId !== _precheckRunId) return;
+  if (!blob) {
+    precheckStatus.value = 'unavailable';
+    precheckFaceVisible.value = false;
+    return;
+  }
+  const form = new FormData();
+  form.append('image', blob, 'precheck.jpg');
+  _precheckController = new AbortController();
+  try {
+    const { data } = await api.post(
+      `/api/student/exams/${pendingExam.id}/precheck-face/`, form,
+      { headers: { 'Content-Type': 'multipart/form-data' }, signal: _precheckController.signal, timeout: 20000 },
+    );
+    if (runId !== _precheckRunId) return;
+    const nextState = nextPrecheckFaceState(_precheckReadyStreak, data);
+    _precheckReadyStreak = nextState.readyStreak;
+    precheckFaceVisible.value = nextState.faceVisible;
+    precheckStatus.value = nextState.status;
+    _precheckTimer = setTimeout(() => _checkPrecheckFace(runId), 650);
+  } catch (err) {
+    if (runId !== _precheckRunId) return;
+    _precheckReadyStreak = 0;
     precheckFaceVisible.value = false;
     precheckStatus.value = 'unavailable';
-    _stopPrecheckWs();
-  }, 45000);
+  } finally {
+    if (runId === _precheckRunId) _precheckController = null;
+  }
 }
 
 function _warmGazeModel() {
@@ -2875,20 +2827,15 @@ function _warmGazeModel() {
   });
 }
 
-function _stopPrecheckWs() {
-  clearTimeout(_precheckWsTimer);
-  clearTimeout(_precheckConnectTimer);
-  clearTimeout(_precheckResponseTimer);
-  _precheckFramePending = false;
-  if (_precheckWs) {
-    const socket = _precheckWs;
-    _precheckWs = null;
-    socket.close();
-  }
+function _stopPrecheckFaceCheck() {
+  _precheckRunId++;
+  clearTimeout(_precheckTimer);
+  _precheckController?.abort();
+  _precheckController = null;
 }
 
 async function _doOpenExam(exam) {
-  _stopPrecheckWs();
+  _stopPrecheckFaceCheck();
   takingExam.value = exam;
   takingLoading.value = true;
   examQuestions.value = [];

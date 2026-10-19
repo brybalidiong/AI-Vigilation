@@ -43,6 +43,7 @@ from .views import (
     student_sets,
     update_profile,
     admin_upload_face_photo,
+    student_precheck_face,
     student_verify_face,
 )
 
@@ -91,6 +92,7 @@ urlpatterns = [
     path('student/exams/<int:exam_id>/proctoring/gadgets/', student_detect_gadgets),
     path('student/exams/<int:exam_id>/my-answers/', student_my_answers),
     # Face verification
+    path('student/exams/<int:exam_id>/precheck-face/', student_precheck_face),
     path('admin/students/<int:student_id>/face-photo/', admin_upload_face_photo),
     path('student/exams/<int:exam_id>/verify-face/', student_verify_face),
 ]

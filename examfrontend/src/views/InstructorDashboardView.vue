@@ -829,19 +829,15 @@
                       <!-- Flags / proctoring summary -->
                       <td>
                         <div v-if="!row.is_done" class="ep-dash">—</div>
-                        <div v-else-if="row.terminated" class="ep-flags">
-                          <span class="ep-flag ep-flag--critical">
+                        <div v-else-if="row.terminated || row.tab_switches > 0 || row.gaze_violation_count > 0 || row.gaze_no_face_count > 0 || row.gadget_detection_count > 0" class="ep-flags">
+                          <span v-if="row.terminated" class="ep-flag ep-flag--critical">
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20z"/></svg>
                             Auto-terminated
                           </span>
                           <span v-if="row.tab_switches" class="ep-flag ep-flag--warn">{{ row.tab_switches }} tab{{ row.tab_switches !== 1 ? 's' : '' }}</span>
                           <span v-if="row.gaze_violation_count" class="ep-flag ep-flag--warn">{{ row.gaze_violation_count }} gaze</span>
                           <span v-if="row.gaze_no_face_count" class="ep-flag ep-flag--warn">{{ row.gaze_no_face_count }} hidden</span>
-                        </div>
-                        <div v-else-if="row.tab_switches > 0 || row.gaze_violation_count > 0 || row.gaze_no_face_count > 0" class="ep-flags">
-                          <span v-if="row.tab_switches" class="ep-flag ep-flag--warn">{{ row.tab_switches }} tab{{ row.tab_switches !== 1 ? 's' : '' }}</span>
-                          <span v-if="row.gaze_violation_count" class="ep-flag ep-flag--warn">{{ row.gaze_violation_count }} gaze</span>
-                          <span v-if="row.gaze_no_face_count" class="ep-flag ep-flag--warn">{{ row.gaze_no_face_count }} hidden</span>
+                          <span v-if="row.gadget_detection_count" class="ep-flag ep-flag--warn">{{ row.gadget_detection_count }} gadget{{ row.gadget_detection_count !== 1 ? 's' : '' }}</span>
                         </div>
                         <div v-else class="ep-clean">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -949,13 +945,12 @@
                         </td>
                         <td>
                           <div v-if="!row.is_done" class="ep-dash">—</div>
-                          <div v-else-if="row.terminated" class="ep-flags">
-                            <span class="ep-flag ep-flag--critical">Auto-terminated</span>
-                          </div>
-                          <div v-else-if="row.tab_switches > 0 || row.gaze_violation_count > 0 || row.gaze_no_face_count > 0" class="ep-flags">
+                          <div v-else-if="row.terminated || row.tab_switches > 0 || row.gaze_violation_count > 0 || row.gaze_no_face_count > 0 || row.gadget_detection_count > 0" class="ep-flags">
+                            <span v-if="row.terminated" class="ep-flag ep-flag--critical">Auto-terminated</span>
                             <span v-if="row.tab_switches" class="ep-flag ep-flag--warn">{{ row.tab_switches }} tab{{ row.tab_switches !== 1 ? 's' : '' }}</span>
                             <span v-if="row.gaze_violation_count" class="ep-flag ep-flag--warn">{{ row.gaze_violation_count }} gaze</span>
                             <span v-if="row.gaze_no_face_count" class="ep-flag ep-flag--warn">{{ row.gaze_no_face_count }} hidden</span>
+                            <span v-if="row.gadget_detection_count" class="ep-flag ep-flag--warn">{{ row.gadget_detection_count }} gadget{{ row.gadget_detection_count !== 1 ? 's' : '' }}</span>
                           </div>
                           <div v-else class="ep-clean">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
