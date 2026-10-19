@@ -67,15 +67,6 @@
             </template>
           </div>
           <div class="header-actions">
-            <button
-              v-if="activeNav === 'courses' && isCourseDetailRoute"
-              type="button"
-              class="cw-danger-btn cw-danger-btn--light"
-              @click="requestDeleteSubject"
-              id="delete-course-btn-header"
-            >
-              Delete course
-            </button>
             <div class="role-pill">Instructor</div>
           </div>
         </header>
@@ -316,17 +307,22 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                   Back
                 </button>
+                <details ref="courseActionsMenu" class="cw-actions-menu" @keydown.esc.prevent="closeCourseActionsMenu">
+                  <summary aria-label="Course actions" title="Course actions">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
+                  </summary>
+                  <div class="cw-actions-menu__popup">
+                    <button type="button" id="delete-course-btn" @click="requestDeleteSubject">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                      Delete course
+                    </button>
+                  </div>
+                </details>
               </div>
               <div class="cw-hero__main">
                 <div>
                   <div class="cw-hero__code">{{ selectedCourse?.code || '' }}</div>
                   <h2 class="cw-hero__title">{{ selectedCourse?.name || '' }}</h2>
-                </div>
-                <div class="cw-hero__actions">
-                  <button type="button" class="cw-danger-btn" @click="requestDeleteSubject" id="delete-course-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-                    Delete
-                  </button>
                 </div>
               </div>
               <div class="cw-hero__stats">
@@ -1791,7 +1787,7 @@
   </div>
 </template>
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
@@ -2473,6 +2469,22 @@ function courseBannerClass(index) {
 
 const isCourseDetailRoute = computed(() => Boolean(route.params.courseId));
 const isSetDetailRoute = computed(() => Boolean(route.params.courseId && route.params.setId));
+const courseActionsMenu = ref(null);
+
+function closeCourseActionsMenu() {
+  if (!courseActionsMenu.value) return;
+  courseActionsMenu.value.open = false;
+  courseActionsMenu.value.querySelector('summary')?.focus();
+}
+
+function closeCourseActionsMenuOnOutsideClick(event) {
+  if (courseActionsMenu.value && !courseActionsMenu.value.contains(event.target)) {
+    courseActionsMenu.value.open = false;
+  }
+}
+
+onMounted(() => document.addEventListener('pointerdown', closeCourseActionsMenuOnOutsideClick));
+onUnmounted(() => document.removeEventListener('pointerdown', closeCourseActionsMenuOnOutsideClick));
 
 function goDashboard() {
   router.push("/instructor/dashboard");
@@ -3025,6 +3037,7 @@ async function removeSubjectStudentImpl(enrollmentId) {
 
 function requestDeleteSubject() {
   if (!selectedSubjectId.value) return;
+  closeCourseActionsMenu();
   openConfirm({
     title: "Delete this course?",
     message: "This will permanently delete the course, all exams, sets, and student enrollments. This cannot be undone.",
