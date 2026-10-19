@@ -1,20 +1,23 @@
 <template>
-  <div class="app-wrapper">
+  <div class="app-wrapper dashboard-role dashboard-role--admin">
     <div class="dashboard-container">
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <span class="sidebar-brand-name">AI-Vigilation</span>
+          <span class="sidebar-brand-mark" aria-hidden="true">AI</span>
+          <span class="sidebar-brand-lockup">
+            <span class="sidebar-brand-name">AI-Vigilation</span>
+            <span class="sidebar-brand-context">Admin workspace</span>
+          </span>
         </div>
-        
-        <div class="sidebar-section-label">Administration</div>
-        
-        <nav class="sidebar-nav">
+
+        <nav class="sidebar-nav" aria-label="Admin navigation">
           <button
             v-for="tab in tabs"
             :key="tab.key"
             class="nav-item"
             :class="{ active: activeTab === tab.key }"
+            :aria-pressed="activeTab === tab.key"
             @click="activeTab = tab.key"
             :id="`nav-${tab.key}`"
           >
@@ -29,7 +32,7 @@
             <div class="sidebar-user-avatar">A</div>
             <div class="sidebar-user-text">
               <span class="sidebar-user-name">Administrator</span>
-              <span class="sidebar-user-role">System Admin</span>
+              <span class="sidebar-user-role">System admin</span>
             </div>
           </div>
           <button class="nav-item logout-nav" @click="requestLogout" id="logout-btn" title="Logout">
@@ -44,13 +47,14 @@
       </aside>
 
       <!-- Main Content -->
-      <main class="main-content">
+      <main class="main-content" :class="{ 'main-content--dashboard': activeTab === 'overview' }">
         <header class="main-header">
           <div class="header-titles">
-            <h1 v-if="activeTab === 'overview'">Overview</h1>
+            <span class="dashboard-eyebrow">{{ currentDate }}</span>
+            <h1 v-if="activeTab === 'overview'">Dashboard</h1>
             <h1 v-if="activeTab === 'instructors'">Instructors</h1>
             <h1 v-if="activeTab === 'students'">Students</h1>
-            <p class="header-sub" v-if="activeTab === 'overview'">Manage accounts, access, and identity review.</p>
+            <p class="header-sub" v-if="activeTab === 'overview'">Your campus administration at a glance.</p>
             <p class="header-sub" v-if="activeTab === 'instructors'">Register instructors and manage access without losing their course records.</p>
             <p class="header-sub" v-if="activeTab === 'students'">Manage enrollment and review exam identity photos.</p>
           </div>
@@ -65,8 +69,19 @@
 
         <!-- Overview Tab -->
         <section v-if="activeTab === 'overview'" class="admin-overview">
+          <div class="dashboard-welcome">
+            <div class="dashboard-welcome__copy">
+              <span class="dashboard-welcome__eyebrow">Administration overview</span>
+              <h2>Keep your campus ready for every exam.</h2>
+              <p>Manage instructor and student access, assign institutes, and review identity photos in one place.</p>
+            </div>
+            <button type="button" class="dashboard-welcome__action" @click="pendingFaceCount ? openPendingReviews() : (activeTab = 'students')">
+              {{ pendingFaceCount ? `Review ${pendingFaceCount} photo${pendingFaceCount === 1 ? '' : 's'}` : 'Manage students' }}
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+          </div>
           <div class="stats-grid">
-            <div class="stat-card" id="stat-instructors">
+            <button type="button" class="stat-card stat-card--link" id="stat-instructors" :aria-label="`View ${activeInstructorCount} active instructors`" @click="activeTab = 'instructors'">
               <div class="stat-icon instructor-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -78,8 +93,8 @@
                 <SkeletonLoader v-if="loadingInstructors" type="text" width="4rem" height="2rem" />
                 <h2 v-else class="stat-value">{{ activeInstructorCount }}</h2>
               </div>
-            </div>
-            <div class="stat-card" id="stat-students">
+            </button>
+            <button type="button" class="stat-card stat-card--link" id="stat-students" :aria-label="`View ${enrolledStudentCount} enrolled students`" @click="activeTab = 'students'">
               <div class="stat-icon student-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -90,13 +105,13 @@
                 <SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" />
                 <h2 v-else class="stat-value">{{ enrolledStudentCount }}</h2>
               </div>
-            </div>
-            <div class="stat-card" :class="{ 'stat-card--attention': pendingFaceCount > 0 }" id="stat-review">
+            </button>
+            <button type="button" class="stat-card stat-card--link" :class="{ 'stat-card--attention': pendingFaceCount > 0 }" id="stat-review" :aria-label="`Review ${pendingFaceCount} pending photos`" @click="openPendingReviews">
               <div class="stat-icon review-icon">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg>
               </div>
               <div class="stat-body"><p class="stat-label">Photos to Review</p><SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" /><h2 v-else class="stat-value">{{ pendingFaceCount }}</h2></div>
-            </div>
+            </button>
             <div class="stat-card" id="stat-domain">
               <div class="stat-icon domain-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -145,14 +160,19 @@
         </section>
 
         <!-- Instructors Tab -->
-        <section v-if="activeTab === 'instructors'">
+        <section v-if="activeTab === 'instructors'" class="admin-people-page">
+          <div class="admin-section-heading">
+            <div>
+              <span class="admin-section-kicker">People & access</span>
+              <h2>Instructor directory</h2>
+              <p>Register school accounts, assign institutes, and control access.</p>
+            </div>
+            <button type="button" class="primary-btn" @click="openInstructorForm" id="add-instructor-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Register instructor
+            </button>
+          </div>
           <div class="moodle-filters admin-filters">
-             <button class="primary-btn" @click="openInstructorForm" id="add-instructor-btn">
-               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-               </svg>
-               Register Instructor
-             </button>
              <label class="admin-filter-field" for="instructor-search">Search instructors
                <input v-model="instructorSearch" type="search" class="moodle-search" placeholder="Name or school email" id="instructor-search"/>
              </label>
@@ -166,6 +186,7 @@
                <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
                <option value="unassigned">Unassigned</option>
              </select>
+             <button v-if="hasInstructorFilters" type="button" class="admin-clear-filters" @click="clearInstructorFilters">Clear filters</button>
           </div>
 
           <!-- Add Instructor Form -->
@@ -181,15 +202,18 @@
                   <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
                 </select>
               </label>
+            </div>
+            <div class="entry-actions">
+              <button type="button" class="ghost-btn shrink-btn" @click="closeInstructorForm">Cancel</button>
               <button type="submit" class="primary-btn shrink-btn" :disabled="instructorLoading" id="submit-instructor-btn">
                 {{ instructorLoading ? 'Registering...' : 'Register' }}
               </button>
-              <button type="button" class="ghost-btn shrink-btn" @click="closeInstructorForm">Cancel</button>
             </div>
             <p v-if="instructorError" class="form-error" role="alert">{{ instructorError }}</p>
           </form>
 
           <!-- Instructors Table -->
+          <p v-if="!loadingInstructors" class="admin-results-count" role="status">Showing {{ filteredInstructors.length }} of {{ instructors.length }} instructors</p>
           <div class="data-table-container">
             <div v-if="loadingInstructors" class="table-skeleton" role="status" aria-label="Loading instructors">
               <SkeletonLoader type="row" v-for="i in 3" :key="i" />
@@ -222,19 +246,28 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else class="table-meta" style="text-align: center;">{{ instructorSearch || instructorStatusFilter !== 'all' || instructorInstituteFilter !== 'all' ? 'No instructors match this view.' : 'No instructors registered yet.' }}</div>
+            <div v-else class="admin-empty-state">
+              <h3>{{ hasInstructorFilters ? 'No matching instructors' : 'No instructors yet' }}</h3>
+              <p>{{ hasInstructorFilters ? 'Try another search or clear the filters.' : 'Register an instructor to grant school account access.' }}</p>
+              <button type="button" class="ghost-btn" @click="hasInstructorFilters ? clearInstructorFilters() : openInstructorForm()">{{ hasInstructorFilters ? 'Clear filters' : 'Register instructor' }}</button>
+            </div>
           </div>
         </section>
 
         <!-- Students Tab -->
-        <section v-if="activeTab === 'students'">
+        <section v-if="activeTab === 'students'" class="admin-people-page">
+          <div class="admin-section-heading">
+            <div>
+              <span class="admin-section-kicker">People & access</span>
+              <h2>Student directory</h2>
+              <p>Manage enrollment, institutes, and identity photo reviews.</p>
+            </div>
+            <button type="button" class="primary-btn" @click="openStudentForm" id="add-student-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Enroll student
+            </button>
+          </div>
           <div class="moodle-filters admin-filters">
-             <button class="primary-btn" @click="openStudentForm" id="add-student-btn">
-               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-               </svg>
-               Enroll Student
-             </button>
              <label class="admin-filter-field" for="student-search">Search students
                <input v-model="studentSearch" type="search" class="moodle-search" placeholder="Name or school email" id="student-search"/>
              </label>
@@ -249,6 +282,7 @@
                <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
                <option value="unassigned">Unassigned</option>
              </select>
+             <button v-if="hasStudentFilters" type="button" class="admin-clear-filters" @click="clearStudentFilters">Clear filters</button>
           </div>
 
           <!-- Add Student Form -->
@@ -264,15 +298,18 @@
                   <option v-for="institute in institutes" :key="institute.code" :value="institute.code">{{ institute.code }} — {{ institute.name }}</option>
                 </select>
               </label>
+            </div>
+            <div class="entry-actions">
+              <button type="button" class="ghost-btn shrink-btn" @click="closeStudentForm">Cancel</button>
               <button type="submit" class="primary-btn shrink-btn" :disabled="studentLoading" id="submit-student-btn">
                 {{ studentLoading ? 'Enrolling...' : 'Enroll' }}
               </button>
-              <button type="button" class="ghost-btn shrink-btn" @click="closeStudentForm">Cancel</button>
             </div>
             <p v-if="studentError" class="form-error" role="alert">{{ studentError }}</p>
           </form>
 
         <!-- Students Table -->
+          <p v-if="!loadingStudents" class="admin-results-count" role="status">Showing {{ filteredStudents.length }} of {{ students.length }} students</p>
           <div class="data-table-container">
             <div v-if="loadingStudents" class="table-skeleton" role="status" aria-label="Loading students">
               <SkeletonLoader type="row" v-for="i in 3" :key="i" />
@@ -352,7 +389,11 @@
                 </tr>
               </tbody>
             </table>
-            <div v-else class="table-meta" style="text-align: center;">{{ studentSearch || studentStatusFilter !== 'all' || studentInstituteFilter !== 'all' ? 'No students match this view.' : 'No students enrolled yet.' }}</div>
+            <div v-else class="admin-empty-state">
+              <h3>{{ hasStudentFilters ? 'No matching students' : 'No students yet' }}</h3>
+              <p>{{ hasStudentFilters ? 'Try another search or clear the filters.' : 'Enroll a student to grant school account access.' }}</p>
+              <button type="button" class="ghost-btn" @click="hasStudentFilters ? clearStudentFilters() : openStudentForm()">{{ hasStudentFilters ? 'Clear filters' : 'Enroll student' }}</button>
+            </div>
           </div>
         </section>
       </main>
@@ -393,7 +434,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, nextTick, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
@@ -411,11 +452,14 @@ const institutes = [
 ];
 
 const activeTab = ref("overview");
+const currentDate = new Intl.DateTimeFormat('en-PH', {
+  weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+}).format(new Date());
 
 const tabs = computed(() => [
   {
     key: "overview",
-    label: "Overview",
+    label: "Dashboard",
     icon: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
   },
   {
@@ -441,6 +485,7 @@ const instructorError = ref("");
 const instructorSearch = ref("");
 const instructorStatusFilter = ref('all');
 const instructorInstituteFilter = ref('all');
+const hasInstructorFilters = computed(() => Boolean(instructorSearch.value) || instructorStatusFilter.value !== 'all' || instructorInstituteFilter.value !== 'all');
 const newInstructor = ref({ email: "", first_name: "", last_name: "", institute: "" });
 
 // Students
@@ -456,6 +501,7 @@ const loadError = ref("");
 const reviewStudent = ref(null);
 const studentStatusFilter = ref('all');
 const studentInstituteFilter = ref('all');
+const hasStudentFilters = computed(() => Boolean(studentSearch.value) || studentStatusFilter.value !== 'all' || studentInstituteFilter.value !== 'all');
 const pendingFaceCount = computed(() => students.value.filter((student) => student.face_status === 'pending').length);
 const activeInstructorCount = computed(() => instructors.value.filter((instructor) => instructor.is_active).length);
 const enrolledStudentCount = computed(() => students.value.filter((student) => student.is_enrolled).length);
@@ -475,6 +521,7 @@ function openInstructorForm() {
   activeTab.value = 'instructors';
   showAddInstructor.value = true;
   instructorError.value = '';
+  nextTick(() => document.getElementById('instructor-email')?.focus());
 }
 
 function closeInstructorForm() {
@@ -487,6 +534,19 @@ function openStudentForm() {
   studentStatusFilter.value = 'all';
   showAddStudent.value = true;
   studentError.value = '';
+  nextTick(() => document.getElementById('student-email')?.focus());
+}
+
+function clearInstructorFilters() {
+  instructorSearch.value = '';
+  instructorStatusFilter.value = 'all';
+  instructorInstituteFilter.value = 'all';
+}
+
+function clearStudentFilters() {
+  studentSearch.value = '';
+  studentStatusFilter.value = 'all';
+  studentInstituteFilter.value = 'all';
 }
 
 function closeStudentForm() {
@@ -822,6 +882,21 @@ onMounted(() => {
 @import '@/assets/dashboard.css';
 
 /* Admin specific additions */
+.dashboard-role--admin {
+  --dash-accent: #1d3461;
+  --dash-accent-strong: #162a50;
+  --dash-accent-soft: #e8eef8;
+  --dash-accent-rgb: 29, 52, 97;
+}
+.admin-overview,
+.admin-people-page,
+.admin-inline-error {
+  width: 100%;
+  max-width: 1420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.admin-overview { display: grid; gap: 1.1rem; }
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -832,20 +907,26 @@ onMounted(() => {
   align-items: center;
   min-width: 0;
   gap: .9rem;
-  padding: 1.4rem;
-  border: 1px solid #e1e7ef;
+  padding: 1.25rem;
+  border: 1px solid #dfe6ef;
   border-radius: 18px;
   background: #fff;
-  box-shadow: 0 8px 24px rgba(25, 44, 74, .035);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .055);
+  text-align: left;
+  font: inherit;
 }
 .stat-body { min-width: 0; }
-.stat-card:hover { border-color: #c9d6e8; }
+.stat-card--link { cursor: pointer; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.stat-card--link:hover { border-color: #adbfdb; transform: translateY(-2px); box-shadow: 0 14px 32px rgba(15, 23, 42, .09); }
+.stat-card--link:focus-visible { outline: 3px solid rgba(29, 52, 97, .3); outline-offset: 2px; }
 .stat-card--attention { border-color: #f4c56d; background: #fffbf2; }
 .domain-val {
-  font-size: clamp(1.1rem, 1.7vw, 1.5rem);
+  font-size: clamp(.95rem, 1.5vw, 1.2rem);
   letter-spacing: -.035em;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
+#stat-domain { flex-direction: column; align-items: flex-start; gap: .65rem; }
+#stat-domain .stat-icon { width: 40px; height: 40px; }
 .stat-icon {
   width: 50px;
   height: 50px;
@@ -868,14 +949,13 @@ onMounted(() => {
   font-size: 2rem; font-weight: 800; color: var(--text-primary);
   margin: 0; letter-spacing: -0.04em; line-height: 1;
 }
-.nav-count { margin-left: auto; padding: .12rem .48rem; border-radius: 999px; background: rgba(255,255,255,.16); font-size: .7rem; font-weight: 700; }
+.nav-count { margin-left: auto; padding: .12rem .48rem; border-radius: 999px; background: rgba(255,255,255,.12); color: #e7f0ff; font-size: .7rem; font-weight: 700; }
 .overview-actions {
-  margin-top: 1.25rem;
   padding: 1.7rem;
   border: 1px solid #e1e7ef;
   border-radius: 20px;
   background: #fff;
-  box-shadow: 0 10px 30px rgba(25, 44, 74, .035);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .055);
 }
 .overview-actions-heading { margin-bottom: 1.25rem; }
 .overview-actions-heading h2 {
@@ -911,6 +991,23 @@ onMounted(() => {
 .action-copy small { color: #6a7b93; font-size: .73rem; }
 .action-arrow { margin-left: auto; color: #6b83a5; font-size: 1.25rem; line-height: 1; }
 .action-count { display: inline-flex; min-width: 1.25rem; height: 1.25rem; justify-content: center; align-items: center; margin-left: .25rem; border-radius: 999px; background: #fff0df; color: #9a3412; font-size: .7rem; }
+.admin-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.1rem;
+}
+.admin-section-kicker { color: #58739a; font-size: .69rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.admin-section-heading h2 { margin: .25rem 0; color: #172b4a; font-family: 'Poppins', sans-serif; font-size: 1.4rem; letter-spacing: -.025em; }
+.admin-section-heading p { margin: 0; color: #68778d; font-size: .85rem; }
+.admin-section-heading .primary-btn { flex: 0 0 auto; }
+.admin-results-count { margin: .25rem 0 .65rem; color: #68778d; font-size: .78rem; font-weight: 650; }
+.admin-empty-state { display: grid; justify-items: center; gap: .55rem; padding: 3.5rem 1.25rem; text-align: center; }
+.admin-empty-state h3 { margin: 0; color: #1d3461; font-family: 'Poppins', sans-serif; font-size: 1.05rem; }
+.admin-empty-state p { max-width: 30rem; margin: 0 0 .6rem; color: #68778d; font-size: .85rem; }
+.admin-clear-filters { min-height: 40px; padding: .5rem .7rem; border: 0; background: transparent; color: #28548e; font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.admin-clear-filters:hover { text-decoration: underline; }
 @media (max-width: 1100px) {
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-grid { grid-template-columns: 1fr; }
@@ -922,27 +1019,34 @@ onMounted(() => {
 .admin-inline-error { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: .85rem; }
 .admin-inline-error button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
 .admin-filter { min-height: 41px; padding: .55rem .85rem; border: 1px solid #d5dfeb; border-radius: 10px; background: #fff; color: #334155; font: inherit; font-size: .85rem; }
-.admin-filters { justify-content: flex-start; align-items: flex-end; }
-.admin-filter-field { display: grid; gap: .35rem; min-width: min(100%, 240px); color: #475569; font-size: .75rem; font-weight: 700; }
+.admin-filters { display: flex; justify-content: flex-start; align-items: flex-end; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
+.admin-filter-field { display: grid; gap: .35rem; flex: 1 1 250px; min-width: min(100%, 240px); color: #475569; font-size: .75rem; font-weight: 700; }
+.admin-filters > .admin-filter { flex: 0 1 195px; width: 195px; min-width: 0; }
+.admin-filters > .admin-filter:last-of-type { flex-basis: 230px; width: 230px; }
 .admin-filter-field .moodle-search { width: 100%; }
 .table-skeleton { display: grid; gap: .35rem; padding: 1rem; }
 .table-skeleton .skeleton { margin-bottom: 0; }
-.admin-entry-form { margin-bottom: 1.25rem; border: 1px solid #dce5f0; border-radius: 14px; background: #f8fafd; padding: 1.35rem; }
+.admin-entry-form { margin-bottom: 1.25rem; border: 1px solid #dce5f0; border-radius: 16px; background: #fff; padding: 1.5rem; box-shadow: 0 10px 30px rgba(15, 23, 42, .055); }
 .entry-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .entry-heading .form-title { margin: 0 0 .25rem; color: #142849; }
 .entry-heading p { margin: 0; color: #64748b; font-size: .82rem; }
 .entry-close { border: 0; background: transparent; color: #64748b; font-size: 1.5rem; line-height: 1; cursor: pointer; }
-.admin-entry-form .inline-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .7rem; }
-.entry-field { display: grid; gap: .35rem; min-width: 145px; flex: 1 1 145px; color: #475569; font-size: .75rem; font-weight: 700; }
-.entry-field--email { flex: 2 1 240px; }
-.entry-field--institute { flex: 2 1 240px; }
+.admin-entry-form .inline-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+.entry-field { display: grid; gap: .35rem; min-width: 0; color: #475569; font-size: .75rem; font-weight: 700; }
+.entry-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e8edf5; }
 .entry-field input, .entry-field select { width: 100%; min-height: 41px; border: 1px solid #d5dfeb; border-radius: 9px; padding: .55rem .7rem; background: white; color: #142849; font: inherit; font-size: .84rem; }
+.entry-field input:focus, .entry-field select:focus, .admin-filter:focus { border-color: #1d3461; outline: 3px solid rgba(29, 52, 97, .14); }
 .institute-picker { max-width: 200px; width: 100%; font-size: .76rem; }
 .form-error { margin: .8rem 0 0; color: #b91c1c; font-size: .82rem; }
 .row-action { border: 1px solid #cbd5e1; border-radius: 8px; padding: .45rem .7rem; background: white; color: #334155; font: inherit; font-size: .76rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .row-action--danger { border-color: #fecaca; color: #b91c1c; }
 .row-action--restore { border-color: #bbdfc8; color: #166534; }
 .row-action:disabled { opacity: .55; cursor: wait; }
+.admin-people-page .data-table-container { border: 1px solid #dfe6ef; border-radius: 16px; background: #fff; box-shadow: 0 10px 30px rgba(15, 23, 42, .055); }
+.admin-people-page .data-table { min-width: 830px; }
+.admin-people-page .data-table th { padding: .95rem 1.1rem; background: #f6f8fb; color: #52647e; font-size: .69rem; }
+.admin-people-page .data-table td { padding: 1rem 1.1rem; font-size: .84rem; }
+.admin-people-page .data-table tbody tr:hover td { background: #f8fafd; }
 .review-backdrop { position: fixed; inset: 0; z-index: 1000001; display: grid; place-items: center; padding: 1rem; background: rgba(15,23,42,.58); }
 .review-dialog { width: min(100%, 570px); max-height: calc(100vh - 2rem); overflow: auto; padding: 1.5rem; border-radius: 18px; background: white; box-shadow: 0 24px 70px rgba(15,23,42,.25); }
 .review-heading { display: flex; justify-content: space-between; gap: 1rem; }
@@ -1069,4 +1173,17 @@ onMounted(() => {
 .face-toggle input:checked + .face-toggle-slider { background: #6366f1; }
 .face-toggle input:checked + .face-toggle-slider::after { transform: translateX(14px); }
 .face-toggle-label { font-size: 0.76rem; font-weight: 600; color: #475569; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .dashboard-role--admin .sidebar-nav { flex: 1 1 auto; justify-content: space-around; }
+  .dashboard-role--admin .sidebar-footer-nav { flex: 0 0 auto; }
+  .dashboard-role--admin .nav-count { display: none; }
+  .admin-section-heading { align-items: stretch; flex-direction: column; }
+  .admin-section-heading .primary-btn { align-self: flex-start; }
+  .admin-filters .admin-filter, .admin-filter-field { width: 100%; }
+}
+@media (max-width: 620px) {
+  .admin-entry-form .inline-form { grid-template-columns: 1fr; }
+  .entry-actions > button { flex: 1 1 0; }
+}
 </style>
