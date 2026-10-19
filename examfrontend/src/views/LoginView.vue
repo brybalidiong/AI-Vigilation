@@ -247,8 +247,8 @@ async function loginAdmin() {
 <style scoped>
 
 .login-page {
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow-x: clip;
   display: flex;
   flex-direction: column;
   background: #f4f7f9;
