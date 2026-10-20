@@ -3531,6 +3531,8 @@ async function performLogout() {
   justify-content: center;
   padding: 1.5rem;
   background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .face-hold-panel {
   max-width: 420px;
@@ -3629,7 +3631,8 @@ async function performLogout() {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  background: #0f172a;
+  background: rgba(15,15,25,0.88);
+  backdrop-filter: blur(6px);
   border-radius: 0 0 10px 10px;
   border: 1px solid rgba(255,255,255,0.10);
   border-top: none;
@@ -3687,7 +3690,7 @@ async function performLogout() {
 /* Toast */
 
 /* Proctoring overlay */
-.proctor-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.88); display: flex; align-items: center; justify-content: center; animation: proctorFadeIn 0.25s ease; }
+.proctor-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.88); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; animation: proctorFadeIn 0.25s ease; }
 @keyframes proctorFadeIn { from { opacity: 0; } to { opacity: 1; } }
 .proctor-box { max-width: 480px; width: 90%; background: #fff; border-radius: 24px; padding: 2.5rem 2rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.9rem; border: 1px solid #e8eaed; box-shadow: 0 32px 80px rgba(0,0,0,0.25); animation: proctorSlideUp 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
 @keyframes proctorSlideUp { from { transform: scale(0.9) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
@@ -3722,7 +3725,7 @@ async function performLogout() {
 .view-results-btn:hover { background: #00a699; }
 
 /* Results modal */
-.results-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 1.5rem; animation: overlayIn 0.2s ease; }
+.results-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 1.5rem; animation: overlayIn 0.2s ease; }
 @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
 .results-card { background: #fff; border-radius: 24px; width: 100%; max-width: 560px; box-shadow: 0 24px 64px rgba(0,0,0,0.18); overflow: hidden; animation: cardIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
 @keyframes cardIn { from { transform: scale(0.94) translateY(16px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }

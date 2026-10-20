@@ -35,8 +35,10 @@ defineEmits(["click"]);
   align-items: center;
   gap: 1.25rem;
   padding: 1.25rem;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 16px;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
   cursor: pointer;
@@ -48,8 +50,8 @@ defineEmits(["click"]);
 .turo-list-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
-  border-color: #cbd5e1;
-  background: #f8fafc;
+  border-color: rgba(255, 255, 255, 1);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .turo-list-decor {
@@ -67,8 +69,8 @@ defineEmits(["click"]);
   width: 48px; height: 48px;
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 

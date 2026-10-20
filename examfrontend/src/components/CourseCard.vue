@@ -113,8 +113,9 @@ const photoStyle = computed(() => {
 .course-badge {
   position: relative;
   z-index: 1;
-  background: #294a7a;
-  border: 1px solid #6e87ad;
+  background: rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.38);
   color: #fff;
   padding: 0.4rem 0.85rem;
   border-radius: 9px;
