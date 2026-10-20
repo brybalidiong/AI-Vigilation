@@ -80,6 +80,35 @@ class GadgetWarmupStateTests(SimpleTestCase):
 
 
 class GazeFrameTests(SimpleTestCase):
+    def test_busy_gaze_worker_does_not_queue_stale_frames(self):
+        first, second = Future(), Future()
+        with patch.object(gaze_service, '_inference_slots', threading.BoundedSemaphore(1)), \
+                patch.object(gaze_service, 'GAZE_EXECUTOR') as executor:
+            executor.submit.side_effect = [first, second]
+            self.assertIs(gaze_service.submit_gaze_inference(lambda raw: raw, b'first'), first)
+            self.assertIsNone(gaze_service.submit_gaze_inference(lambda raw: raw, b'stale'))
+            first.set_result(None)
+            self.assertIs(gaze_service.submit_gaze_inference(lambda raw: raw, b'fresh'), second)
+            second.set_result(None)
+            self.assertEqual(executor.submit.call_count, 2)
+
+    async def test_busy_gaze_worker_returns_matching_frame_id_without_inference(self):
+        from accounts.consumers import GazeConsumer
+
+        consumer = GazeConsumer()
+        consumer.exam_id = 1
+        consumer.student_email = None
+        consumer.send = AsyncMock()
+        with patch('accounts.consumers.submit_gaze_inference', return_value=None), \
+                patch('accounts.consumers.analyze_frame_bytes') as analyze:
+            await consumer.receive(text_data=json.dumps({
+                'image': base64.b64encode(b'jpeg').decode(), 'frame_id': 23,
+            }))
+        self.assertEqual(json.loads(consumer.send.call_args.kwargs['text_data']), {
+            'busy': True, 'frame_id': 23,
+        })
+        analyze.assert_not_called()
+
     def test_gaze_socket_uses_local_channel_layer(self):
         from channels.layers import InMemoryChannelLayer, get_channel_layer
         from accounts.consumers import GazeConsumer

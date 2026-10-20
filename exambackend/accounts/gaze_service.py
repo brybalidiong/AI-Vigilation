@@ -19,6 +19,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 # Inference must never queue behind database queries or remote image uploads.
 GAZE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gaze-inference')
+_inference_slots = threading.BoundedSemaphore(2)
 _snapshot_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='gaze-snapshot')
 _snapshot_slots = threading.BoundedSemaphore(2)
 _tracker_init_lock = threading.Lock()
@@ -42,6 +43,19 @@ def analyze_frame_bytes(raw):
     if not tracker.ready:
         raise RuntimeError(tracker.error or 'Gaze model unavailable')
     return tracker.analyze(frame)
+
+
+def submit_gaze_inference(analyzer, raw):
+    """Keep only the active frame and one waiting frame across gaze sockets."""
+    if not _inference_slots.acquire(blocking=False):
+        return None
+    try:
+        future = GAZE_EXECUTOR.submit(analyzer, raw)
+    except Exception:
+        _inference_slots.release()
+        raise
+    future.add_done_callback(lambda _: _inference_slots.release())
+    return future
 
 
 def warm_gaze_tracker() -> bool:

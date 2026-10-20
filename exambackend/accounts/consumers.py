@@ -10,7 +10,7 @@ from channels.db import database_sync_to_async
 from accounts.exam_updates import subject_exam_group
 
 from accounts.gaze_service import (
-    GAZE_EXECUTOR, analyze_frame_bytes, schedule_live_snapshot, sign_gaze_result,
+    analyze_frame_bytes, schedule_live_snapshot, sign_gaze_result, submit_gaze_inference,
 )
 
 # ── Confidence gating (must match views.py and inference.py) ─────────────────
@@ -206,9 +206,14 @@ class GazeConsumer(AsyncWebsocketConsumer):
 
             img_bytes = base64.b64decode(image_data, validate=True)
             started = time.perf_counter()
-            result = await asyncio.get_running_loop().run_in_executor(
-                GAZE_EXECUTOR, analyze_frame_bytes, img_bytes,
-            )
+            future = submit_gaze_inference(analyze_frame_bytes, img_bytes)
+            if future is None:
+                await self.send(text_data=json.dumps({
+                    'busy': True,
+                    'frame_id': data.get('frame_id'),
+                }))
+                return
+            result = await asyncio.wrap_future(future)
             if getattr(self, '_closed', False):
                 return
 

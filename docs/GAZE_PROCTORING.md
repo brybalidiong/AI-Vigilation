@@ -34,8 +34,10 @@ During an exam, `StudentDashboardView.vue` streams one JPEG at a time over the g
 WebSocket. The camera precheck uses an authenticated HTTP request, while the
 exam gaze stream sends a student JWT through its WebSocket; both require an
 active, enrolled student assigned to a published exam.
-The next frame is sent after the previous result arrives, so a slow inference
-cannot create a queue of stale frames. A one-second HTTP observer remains available for
+The next frame is captured 20 ms after the previous result arrives, so a slow inference
+cannot create a browser queue of stale frames. The backend keeps at most one active
+gaze inference and one waiting frame; when busy, it asks the browser to retry with
+a fresh image after 100 ms. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
 If a WebSocket result is too old to affect gaze state, the browser discards it and

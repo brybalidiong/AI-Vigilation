@@ -991,7 +991,8 @@ let _splitScreenActive = false;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
-const GAZE_WS_INTERVAL_MS = 120;          // balance responsive detection with CPU/network load
+const GAZE_WS_INTERVAL_MS = 20;           // sample a fresh frame soon after each inference
+const GAZE_WS_BUSY_RETRY_MS = 100;       // give the shared inference worker time to free up
 const GAZE_FRAME_WIDTH = 640;              // preserve iris detail for gaze landmarks
 const GAZE_FIRST_CHECK_MS = 50;            // fire first check immediately
 const GAZE_CONFIDENCE_MIN = 0.85;          // general fallback
@@ -1792,6 +1793,7 @@ let _wsFrameId = 0;
 let _wsHasResult = false;
 let _wsResponseTimeout = null;
 let _wsSendTimer = null;
+let _wsCaptureCanvas = null;
 let _wsCloseCause = '';
 const WS_CONNECT_TIMEOUT_MS = 12000;
 const WS_FIRST_RESULT_TIMEOUT_MS = 20000;
@@ -1803,9 +1805,9 @@ function _gazeFrameBlob(image) {
   return new Blob([bytes], { type: 'image/jpeg' });
 }
 
-function _scheduleWsFrame() {
+function _scheduleWsFrame(delay = GAZE_WS_INTERVAL_MS) {
   clearTimeout(_wsSendTimer);
-  _wsSendTimer = setTimeout(_sendWsFrame, GAZE_WS_INTERVAL_MS);
+  _wsSendTimer = setTimeout(_sendWsFrame, delay);
 }
 
 // WS violation timing state
@@ -1880,6 +1882,13 @@ function _startGazeWsLoop() {
         _clearGazeViolationTimer(true);
         _wsCloseCause = 'unmatched frame response';
         socket.close();
+        return;
+      }
+      if (data.busy) {
+        // The worker is occupied. The next attempt captures a fresh image;
+        // never apply the old frame or treat this as an inference failure.
+        gazeDetectionStatus.value = 'AI busy';
+        _scheduleWsFrame(GAZE_WS_BUSY_RETRY_MS);
         return;
       }
       if (!data.frame_receipt) {
@@ -2151,12 +2160,14 @@ async function _sendWsFrame() {
     return;
   }
   
-  const canvas = document.createElement('canvas');
+  const canvas = _wsCaptureCanvas || (_wsCaptureCanvas = document.createElement('canvas'));
   const SEND_W = GAZE_FRAME_WIDTH;
   const SEND_H = Math.round((video.videoHeight / video.videoWidth) * SEND_W);
-  canvas.width = SEND_W;
-  canvas.height = SEND_H;
-  const ctx = canvas.getContext('2d');
+  if (canvas.width !== SEND_W || canvas.height !== SEND_H) {
+    canvas.width = SEND_W;
+    canvas.height = SEND_H;
+  }
+  const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) return;
   ctx.drawImage(video, 0, 0, SEND_W, SEND_H);
   
@@ -2188,6 +2199,7 @@ function _stopGazeWsLoop() {
   clearTimeout(_wsSendTimer);
   _wsPendingFrame = null;
   _wsLatestFrame = null;
+  _wsCaptureCanvas = null;
   _wsHasResult = false;
   _gazeWsActive = false;
   _wsViolationStartTime = null;

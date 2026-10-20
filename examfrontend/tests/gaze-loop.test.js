@@ -39,7 +39,8 @@ function harness() {
     gazeDetectionStatus: { value: '' }, gazeViolationCount: { value: 0 }, gazeNoFaceCount: { value: 0 },
     proctoringWarning: { value: { show: false } }, terminateReason: { value: '' },
     examVideoEl: { value: { readyState: 2, videoWidth: 640, videoHeight: 480 } },
-    GAZE_WS_INTERVAL_MS: 80, GAZE_FRAME_WIDTH: 480, GAZE_VIOLATION_LIMIT: 8,
+    GAZE_WS_INTERVAL_MS: 20, GAZE_WS_BUSY_RETRY_MS: 100,
+    GAZE_FRAME_WIDTH: 480, GAZE_VIOLATION_LIMIT: 8,
     backendBaseUrl: 'http://localhost:8000', window: { location: { protocol: 'http:' } },
     localStorage: { getItem: () => 'jwt' },
     document: { createElement: () => ({
@@ -76,10 +77,26 @@ test('a slow stale reply is discarded without reconnecting or recording a violat
   assert.equal(h.context.gazeDetectionStatus.value, 'AI delayed');
   assert.equal(h.display.direction, '');
   assert.equal(h.uploads.length, 0);
-  assert.equal([...h.timers.values()].some(timer => timer.delay === 80), true);
+  assert.equal([...h.timers.values()].some(timer => timer.delay === 20), true);
   await h.run('_sendWsFrame()');
   h.sockets[0].reply({ label: 'Looking at the screen (Normal)', is_normal: true, is_suspicious: false });
   assert.equal(h.context.gazeDetectionStatus.value, '');
+});
+
+test('a busy worker requests a fresh frame without reconnecting or applying stale gaze', async () => {
+  const h = harness();
+  h.sockets[0].reply({ busy: true, frame_receipt: undefined });
+  assert.equal(h.sockets[0].readyState, 1);
+  assert.equal(h.run('_wsPendingFrame'), null);
+  assert.equal(h.run('_wsLatestFrame'), null);
+  assert.equal(h.display.direction, '');
+  assert.equal(h.context.gazeDetectionStatus.value, 'AI busy');
+  const retry = [...h.timers.values()].find(timer => timer.delay === 100);
+  assert.ok(retry);
+  h.image('fresh-frame');
+  retry.fn();
+  assert.equal(h.sockets[0].sent.length, 2);
+  assert.equal(h.run('_wsPendingFrame.image').includes(Buffer.from('fresh-frame').toString('base64')), true);
 });
 
 test('a slow cold-start result is accepted within the startup timeout', () => {
