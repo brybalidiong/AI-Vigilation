@@ -63,22 +63,28 @@ the exam. Face identity verification still follows the precheck.
 Head yaw keeps the student's left/right sign; iris X is converted from camera
 coordinates before the two are blended. The browser sends a 640-pixel-wide
 gaze JPEG at 0.75 quality to retain iris detail. Strong horizontal geometry
-can correct a mirrored left/right or normal prediction, but does not replace
-a clear up/down model prediction. A first confident left/right frame appears in
-the camera direction indicator while a second frame confirms it for strike
+can correct a mirrored left/right or normal prediction. When Normal leads and
+below has only weak model support, a clear side turn takes precedence over a
+modest downward iris shift. A clear up/down model prediction remains. A first
+confident left/right frame appears in the camera direction indicator while a
+second frame confirms it for strike
 timing. Up/down appears on the first valid result. Strong vertical eye geometry
 can select up/down even when Normal has the highest model probability, provided
 the model supports that direction. The below confidence gate is 0.25; the
 above gate is 0.22. The continuous look-away strike window remains four seconds.
 
 Gadget checks reuse a capture canvas and send a 640-pixel-wide JPEG at 0.7
-quality. A new frame is captured 100 ms after a clear response, or 300 ms while
-a device remains visible. Starting, disabled, and busy checks retry after 150 ms;
+quality. A new frame is captured on the next event-loop turn after a clear
+response, or 100 ms while a device remains visible. Starting, disabled, and
+busy checks retry after 150 ms;
 unavailable checks retry after 500 ms. Only one browser request is in flight.
 The backend runs at most one inference and queues one additional frame; excess
 frames receive a quick busy response so stale frames cannot build up. Responses
 from an ended exam loop cannot update the next exam's warning state. The camera
 preview shows scanner status and warning counts without gadget bounding boxes.
+The production ASGI worker warms both models in the background at startup so
+the first student's exam does not trigger a cold model load. The dashboard
+warmup endpoint remains a fallback when a worker is still starting.
 The camera requests 1280-by-960 capture where supported. The backend uses YOLO at
 640 pixels with a 0.25 default confidence threshold;
 `GADGET_IMGSZ` and `GADGET_CONFIDENCE` can override these defaults. Checks stay

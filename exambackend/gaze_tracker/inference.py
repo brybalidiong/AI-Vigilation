@@ -436,15 +436,19 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     below_p = float(probs[below_idx])
     vertical = _pick_vertical_from_geometry(geo, above_idx, below_idx, above_p, below_p)
 
-    # Eye height gives the more specific direction when Normal leads the CNN,
-    # even if a simultaneous head turn also produces sideways geometry.
-    if argmax_idx == normal_idx and vertical is not None:
-        return vertical
-
     # Use only very clear geometry to reconcile a horizontal CNN prediction.
     # This corrects camera/model mirror mismatches while leaving normal and
     # borderline frames to the confidence-based classifier below.
     strong_side = _strong_sideways_from_geometry(geo)
+    if strong_side and argmax_idx in (normal_idx, below_idx):
+        iris_v = (float(geo[6]) + float(geo[8])) / 2.0
+        if iris_v < _BELOW_IRIS_V_STRONG and below_p < 0.50:
+            side_idx = _left_class_index(classes) if strong_side == 'left' else _right_class_index(classes)
+            if argmax_idx == below_idx or (vertical is not None and vertical[0] == below_idx):
+                return side_idx, max(float(probs[side_idx]), 0.50)
+    if argmax_idx == normal_idx and vertical is not None:
+        return vertical
+
     if strong_side:
         side_idx = _left_class_index(classes) if strong_side == "left" else _right_class_index(classes)
         side_name = classes[side_idx].lower()

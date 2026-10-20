@@ -29,3 +29,13 @@ application = ProtocolTypeRouter({
         )
     ),
 })
+
+# Production workers load the CPU models in the background after ASGI is ready.
+# This avoids making the first student's camera frame pay model initialization.
+# Management commands and local development remain lazy by default.
+if os.environ.get('PREWARM_PROCTORING_MODELS') == '1':
+    from accounts.gadget_service import warm_gadget_detector
+    from accounts.gaze_service import warm_gaze_tracker
+
+    warm_gadget_detector()
+    warm_gaze_tracker()

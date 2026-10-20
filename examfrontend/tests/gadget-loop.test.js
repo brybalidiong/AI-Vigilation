@@ -20,8 +20,8 @@ function harness() {
     gadgetDetectionStatus: { value: 'starting' }, gadgetWarningCount: { value: 0 },
     proctoringWarning: { value: { show: false } },
     terminateReason: { value: '' },
-    GADGET_IDLE_POLL_MS: 150, GADGET_ACTIVE_POLL_MS: 100,
-    GADGET_VISIBLE_POLL_MS: 300, GADGET_ERROR_POLL_MS: 500, GADGET_FRAME_WIDTH: 640,
+    GADGET_IDLE_POLL_MS: 150, GADGET_ACTIVE_POLL_MS: 0,
+    GADGET_VISIBLE_POLL_MS: 100, GADGET_ERROR_POLL_MS: 500, GADGET_FRAME_WIDTH: 640,
     GADGET_WARNING_LIMIT: 3,
     _isGadgetDetectionEnabled: () => true,
     _getProctoringVideoEl: () => ({ readyState: 2, videoWidth: 640, videoHeight: 480 }),
@@ -59,7 +59,7 @@ test('warns on the first positive response and schedules the next fresh frame pr
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.context.proctoringWarning.value.type, 'gadget');
   assert.equal(h.context.gadgetWarningCount.value, 1);
-  assert.ok([...h.timers.values()].some(timer => timer.delay === 300));
+  assert.ok([...h.timers.values()].some(timer => timer.delay === 100));
 });
 
 test('a clear frame resumes rapid scanning without overlapping requests', async () => {
@@ -68,7 +68,7 @@ test('a clear frame resumes rapid scanning without overlapping requests', async 
   await Promise.resolve();
   h.requests[0]({ data: { detections: [], detected: false, warning_count: 0 } });
   await new Promise(resolve => setImmediate(resolve));
-  const next = [...h.timers.values()].find(timer => timer.delay === 100);
+  const next = [...h.timers.values()].find(timer => timer.delay === 0);
   assert.ok(next);
   next.fn();
   await Promise.resolve();

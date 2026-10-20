@@ -7,6 +7,7 @@ services:
       FACE_MODELS_DIR: /app/models
       GAZE_ASSETS_DIR: /app/gaze-assets
       GADGET_MODEL_PATH: /app/models/yolo11n.pt
+      PREWARM_PROCTORING_MODELS: "1"
       FIREBASE_CREDENTIALS: /run/secrets/firebase-service-account.json
     volumes:
       - ./models:/app/models:ro

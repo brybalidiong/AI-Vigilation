@@ -352,6 +352,35 @@ class GazeFrameTests(SimpleTestCase):
                 self.assertEqual(direction, expected)
                 self.assertGreaterEqual(confidence, 0.22 if expected == 0 else 0.25)
 
+    def test_sideways_look_does_not_become_weak_below(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        for iris_h, expected in ((-0.20, 1), (0.20, 2)):
+            with self.subTest(iris_h=iris_h):
+                geo = np.zeros(14, dtype=np.float32)
+                geo[5] = geo[7] = iris_h
+                geo[6] = geo[8] = 0.11
+                geo[12] = 0.15
+                probs = np.array([0.02, 0.04, 0.04, 0.62, 0.28], dtype=np.float32)
+                direction, confidence = pick_gaze_label(probs, geo, classes)
+                self.assertEqual(direction, expected)
+                self.assertGreaterEqual(confidence, 0.50)
+
+                # The same false direction may be the model's weak argmax.
+                weak_below = np.array([0.03, 0.22, 0.04, 0.32, 0.39], dtype=np.float32)
+                direction, _ = pick_gaze_label(weak_below, geo, classes)
+                self.assertEqual(direction, expected)
+
+                # A clearly downward iris position remains a below reading.
+                geo[6] = geo[8] = 0.21
+                direction, _ = pick_gaze_label(probs, geo, classes)
+                self.assertEqual(direction, 4)
+
     def test_obvious_opposite_vertical_iris_blocks_model_label(self):
         from gaze_tracker.inference import pick_gaze_label
 

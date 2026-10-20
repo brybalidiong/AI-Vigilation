@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, Q
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
@@ -2672,13 +2672,16 @@ def finalize_exam(request, subject_id, exam_set_id):
 
 def _student_can_access_exam(student_email, exam_set):
     """Return True if the student is enrolled in a set linked to the exam's subject and assigned sets."""
+    assigned_sets = exam_set.assigned_sets.all()
     allowed_qs = EnrolledStudent.objects.filter(
         email__iexact=student_email,
-        student_set__subject=exam_set.subject,
+        student_set__subject_id=exam_set.subject_id,
     )
-    if exam_set.assigned_sets.exists():
-        allowed_qs = allowed_qs.filter(student_set__in=exam_set.assigned_sets.all())
-    return allowed_qs.exists()
+    # Check assignments and enrollment in one query. This path runs on every
+    # live gadget frame, so an extra remote DB round trip is visible to users.
+    return allowed_qs.filter(
+        Q(student_set__in=assigned_sets) | ~Exists(assigned_sets),
+    ).exists()
 
 
 @api_view(['GET'])
