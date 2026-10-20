@@ -296,7 +296,7 @@ class GazeFrameTests(SimpleTestCase):
             'Looking at the right', 'Looking at the screen (Normal)',
             'Looking below',
         ]
-        for yaw, expected in [(-0.2, 1), (0.2, 2)]:
+        for yaw, expected in [(0.2, 1), (-0.2, 2)]:
             geo = np.zeros(14, dtype=np.float32)
             geo[0] = geo[11] = yaw
             corrected = mirror_correct_geo(geo)
@@ -313,6 +313,21 @@ class GazeFrameTests(SimpleTestCase):
         corrected = mirror_correct_geo(geo)
         self.assertLess(corrected[5], 0)
         self.assertLess(corrected[7], 0)
+
+    def test_clear_eye_direction_wins_over_opposite_head_turn(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        geo = np.zeros(14, dtype=np.float32)
+        geo[0] = -0.20  # head turns right
+        geo[5] = geo[7] = -0.20  # eyes clearly look left
+        probs = np.array([0.02, 0.05, 0.80, 0.10, 0.03], dtype=np.float32)
+        direction, _ = pick_gaze_label(probs, geo, classes)
+        self.assertEqual(direction, 1)
 
     def test_small_deliberate_vertical_gaze_reaches_geometry_threshold(self):
         from gaze_tracker.inference import is_looking_above, is_looking_below
@@ -337,7 +352,7 @@ class GazeFrameTests(SimpleTestCase):
         ]
         for iris_v, vert, iris_h, probabilities, expected in (
             (-0.06, -0.045, 0.00, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
-            (-0.019, -0.041, 0.00, [0.24, 0.02, 0.02, 0.67, 0.05], 0),
+            (-0.019, -0.041, 0.00, [0.24, 0.02, 0.02, 0.67, 0.05], 3),
             (0.115, 0.155, 0.00, [0.02, 0.02, 0.02, 0.67, 0.27], 4),
             (0.090, 0.125, 0.00, [0.02, 0.02, 0.02, 0.68, 0.26], 4),
             (0.20, 0.16, 0.00, [0.02, 0.02, 0.02, 0.68, 0.26], 4),
@@ -351,6 +366,31 @@ class GazeFrameTests(SimpleTestCase):
                 direction, confidence = pick_gaze_label(np.array(probabilities, dtype=np.float32), geo, classes)
                 self.assertEqual(direction, expected)
                 self.assertGreaterEqual(confidence, 0.22 if expected == 0 else 0.25)
+
+    def test_normal_eye_jitter_does_not_become_above(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        geo = np.zeros(14, dtype=np.float32)
+        geo[1] = -0.05
+        geo[6] = geo[8] = -0.025
+        geo[12] = -0.045
+        for probabilities in (
+            [0.23, 0.02, 0.02, 0.69, 0.04],
+            [0.40, 0.02, 0.02, 0.38, 0.18],
+        ):
+            direction, _ = pick_gaze_label(np.array(probabilities, dtype=np.float32), geo, classes)
+            self.assertEqual(direction, 3)
+
+        geo[6] = geo[8] = -0.07
+        direction, _ = pick_gaze_label(
+            np.array([0.23, 0.02, 0.02, 0.69, 0.04], dtype=np.float32), geo, classes,
+        )
+        self.assertEqual(direction, 0)
 
     def test_sideways_look_does_not_become_weak_below(self):
         from gaze_tracker.inference import pick_gaze_label

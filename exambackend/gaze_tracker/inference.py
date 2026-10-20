@@ -53,6 +53,9 @@ _BELOW_IRIS_V_STRONG = 0.19
 _ABOVE_IRIS_V_STRONG = 0.05  # lowered: geometry-only fires with less iris movement upward
 # Strong-geometry-only sideways: both irises must agree on a clear movement.
 _SIDEWAYS_IRIS_STRONG = 0.10
+_ABOVE_NORMAL_IRIS_V = -0.05
+_ABOVE_NORMAL_PITCH = -0.08
+_ABOVE_NORMAL_MODEL_CONFIDENCE = 0.55
 
 
 def prepare_image_batch(face_bgr: np.ndarray) -> np.ndarray:
@@ -74,9 +77,9 @@ def mirror_correct_geo(geo: np.ndarray) -> np.ndarray:
     corrected = geo.copy()
     for idx in _GEO_MIRROR_IDXS:
         corrected[idx] *= -1.0
-    # Iris X is measured in camera coordinates, but solvePnP yaw already has
-    # the student's left/right sign. Rebuild the blended X after correcting
-    # the irises instead of reversing the head pose as well.
+    # Keep the raw solvePnP yaw for the trained model. Iris X uses camera
+    # coordinates, so correct it and rebuild the blended feature. Direction
+    # selection interprets raw yaw from the student's perspective separately.
     if geo[5] or geo[7]:
         iris_weight = max(float(geo[13]), 0.7)
         iris_h = (float(corrected[5]) + float(corrected[7])) / 2.0
@@ -237,13 +240,12 @@ def _horizontal_prediction_allowed(name: str, probability: float, geo: np.ndarra
 
 
 def is_looking_sideways(geo: np.ndarray, side: str) -> bool:
-    h = float(geo[11])
     yaw = float(geo[0])
     iris_h = (float(geo[5]) + float(geo[7])) / 2.0
     if side == "left":
-        return h < -_SIDEWAYS_H or yaw < -_SIDEWAYS_YAW or iris_h < -_SIDEWAYS_H
+        return yaw > _SIDEWAYS_YAW or iris_h < -_SIDEWAYS_H
     if side == "right":
-        return h > _SIDEWAYS_H or yaw > _SIDEWAYS_YAW or iris_h > _SIDEWAYS_H
+        return yaw < -_SIDEWAYS_YAW or iris_h > _SIDEWAYS_H
     return False
 
 
@@ -345,6 +347,15 @@ def _pick_vertical_from_geometry(
     return None
 
 
+def _above_has_independent_evidence(geo: np.ndarray) -> bool:
+    """Distinguish an upward look from normal iris jitter and camera angle."""
+    iris_v = (float(geo[6]) + float(geo[8])) / 2.0
+    pitch = float(geo[1])
+    return iris_v <= _ABOVE_NORMAL_IRIS_V or (
+        iris_v <= -0.03 and pitch <= _ABOVE_NORMAL_PITCH
+    )
+
+
 def _pick_sideways_from_geometry(
     geo: np.ndarray,
     left_idx: int,
@@ -375,13 +386,6 @@ def _pick_sideways_from_geometry(
     if right_geo and right_p >= RIGHT_CONFIDENCE_THRESHOLD:
         return right_idx, right_p
 
-    # Stronger geometry fallback: require a more definitive head position
-    h = float(geo[11])
-    if h < -0.065 and left_p >= LEFT_CONFIDENCE_THRESHOLD and left_p >= right_p:
-        return left_idx, left_p
-    if h > 0.065 and right_p >= RIGHT_CONFIDENCE_THRESHOLD and right_p >= left_p:
-        return right_idx, right_p
-
     return None
 
 
@@ -400,7 +404,9 @@ def _strong_sideways_from_geometry(geo: np.ndarray) -> str | None:
             and left_iris * right_iris > 0):
         return "left" if iris_h < 0 else "right"
     if abs(float(geo[0])) >= 0.14:
-        return "left" if float(geo[0]) < 0 else "right"
+        # Raw solvePnP yaw is in camera coordinates: positive is a turn to
+        # the student's left. Eyes remain the first choice when both move.
+        return "left" if float(geo[0]) > 0 else "right"
     return None
 
 
@@ -435,6 +441,8 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     above_p = float(probs[above_idx])
     below_p = float(probs[below_idx])
     vertical = _pick_vertical_from_geometry(geo, above_idx, below_idx, above_p, below_p)
+    if vertical is not None and vertical[0] == above_idx and not _above_has_independent_evidence(geo):
+        vertical = None
 
     # Use only very clear geometry to reconcile a horizontal CNN prediction.
     # This corrects camera/model mirror mismatches while leaving normal and
@@ -466,6 +474,10 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
 
     if argmax_idx == normal_idx:
         return normal_idx, normal_conf
+
+    if argmax_idx == above_idx and above_p < _ABOVE_NORMAL_MODEL_CONFIDENCE:
+        if not _above_has_independent_evidence(geo):
+            return normal_idx, normal_conf
 
     if (looking_center and float(probs[argmax_idx]) < normal_conf + 0.08
             and not is_looking_above(geo) and not is_looking_below(geo)):

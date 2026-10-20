@@ -60,8 +60,10 @@ the frame width and 22% of its height. A smaller or undetected face prompts the
 student to move closer; multiple faces or unavailable inference also block entry.
 The precheck warns that excessive distance can cause no-face violations during
 the exam. Face identity verification still follows the precheck.
-Head yaw keeps the student's left/right sign; iris X is converted from camera
-coordinates before the two are blended. The browser sends a 640-pixel-wide
+Raw head yaw keeps its trained-model feature value; direction selection converts
+its camera sign to the student's left/right perspective. Eye position takes
+priority when a clear eye movement and head turn disagree. Iris X is converted
+from camera coordinates before it is blended with yaw. The browser sends a 640-pixel-wide
 gaze JPEG at 0.75 quality to retain iris detail. Strong horizontal geometry
 can correct a mirrored left/right or normal prediction. When Normal leads and
 below has only weak model support, a clear side turn takes precedence over a
@@ -70,7 +72,9 @@ confident left/right frame appears in the camera direction indicator while a
 second frame confirms it for strike
 timing. Up/down appears on the first valid result. Strong vertical eye geometry
 can select up/down even when Normal has the highest model probability, provided
-the model supports that direction. The below confidence gate is 0.25; the
+the model supports that direction. An above override also needs a clear upward
+iris shift, or upward iris and head-pitch agreement, to avoid normal-eye jitter.
+The below confidence gate is 0.25; the
 above gate is 0.22. The continuous look-away strike window remains four seconds.
 
 Gadget checks reuse a capture canvas and send a 640-pixel-wide JPEG at 0.7
