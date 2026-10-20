@@ -2047,7 +2047,7 @@ def my_exam_sets(request):
 
     submissions = ExamSubmission.objects.filter(
         student_email__iexact=student_email,
-    ).values('exam_set_id', 'score', 'is_done', 'terminated')
+    ).values('exam_set_id', 'score', 'is_done', 'terminated', 'attempt_count')
     submission_dict = {s['exam_set_id']: s for s in submissions}
 
     exams = []
@@ -2061,6 +2061,8 @@ def my_exam_sets(request):
                 'available_from': exam.available_from,
                 'due_at': exam.due_at,
                 'time_limit': exam.time_limit,
+                'max_attempts': exam.max_attempts,
+                'attempt_count': submission.get('attempt_count', 0),
                 'is_final': exam.is_final,
                 'created_at': exam.created_at,
                 'subject_id': exam.subject_id,

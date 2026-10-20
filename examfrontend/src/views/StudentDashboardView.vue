@@ -139,7 +139,8 @@
               >
                 <template #actions>
                   <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
-                  <button v-else type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
+                  <button v-if="canRetakeExam(exam)" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Retake exam</button>
+                  <button v-if="!exam.is_done" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
                 </template>
               </ExamRow>
             </template>
@@ -269,7 +270,8 @@
                   >
                     <template #actions>
                       <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
-                      <button v-else type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
+                      <button v-if="canRetakeExam(exam)" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Retake exam</button>
+                      <button v-if="!exam.is_done" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
                     </template>
                   </ExamRow>
                 </template>
@@ -704,13 +706,14 @@
           </div>
           <div class="results-detail-item">
             <span class="detail-label">Attempts used</span>
-            <span class="detail-value">1 of {{ resultsModal.max_attempts || 1 }}</span>
+            <span class="detail-value">{{ resultsModal.attempt_count || 1 }} of {{ resultsModal.max_attempts || 1 }}</span>
           </div>
         </div>
 
         <!-- Footer -->
         <div class="results-footer">
           <p class="results-note">Review of answers is not permitted after submission.</p>
+          <button v-if="canRetakeExam(resultsModal)" type="button" class="results-back-btn" @click="startRetakeFromResults">Retake exam</button>
           <button class="results-back-btn" @click="closeResultsModal">← Back</button>
         </div>
 
@@ -752,6 +755,7 @@ import EmptyState from "@/components/EmptyState.vue";
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import { nextPrecheckFaceState } from "@/utils/precheckFace.js";
 import {
+  canRetakeExam,
   compareExamsNewestFirst,
   examTimelineDisplayAt,
   formatExamTimelineTime,
@@ -2633,8 +2637,7 @@ async function openTakeExam(exam) {
     showToastMessage("This exam is already closed and can no longer be taken.");
     return;
   }
-  // Done exams go to the results modal, not the taking modal.
-  if (exam.is_done) {
+  if (exam.is_done && !canRetakeExam(exam)) {
     await openResultsModal(exam);
     return;
   }
@@ -3399,6 +3402,12 @@ async function openResultsModal(exam, seed = null) {
 function closeResultsModal() {
   resultsModal.value = null;
   resultsData.value = {};
+}
+
+function startRetakeFromResults() {
+  const exam = resultsModal.value;
+  closeResultsModal();
+  if (exam) openTakeExam(exam);
 }
 
 function goStudentDashboard() {

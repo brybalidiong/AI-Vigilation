@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compareExamsNewestFirst } from '../src/utils/examTimeline.js';
+import { canRetakeExam, compareExamsNewestFirst, studentExamOnDashboard } from '../src/utils/examTimeline.js';
 
 test('exam lists use creation order even when deadlines and titles disagree', () => {
   const exams = [
@@ -18,4 +18,21 @@ test('equal creation times use newest ID first', () => {
     { exam_set_id: 5, created_at: '2026-03-01T10:00:00Z' },
   ];
   assert.deepEqual(exams.sort(compareExamsNewestFirst).map(exam => exam.exam_set_id), [5, 4]);
+});
+
+test('a submitted exam remains available for a second attempt until its limit or deadline', () => {
+  const now = Date.parse('2026-10-21T01:00:00Z');
+  const exam = {
+    is_final: true,
+    is_done: true,
+    attempt_count: 1,
+    max_attempts: 2,
+    available_from: '2026-10-20T01:00:00Z',
+    due_at: '2026-10-22T01:00:00Z',
+  };
+  assert.equal(canRetakeExam(exam, now), true);
+  assert.equal(studentExamOnDashboard(exam, { now, withinDays: 3650 }), true);
+  assert.equal(canRetakeExam({ ...exam, attempt_count: 2 }, now), false);
+  assert.equal(canRetakeExam(exam, Date.parse('2026-10-23T01:00:00Z')), false);
+  assert.equal(studentExamOnDashboard({ ...exam, attempt_count: 2 }, { now, withinDays: 3650 }), false);
 });

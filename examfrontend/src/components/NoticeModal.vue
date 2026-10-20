@@ -33,6 +33,7 @@ const messageId = `notice-message-${Math.random().toString(36).slice(2)}`;
 .notice-backdrop { position: fixed; inset: 0; z-index: 1000002; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 42, .58); }
 .notice-dialog { --notice-color: #b45309; --notice-soft: #fff3df; position: relative; overflow: hidden; width: min(100%, 450px); padding: 2.35rem 2.25rem 2.1rem; border-radius: 22px; background: linear-gradient(180deg, #f8faff 0%, #fff 35%); border: 1px solid #dce4ef; box-shadow: 0 26px 80px rgba(15, 23, 42, .25), 0 5px 18px rgba(15, 23, 42, .08); text-align: center; font-family: 'Poppins', sans-serif; }
 .notice-dialog::before { content: ''; position: absolute; inset: 0 0 auto; height: 5px; background: var(--notice-color); }
+.notice-dialog.success::before { display: none; }
 .notice-dialog.success { --notice-color: #15803d; --notice-soft: #e8f5ee; width: min(100%, 520px); }
 .notice-dialog.error { --notice-color: #b91c1c; --notice-soft: #feecec; }
 .notice-mark { width: 68px; height: 68px; display: grid; place-items: center; margin: 0 auto 1rem; border-radius: 21px; background: var(--notice-soft); color: var(--notice-color); box-shadow: 0 0 0 7px rgba(255, 255, 255, .88), 0 0 0 8px #e6eaf1; }

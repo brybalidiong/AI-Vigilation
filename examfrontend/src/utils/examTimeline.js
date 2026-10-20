@@ -147,9 +147,17 @@ export function instructorExamOnDashboard(exam, { now = Date.now(), withinDays =
   return passesTimelineWindow(exam, now, withinDays);
 }
 
-/** Student dashboard: published, not done, still open or upcoming. */
+/** A submitted exam can be taken again only while attempts and time remain. */
+export function canRetakeExam(exam, now = Date.now()) {
+  if (!exam?.is_done || Number(exam.attempt_count || 1) >= Number(exam.max_attempts || 1)) return false;
+  const start = parseExamDate(exam.available_from);
+  const due = parseExamDate(exam.due_at);
+  return (!start || start.getTime() <= now) && (!due || due.getTime() >= now);
+}
+
+/** Student dashboard: published, still open or upcoming, including available retakes. */
 export function studentExamOnDashboard(exam, { now = Date.now(), withinDays = 90 } = {}) {
-  if (!exam || exam.is_done) return false;
+  if (!exam || (exam.is_done && !canRetakeExam(exam, now))) return false;
   if (exam.is_final === false) return false;
   return passesTimelineWindow(exam, now, withinDays);
 }

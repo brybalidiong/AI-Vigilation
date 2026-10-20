@@ -497,6 +497,35 @@ class ExamQuestionOrderTests(TestCase):
         self.assertEqual(submission.attempt_count, 2)
         self.assertFalse(submission.is_done)
 
+    def test_exam_list_exposes_attempts_until_limit_is_reached(self):
+        list_url = '/api/student/exams/'
+        exam_url = f'/api/student/exams/{self.exam.pk}/submit/'
+
+        def listed_exam():
+            response = self.client.get(list_url)
+            self.assertEqual(response.status_code, 200, response.data)
+            return next(row for row in response.data['exam_sets'] if row['id'] == self.exam.pk)
+
+        self.assertEqual((listed_exam()['attempt_count'], listed_exam()['max_attempts']), (0, 2))
+        for attempt in (1, 2):
+            questions = self.fetch_questions()
+            listed = listed_exam()
+            self.assertEqual(listed['attempt_count'], attempt)
+            self.assertFalse(listed['is_done'])
+            response = self.client.post(
+                exam_url,
+                {'answers': [{'question_id': questions[0]['id'], 'answer_text': 'answer'}]},
+                format='json',
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+            listed = listed_exam()
+            self.assertTrue(listed['is_done'])
+            self.assertEqual(listed['attempt_count'], attempt)
+            self.assertEqual(listed['max_attempts'], 2)
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 403, response.data)
+
     def test_instructor_order_is_preserved(self):
         self.fetch_questions()
         self.client.force_authenticate(self.instructor)
