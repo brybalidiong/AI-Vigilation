@@ -1024,7 +1024,7 @@ let _gadgetLoopGeneration = 0;
 const gadgetOverlayBoxes = ref([]);
 const GADGET_FRAME_WIDTH = 640;
 const GADGET_IDLE_POLL_MS = 150;
-const GADGET_ACTIVE_POLL_MS = 40;
+const GADGET_ACTIVE_POLL_MS = 500; // leave CPU time for live gaze inference
 let _gazeCheckTimer = null;
 let _lastGazeWarningAt = 0;
 let _gazeCheckInFlight = false;
@@ -1825,9 +1825,9 @@ let _wsHasResult = false;
 let _wsResponseTimeout = null;
 let _wsSendTimer = null;
 let _wsCloseCause = '';
-const WS_CONNECT_TIMEOUT_MS = 5000;
+const WS_CONNECT_TIMEOUT_MS = 12000;
 const WS_FIRST_RESULT_TIMEOUT_MS = 20000;
-const WS_RESPONSE_TIMEOUT_MS = 5000;
+const WS_RESPONSE_TIMEOUT_MS = 12000;
 const WS_MAX_RESULT_AGE_MS = 2500;
 
 function _gazeFrameBlob(image) {

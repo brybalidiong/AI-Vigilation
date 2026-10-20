@@ -67,7 +67,8 @@ test('a slow stale reply is discarded without reconnecting or recording a violat
   assert.equal(h.sockets[0].sent.length, 1);
   h.sockets[0].reply();
   await h.run('_sendWsFrame()');
-  h.advance(2600);
+  assert.equal([...h.timers.values()].some(timer => timer.delay === 12000), true);
+  h.advance(6000);
   h.sockets[0].reply();
   assert.equal(h.sockets[0].readyState, 1);
   assert.equal(h.run('_gazeWsActive'), true);

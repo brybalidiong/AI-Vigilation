@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import urllib.request
 from collections import deque
 from dataclasses import dataclass, field
@@ -167,7 +168,7 @@ class GazeTracker:
     def __init__(
         self,
         assets_dir: Optional[str] = None,
-        mirror_webcam: bool = True,
+        mirror_webcam: bool = False,
         smoothing_window: int = 0,
         use_hysteresis: bool = False,
     ):
@@ -175,6 +176,7 @@ class GazeTracker:
         self.mirror_webcam = mirror_webcam
         self._ready = False
         self._error: Optional[str] = None
+        self._lock = threading.Lock()
 
         class_path = os.path.join(self.assets_dir, "class_names.json")
         tflite_path = os.path.join(self.assets_dir, "EfficientNetB0_gaze_float32.tflite")
@@ -200,7 +202,7 @@ class GazeTracker:
             running_mode=mp_vision.RunningMode.IMAGE,
             output_face_blendshapes=False,
             output_facial_transformation_matrixes=False,
-            num_faces=1,
+            num_faces=2,
         )
         self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
 
@@ -232,9 +234,6 @@ class GazeTracker:
             (i for i, n in enumerate(self.classes) if "normal" in n.lower()), 3
         )
         self._hysteresis = _HysteresisFilter(normal_idx=normal_idx) if use_hysteresis else None
-
-        import threading
-        self._lock = threading.Lock()
 
     @property
     def ready(self) -> bool:

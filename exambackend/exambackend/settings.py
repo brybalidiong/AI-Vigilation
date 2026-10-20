@@ -130,7 +130,10 @@ CHANNEL_LAYERS = {
     'default': (
         {'BACKEND': 'channels_redis.core.RedisChannelLayer', 'CONFIG': {'hosts': [REDIS_URL]}}
         if REDIS_URL else {'BACKEND': 'channels.layers.InMemoryChannelLayer'}
-    )
+    ),
+    # Gaze sockets never join groups or receive cross-process messages. Keep
+    # their per-connection channel local so a Redis timeout cannot drop them.
+    'gaze': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
 }
 
 

@@ -111,6 +111,8 @@ class StudentExamUpdatesConsumer(AsyncWebsocketConsumer):
 
 
 class GazeConsumer(AsyncWebsocketConsumer):
+    channel_layer_alias = 'gaze'
+
     async def connect(self):
         self.exam_id = self.scope['url_route']['kwargs']['exam_id']
         self.student_email = None

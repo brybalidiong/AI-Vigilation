@@ -44,6 +44,13 @@ socket and activates the HTTP fallback. When the exam shows "Reconnecting," chec
 the browser's `[GazeWS] closed` console entry for its close code and cause, then
 check backend errors and model availability; the label alone does not identify
 a student network problem.
+Gaze sockets use a local Channels layer because they do not join groups or
+receive cross-process messages. This keeps Redis read timeouts from closing
+the live gaze stream; exam-publishing updates continue to use Redis. After
+startup, the browser allows 12 seconds for a gaze reply before reconnecting.
+Results older than 2.5 seconds are discarded so they cannot create delayed strikes.
+Gadget scans pause for 500 ms after each active response to leave CPU capacity
+for gaze inference on the shared backend.
 Before each exam, the camera precheck posts webcam frames to the authenticated
 `/api/student/exams/<exam_id>/precheck-face/` endpoint. YuNet returns a
 normalized face box without starting an exam attempt or storing the frame.

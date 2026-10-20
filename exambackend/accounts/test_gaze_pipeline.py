@@ -66,6 +66,13 @@ class GadgetWarmupStateTests(SimpleTestCase):
 
 
 class GazeFrameTests(SimpleTestCase):
+    def test_gaze_socket_uses_local_channel_layer(self):
+        from channels.layers import InMemoryChannelLayer, get_channel_layer
+        from accounts.consumers import GazeConsumer
+
+        self.assertEqual(GazeConsumer.channel_layer_alias, 'gaze')
+        self.assertIsInstance(get_channel_layer('gaze'), InMemoryChannelLayer)
+
     async def test_websocket_rejects_missing_token_before_inference_setup(self):
         from accounts.consumers import GazeConsumer
 
