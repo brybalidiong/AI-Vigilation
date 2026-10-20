@@ -56,6 +56,7 @@ _SIDEWAYS_IRIS_STRONG = 0.10
 _ABOVE_NORMAL_IRIS_V = -0.06
 _ABOVE_NORMAL_PITCH = -0.08
 _ABOVE_NORMAL_MODEL_CONFIDENCE = 0.65
+_ABOVE_HEAD_ONLY_PITCH = -0.16
 
 
 def prepare_image_batch(face_bgr: np.ndarray) -> np.ndarray:
@@ -361,6 +362,15 @@ def _above_has_independent_evidence(geo: np.ndarray) -> bool:
     )
 
 
+def _above_has_head_evidence(geo: np.ndarray, above_p: float) -> bool:
+    """Allow a clear upward head tilt when both eyes remain near center."""
+    return (
+        above_p >= 0.80
+        and float(geo[1]) <= _ABOVE_HEAD_ONLY_PITCH
+        and max(float(geo[6]), float(geo[8])) <= 0.025
+    )
+
+
 def _pick_sideways_from_geometry(
     geo: np.ndarray,
     left_idx: int,
@@ -453,6 +463,17 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     # This corrects camera/model mirror mismatches while leaving normal and
     # borderline frames to the confidence-based classifier below.
     strong_side = _strong_sideways_from_geometry(geo)
+    above_eye_evidence = _above_has_independent_evidence(geo)
+    if strong_side and (argmax_idx == above_idx or (vertical is not None and vertical[0] == above_idx)):
+        # A sideways look can confuse the CNN into predicting above. Keep a
+        # simultaneous true eye-up look, but otherwise follow clear side geometry.
+        if not above_eye_evidence:
+            side_idx = _left_class_index(classes) if strong_side == "left" else _right_class_index(classes)
+            return side_idx, max(float(probs[side_idx]), 0.50)
+    if argmax_idx == above_idx and not (
+        above_eye_evidence or _above_has_head_evidence(geo, above_p)
+    ):
+        return normal_idx, normal_conf
     if strong_side and argmax_idx in (normal_idx, below_idx):
         iris_v = (float(geo[6]) + float(geo[8])) / 2.0
         if iris_v < _BELOW_IRIS_V_STRONG and below_p < 0.50:

@@ -417,7 +417,7 @@ class GazeFrameTests(SimpleTestCase):
         self.assertEqual(direction, 3)
 
         geo[6] = geo[8] = 0
-        for above_confidence, expected in ((0.60, 3), (0.80, 0)):
+        for above_confidence, expected in ((0.60, 3), (0.80, 3)):
             with self.subTest(above_confidence=above_confidence):
                 direction, _ = pick_gaze_label(
                     np.array([above_confidence, 0.02, 0.02, 0.10, 0.06], dtype=np.float32),
@@ -538,7 +538,7 @@ class GazeFrameTests(SimpleTestCase):
         self.assertEqual(idx, 1)
         self.assertGreaterEqual(confidence, 0.50)
 
-    def test_horizontal_geometry_does_not_replace_clear_vertical_prediction(self):
+    def test_sideways_geometry_beats_above_without_upward_evidence(self):
         from gaze_tracker.inference import pick_gaze_label
 
         geo = np.zeros(14, dtype=np.float32)
@@ -549,12 +549,48 @@ class GazeFrameTests(SimpleTestCase):
             'Looking below',
         ]
         for expected, probs in (
-            (0, [0.80, 0.05, 0.02, 0.10, 0.03]),
+            (1, [0.80, 0.05, 0.02, 0.10, 0.03]),
             (4, [0.02, 0.05, 0.03, 0.10, 0.80]),
         ):
             idx, confidence = pick_gaze_label(np.array(probs, dtype=np.float32), geo, classes)
             self.assertEqual(idx, expected)
-            self.assertAlmostEqual(confidence, 0.80)
+            self.assertGreaterEqual(confidence, 0.50)
+
+        geo[6] = geo[8] = -0.08
+        idx, confidence = pick_gaze_label(
+            np.array([0.80, 0.05, 0.02, 0.10, 0.03], dtype=np.float32), geo, classes,
+        )
+        self.assertEqual(idx, 0)
+        self.assertAlmostEqual(confidence, 0.80)
+
+        geo[6] = geo[8] = 0
+        geo[5] = geo[7] = 0
+        geo[1] = -0.20
+        idx, _ = pick_gaze_label(
+            np.array([0.80, 0.05, 0.02, 0.10, 0.03], dtype=np.float32), geo, classes,
+        )
+        self.assertEqual(idx, 0)
+
+    def test_rightward_eyes_beat_false_above_prediction(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        geo = np.zeros(14, dtype=np.float32)
+        geo[5] = geo[7] = 0.18
+        for probabilities in (
+            [0.80, 0.02, 0.05, 0.10, 0.03],
+            [0.23, 0.02, 0.05, 0.67, 0.03],
+        ):
+            with self.subTest(probabilities=probabilities):
+                idx, confidence = pick_gaze_label(
+                    np.array(probabilities, dtype=np.float32), geo, classes,
+                )
+                self.assertEqual(idx, 2)
+                self.assertGreaterEqual(confidence, 0.50)
 
     def test_face_verification_skips_mirrored_pass_after_original_matches(self):
         from accounts import face_service
