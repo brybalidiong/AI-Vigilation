@@ -13,7 +13,10 @@ function harness() {
   const sockets = [];
   const timers = new Map();
   const uploads = [];
-  const display = { direction: '' };
+  const direction = { value: '' };
+  const preview = { value: '' };
+  const display = { get direction() { return preview.value || direction.value; } };
+  let directionEnabled = true;
   let timerId = 0;
   class Socket {
     static OPEN = 1;
@@ -39,7 +42,7 @@ function harness() {
     gazeDetectionStatus: { value: '' }, gazeViolationCount: { value: 0 }, gazeNoFaceCount: { value: 0 },
     proctoringWarning: { value: { show: false } }, terminateReason: { value: '' },
     examVideoEl: { value: { readyState: 2, videoWidth: 640, videoHeight: 480 } },
-    GAZE_WS_INTERVAL_MS: 20, GAZE_WS_BUSY_RETRY_MS: 100,
+    GAZE_WS_INTERVAL_MS: 0, GAZE_WS_BUSY_RETRY_MS: 100,
     GAZE_FRAME_WIDTH: 480, GAZE_VIOLATION_LIMIT: 8,
     backendBaseUrl: 'http://localhost:8000', window: { location: { protocol: 'http:' } },
     localStorage: { getItem: () => 'jwt' },
@@ -48,9 +51,12 @@ function harness() {
       toDataURL: () => `data:image/jpeg;base64,${Buffer.from(currentImage).toString('base64')}`,
     }) },
     _updateGazeBbox() {}, _clearGazePending() {},
-    _isGazeDirectionEnabled: () => true,
-    _startGazeViolationTimer: label => { display.direction = label; },
-    _clearGazeViolationTimer: () => { display.direction = ''; },
+    gazeCurrentDirection: direction,
+    gazePreviewDirection: preview,
+    _isLeftRightLabel: label => /left|right/i.test(label) && !/left.*right|right.*left/i.test(label),
+    _isGazeDirectionEnabled: () => directionEnabled,
+    _startGazeViolationTimer: label => { direction.value = label; },
+    _clearGazeViolationTimer: () => { direction.value = ''; },
     _formalGazeLabel: label => label, _terminateExam() {},
     api: { post: async (url, form) => { uploads.push({ url, form }); return { data: {} }; } },
   });
@@ -59,7 +65,8 @@ function harness() {
   run('_startGazeWsLoop()');
   sockets[0].open();
   return { run, context, sockets, timers, uploads, display,
-    advance: ms => { now += ms; }, image: value => { currentImage = value; } };
+    advance: ms => { now += ms; }, image: value => { currentImage = value; },
+    setDirectionEnabled: enabled => { directionEnabled = enabled; } };
 }
 
 test('a slow stale reply is discarded without reconnecting or recording a violation', async () => {
@@ -77,7 +84,7 @@ test('a slow stale reply is discarded without reconnecting or recording a violat
   assert.equal(h.context.gazeDetectionStatus.value, 'AI delayed');
   assert.equal(h.display.direction, '');
   assert.equal(h.uploads.length, 0);
-  assert.equal([...h.timers.values()].some(timer => timer.delay === 20), true);
+  assert.equal([...h.timers.values()].some(timer => timer.delay === 0), true);
   await h.run('_sendWsFrame()');
   h.sockets[0].reply({ label: 'Looking at the screen (Normal)', is_normal: true, is_suspicious: false });
   assert.equal(h.context.gazeDetectionStatus.value, '');
@@ -110,12 +117,89 @@ test('a slow cold-start result is accepted within the startup timeout', () => {
   assert.equal(h.context.gazeDetectionStatus.value, '');
 });
 
+test('a first horizontal result updates the display before strike timing starts', async () => {
+  const h = harness();
+  h.sockets[0].reply({ stabilizing: true, is_suspicious: false });
+  assert.equal(h.display.direction, 'Looking at the left');
+  assert.equal(h.run('_wsViolationStartTime'), null);
+  assert.equal(h.context.gazeCurrentDirection.value, '');
+  assert.equal(h.uploads.length, 0);
+
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply();
+  assert.equal(h.context.gazePreviewDirection.value, '');
+  assert.equal(h.display.direction, 'Looking at the left');
+  assert.equal(h.run('_wsViolationStartTime'), 10000);
+});
+
+test('a busy gap cannot turn one old suspicious frame into a strike', async () => {
+  const h = harness();
+  h.sockets[0].reply();
+  assert.equal(h.run('_wsViolationStartTime'), 10000);
+
+  await h.run('_sendWsFrame()');
+  h.advance(2000);
+  h.sockets[0].reply({ busy: true, frame_receipt: undefined });
+  assert.equal(h.run('_wsViolationStartTime'), null);
+  assert.equal(h.display.direction, '');
+
+  await h.run('_sendWsFrame()');
+  h.advance(2500);
+  h.sockets[0].reply();
+  assert.equal(h.run('_wsViolationStartTime'), 14500);
+  assert.equal(h.uploads.length, 0);
+});
+
+test('a first rightward result appears immediately and an ensuing normal result clears its preview', async () => {
+  const h = harness();
+  h.sockets[0].reply({ label: 'Looking at the right', stabilizing: true, is_suspicious: false });
+  assert.equal(h.display.direction, 'Looking at the right');
+  assert.equal(h.run('_wsViolationStartTime'), null);
+
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply({ label: 'Looking at the screen (Normal)', is_normal: true, is_suspicious: false });
+  assert.equal(h.display.direction, '');
+  assert.equal(h.run('_wsViolationStartTime'), null);
+});
+
+test('up and down show on the first valid gaze result', () => {
+  for (const label of ['Looking above', 'Looking below']) {
+    const h = harness();
+    h.sockets[0].reply({ label });
+    assert.equal(h.display.direction, label);
+    assert.equal(h.run('_wsViolationStartTime'), 10000);
+  }
+});
+
+test('disabled directions and absence never show an early horizontal preview', () => {
+  const local = harness();
+  local.setDirectionEnabled(false);
+  local.sockets[0].reply({ stabilizing: true, is_suspicious: false });
+  assert.equal(local.display.direction, '');
+  assert.equal(local.run('_wsViolationStartTime'), null);
+
+  const server = harness();
+  server.sockets[0].reply({ stabilizing: true, is_suspicious: false, direction_enabled: false });
+  assert.equal(server.display.direction, '');
+  assert.equal(server.run('_wsViolationStartTime'), null);
+
+  const absent = harness();
+  absent.sockets[0].reply({ stabilizing: true, is_suspicious: false, face_detected: false });
+  assert.equal(absent.display.direction, '');
+  assert.equal(absent.run('_wsViolationStartTime'), null);
+});
+
 test('evidence is the analyzed frame even if camera changes before response', async () => {
   const h = harness();
   assert.equal(h.context.gazeDetectionStatus.value, 'Starting AI');
   h.sockets[0].reply();
   assert.equal(h.context.gazeDetectionStatus.value, '');
-  h.advance(4100);
+  for (let i = 0; i < 3; i += 1) {
+    h.advance(1000);
+    await h.run('_sendWsFrame()');
+    h.sockets[0].reply();
+  }
+  h.advance(1100);
   h.image('look-away-frame');
   await h.run('_sendWsFrame()');
   h.image('already-looking-back');

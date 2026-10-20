@@ -4,7 +4,8 @@ import json
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import timedelta
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 from django.core import signing
@@ -325,6 +326,98 @@ class GazeFrameTests(SimpleTestCase):
         below[6] = below[8] = 0.115
         below[12] = 0.155
         self.assertTrue(is_looking_below(below))
+
+    def test_model_supported_vertical_geometry_displaces_normal_in_one_frame(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        for iris_v, vert, iris_h, probabilities, expected in (
+            (-0.06, -0.045, 0.00, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
+            (-0.019, -0.041, 0.00, [0.24, 0.02, 0.02, 0.67, 0.05], 0),
+            (0.115, 0.155, 0.00, [0.02, 0.02, 0.02, 0.67, 0.27], 4),
+            (0.090, 0.125, 0.00, [0.02, 0.02, 0.02, 0.68, 0.26], 4),
+            (0.20, 0.16, 0.00, [0.02, 0.02, 0.02, 0.68, 0.26], 4),
+            (-0.06, -0.045, -0.20, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
+        ):
+            with self.subTest(iris_v=iris_v):
+                geo = np.zeros(14, dtype=np.float32)
+                geo[6] = geo[8] = iris_v
+                geo[5] = geo[7] = iris_h
+                geo[12] = vert
+                direction, confidence = pick_gaze_label(np.array(probabilities, dtype=np.float32), geo, classes)
+                self.assertEqual(direction, expected)
+                self.assertGreaterEqual(confidence, 0.22 if expected == 0 else 0.25)
+
+    def test_obvious_opposite_vertical_iris_blocks_model_label(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        for iris_v, vert, probabilities in (
+            (0.16, 0.17, [0.80, 0.02, 0.02, 0.12, 0.04]),
+            (-0.08, -0.06, [0.04, 0.02, 0.02, 0.12, 0.80]),
+        ):
+            with self.subTest(iris_v=iris_v):
+                geo = np.zeros(14, dtype=np.float32)
+                geo[6] = geo[8] = iris_v
+                geo[12] = vert
+                direction, _ = pick_gaze_label(np.array(probabilities, dtype=np.float32), geo, classes)
+                self.assertEqual(direction, 3)
+
+    def test_vertical_override_requires_matching_iris_movement(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        for pitch, vert, iris_v, probabilities in (
+            (-0.20, -0.20, 0.0, [0.23, 0.02, 0.02, 0.71, 0.02]),
+            (-0.50, -0.20, 0.16, [0.25, 0.02, 0.02, 0.65, 0.06]),
+            (0.20, 0.20, 0.0, [0.02, 0.02, 0.02, 0.68, 0.26]),
+        ):
+            with self.subTest(pitch=pitch, iris_v=iris_v):
+                geo = np.zeros(14, dtype=np.float32)
+                geo[1] = pitch
+                geo[12] = vert
+                geo[6] = geo[8] = iris_v
+                direction, _ = pick_gaze_label(np.array(probabilities, dtype=np.float32), geo, classes)
+                self.assertEqual(direction, 3)
+
+    def test_tracker_keeps_vertical_labels_at_direction_confidence_gate(self):
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        tracker = GazeTracker(assets_dir='missing-gaze-test-assets')
+        tracker._ready = True
+        tracker.classes = classes
+        tracker._landmarker = SimpleNamespace(detect=lambda image: SimpleNamespace(face_landmarks=[[None]]))
+        tracker._interpreter = Mock()
+        tracker._interpreter.get_tensor.return_value = np.array([[0.23, 0.02, 0.02, 0.47, 0.26]], dtype=np.float32)
+        tracker._img_idx = tracker._out_idx = 0
+        tracker._has_geo_input = False
+        tracker._smoother = None
+        tracker._hysteresis = None
+        frame = np.zeros((8, 8, 3), dtype=np.uint8)
+
+        with patch.object(tracker, '_crop_face', return_value=(frame, None)), \
+                patch('gaze_tracker.tracker.extract_geometric_features', return_value=np.zeros(14, dtype=np.float32)), \
+                patch('gaze_tracker.tracker.pick_gaze_label', side_effect=[(0, 0.23), (4, 0.26)]):
+            for expected in (classes[0], classes[4]):
+                result = tracker.analyze(frame)
+                self.assertEqual(result.label, expected)
+                self.assertFalse(result.is_normal)
+                self.assertTrue(result.is_suspicious)
 
     def test_strong_geometry_corrects_opposite_horizontal_model_class(self):
         from gaze_tracker.inference import pick_gaze_label

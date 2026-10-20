@@ -46,7 +46,7 @@ def analyze_frame_bytes(raw):
 
 
 def submit_gaze_inference(analyzer, raw):
-    """Keep only the active frame and one waiting frame across gaze sockets."""
+    """Keep one active and one waiting frame; reject excess stale work."""
     if not _inference_slots.acquire(blocking=False):
         return None
     try:

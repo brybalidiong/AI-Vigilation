@@ -348,7 +348,7 @@
         <video ref="examVideoEl" class="cam-pip-video" autoplay muted playsinline></video>
 
         <!-- Direction label overlay (replaces bounding box) -->
-        <div v-if="takingExam && gazeCurrentDirection" class="cam-pip-direction-badge" :style="{ background: pipBorderColor }">
+        <div v-if="takingExam && gazeDisplayDirection" class="cam-pip-direction-badge" :style="{ background: pipBorderColor }">
           {{ gazeDirectionIcon }} {{ gazeDirectionLabel }}
         </div>
 
@@ -357,7 +357,7 @@
         <div v-if="takingExam" class="cam-pip-gaze">
           <span class="cam-pip-gaze-label">AI gaze<span v-if="gazeDetectionStatus"> · {{ gazeDetectionStatus }}</span></span>
           <span class="cam-pip-gadget-status" :class="{ 'cam-pip-gadget-unavailable': gadgetDetectionStatus === 'unavailable' }">Gadget scanner: {{ gadgetDetectionStatus }}</span>
-          <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gadgetWarningCount > 0 || gazeCurrentDirection }">
+          <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gadgetWarningCount > 0 || gazeDisplayDirection }">
             away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }} · gadget {{ gadgetWarningCount }}/{{ GADGET_WARNING_LIMIT }}
           </span>
         </div>
@@ -365,7 +365,7 @@
 
       <!-- Live direction alert: sits BELOW the video box so it never covers the face -->
       <Transition name="dir-alert">
-        <div v-if="takingExam && gazeCurrentDirection" class="cam-pip-dir-alert">
+        <div v-if="takingExam && gazeDisplayDirection" class="cam-pip-dir-alert">
           <span class="cam-pip-dir-icon">{{ gazeDirectionIcon }}</span>
           <div class="cam-pip-dir-body">
             <span class="cam-pip-dir-label">{{ gazeDirectionLabel }}</span>
@@ -991,14 +991,15 @@ let _splitScreenActive = false;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
-const GAZE_WS_INTERVAL_MS = 20;           // sample a fresh frame soon after each inference
+const GAZE_WS_INTERVAL_MS = 0;            // sample a fresh frame on the next event-loop turn
 const GAZE_WS_BUSY_RETRY_MS = 100;       // give the shared inference worker time to free up
 const GAZE_FRAME_WIDTH = 640;              // preserve iris detail for gaze landmarks
 const GAZE_FIRST_CHECK_MS = 50;            // fire first check immediately
-const GAZE_CONFIDENCE_MIN = 0.85;          // general fallback
-const GAZE_ABOVE_CONFIDENCE_MIN = 0.80;    // was 0.90 — matched to lower backend threshold
-const GAZE_LEFT_RIGHT_CONFIDENCE_MIN = 0.75; // raised to reduce false positives
-const GAZE_BELOW_CONFIDENCE_MIN = 0.65;    // raised to reduce false positives for looking down
+const GAZE_CONFIDENCE_MIN = 0.34;          // match backend fallback when response thresholds are absent
+const GAZE_ABOVE_CONFIDENCE_MIN = 0.22;    // match backend fallback when response thresholds are absent
+const GAZE_LEFT_CONFIDENCE_MIN = 0.28;
+const GAZE_RIGHT_CONFIDENCE_MIN = 0.30;
+const GAZE_BELOW_CONFIDENCE_MIN = 0.25;
 const GAZE_NO_FACE_HOLD_SECONDS = 10;
 const GAZE_WARNING_COOLDOWN_MS = 5000;
 const absenceAlert = ref({ show: false, message: 'Return to your webcam view so proctoring can see your face.' });
@@ -1078,8 +1079,8 @@ function _isLeftRightLabel(label) {
 function _gazeConfidenceMet(label, confidence, thresholds = {}) {
   const general = thresholds.general ?? GAZE_CONFIDENCE_MIN;
   const above = thresholds.above ?? GAZE_ABOVE_CONFIDENCE_MIN;
-  const left = thresholds.left ?? thresholds.leftRight ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN;
-  const right = thresholds.right ?? thresholds.leftRight ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN;
+  const left = thresholds.left ?? thresholds.leftRight ?? GAZE_LEFT_CONFIDENCE_MIN;
+  const right = thresholds.right ?? thresholds.leftRight ?? GAZE_RIGHT_CONFIDENCE_MIN;
   const below = thresholds.below ?? GAZE_BELOW_CONFIDENCE_MIN;
   if (!label) return confidence >= general;
   const l = String(label).toLowerCase();
@@ -1144,6 +1145,9 @@ function _clearGazePending() {
 
 /** label of the currently detected gaze direction (empty = looking at screen) */
 const gazeCurrentDirection = ref('');
+/** First confident horizontal result, shown before strike timing starts. */
+const gazePreviewDirection = ref('');
+const gazeDisplayDirection = computed(() => gazePreviewDirection.value || gazeCurrentDirection.value);
 /** seconds elapsed since the direction was first detected */
 const gazeElapsedSeconds = ref(0);
 /** seconds required before a strike is logged for this direction */
@@ -1227,7 +1231,7 @@ const gazeDirectionBarColor = computed(() => {
 });
 /** Arrow icon for the detected direction. */
 const gazeDirectionIcon = computed(() => {
-  const l = (gazeCurrentDirection.value || '').toLowerCase();
+  const l = (gazeDisplayDirection.value || '').toLowerCase();
   if (l.includes('left'))  return '←';
   if (l.includes('right')) return '→';
   if (l.includes('above')) return '↑';
@@ -1235,7 +1239,7 @@ const gazeDirectionIcon = computed(() => {
   return '!';
 });
 /** Short, readable label shown in the PiP overlay. */
-const gazeDirectionLabel = computed(() => _formalGazeLabel(gazeCurrentDirection.value));
+const gazeDirectionLabel = computed(() => _formalGazeLabel(gazeDisplayDirection.value));
 
 // ── PiP border glow (replaces face bounding box) ─────────────────────────────
 // Instead of a canvas bounding box (which was inaccurate and laggy),
@@ -1251,12 +1255,12 @@ function _updateGazeBbox(data) {
   _gazeFaceDetected.value = Boolean(data.face_detected);
 }
 
-/** Computed: border color driven reactively by gazeCurrentDirection and face state. */
+/** Computed: border color driven reactively by the displayed direction and face state. */
 const pipBorderColor = computed(() => {
   if (gazeDetectionStatus.value) return '#f59e0b';
   if (!_gazeFaceDetected.value || _gazeRawLabel.value === 'no_face') return '#ef4444'; // red — no face
-  if (gazeCurrentDirection.value) {
-    const l = gazeCurrentDirection.value.toLowerCase();
+  if (gazeDisplayDirection.value) {
+    const l = gazeDisplayDirection.value.toLowerCase();
     if (l.includes('left') || l.includes('right')) return '#f97316';  // orange — sideways
     if (l.includes('above')) return '#a855f7';                         // purple — looking up
     if (l.includes('below')) return '#f59e0b';                         // amber — looking down
@@ -1526,8 +1530,8 @@ async function _runGazeCheck() {
     const thresholds = {
       general: data.confidence_threshold ?? GAZE_CONFIDENCE_MIN,
       above: data.above_confidence_threshold ?? GAZE_ABOVE_CONFIDENCE_MIN,
-      left: data.left_confidence_threshold ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN,
-      right: data.right_confidence_threshold ?? GAZE_LEFT_RIGHT_CONFIDENCE_MIN,
+      left: data.left_confidence_threshold ?? GAZE_LEFT_CONFIDENCE_MIN,
+      right: data.right_confidence_threshold ?? GAZE_RIGHT_CONFIDENCE_MIN,
       below: data.below_confidence_threshold ?? GAZE_BELOW_CONFIDENCE_MIN,
     };
     const normalizedLabel = String(data.label || '').toLowerCase();
@@ -1791,6 +1795,7 @@ let _wsPendingFrame = null;
 let _wsLatestFrame = null;
 let _wsFrameId = 0;
 let _wsHasResult = false;
+let _wsLastAcceptedAt = null;
 let _wsResponseTimeout = null;
 let _wsSendTimer = null;
 let _wsCaptureCanvas = null;
@@ -1799,6 +1804,7 @@ const WS_CONNECT_TIMEOUT_MS = 12000;
 const WS_FIRST_RESULT_TIMEOUT_MS = 20000;
 const WS_RESPONSE_TIMEOUT_MS = 12000;
 const WS_MAX_RESULT_AGE_MS = 2500;
+const WS_MAX_STREAK_GAP_MS = 1500;
 
 function _gazeFrameBlob(image) {
   const bytes = Uint8Array.from(atob(image.split(',')[1]), c => c.charCodeAt(0));
@@ -1808,6 +1814,18 @@ function _gazeFrameBlob(image) {
 function _scheduleWsFrame(delay = GAZE_WS_INTERVAL_MS) {
   clearTimeout(_wsSendTimer);
   _wsSendTimer = setTimeout(_sendWsFrame, delay);
+}
+
+function _expireWsGazeStreak(now) {
+  if (_wsLastAcceptedAt === null || now - _wsLastAcceptedAt <= WS_MAX_STREAK_GAP_MS) return;
+  _wsLastAcceptedAt = null;
+  _wsViolationStartTime = null;
+  _wsNormalStartTime = null;
+  _wsNormalConsecutive = 0;
+  _wsMultipleFacesStartTime = null;
+  _wsSuspiciousFrame = null;
+  gazePreviewDirection.value = '';
+  _clearGazeViolationTimer(true);
 }
 
 // WS violation timing state
@@ -1839,7 +1857,9 @@ function _startGazeWsLoop() {
   _wsNeedNormalReset = false;
   _wsMultipleFacesStartTime = null;
   _wsSuspiciousFrame       = null;
+  gazePreviewDirection.value = '';
   _wsHasResult = false;
+  _wsLastAcceptedAt = null;
   _wsCloseCause = '';
 
   const examId = takingExam.value.id;
@@ -1887,6 +1907,8 @@ function _startGazeWsLoop() {
       if (data.busy) {
         // The worker is occupied. The next attempt captures a fresh image;
         // never apply the old frame or treat this as an inference failure.
+        _expireWsGazeStreak(Date.now());
+        gazePreviewDirection.value = '';
         gazeDetectionStatus.value = 'AI busy';
         _scheduleWsFrame(GAZE_WS_BUSY_RETRY_MS);
         return;
@@ -1901,15 +1923,20 @@ function _startGazeWsLoop() {
         // it cannot affect strikes, then sample a fresh frame on this socket.
         _wsViolationStartTime = null;
         _clearGazeViolationTimer(true);
+        gazePreviewDirection.value = '';
         _wsLatestFrame = null;
+        _wsLastAcceptedAt = null;
         _wsHasResult = true;
         gazeDetectionStatus.value = 'AI delayed';
         _scheduleWsFrame();
         return;
       }
       gazeDetectionStatus.value = '';
+      const now = Date.now();
+      _expireWsGazeStreak(now);
+      _wsLastAcceptedAt = now;
       _wsHasResult = true;
-      _wsLatestFrame = { ...analyzedFrame, receipt: data.frame_receipt, receivedAt: Date.now() };
+      _wsLatestFrame = { ...analyzedFrame, receipt: data.frame_receipt, receivedAt: now };
 
       // ── (A) No face / Multiple faces ──────────────────────────────────
       // Check both is_no_face flag AND label directly (in case flag is missing)
@@ -1920,13 +1947,14 @@ function _startGazeWsLoop() {
         || wsLabel.includes('multiple_people');
       const directionEnabled = data.direction_enabled !== false
         && _isGazeDirectionEnabled(data.label);
+      gazePreviewDirection.value = !isAbsenceFrame && directionEnabled
+        && data.stabilizing && _isLeftRightLabel(data.label)
+        ? data.label : '';
       _updateGazeBbox(
         !isAbsenceFrame && !directionEnabled
           ? { ...data, label: 'Normal', is_suspicious: false, is_normal: true }
           : data,
       );
-      const now = Date.now();
-
       if (isAbsenceFrame) {
         _wsNormalStartTime    = null;
         _wsViolationStartTime = null;
@@ -2043,8 +2071,9 @@ function _startGazeWsLoop() {
           _wsSuspiciousFrame         = null;   // clear stale evidence blob
         }
       } else if (data.stabilizing) {
-        // Keep the current display/timer while a second horizontal frame is
-        // being confirmed. This avoids flicker without counting a lone frame.
+        // The first confident horizontal result is useful visual feedback even
+        // though a second frame must confirm it before strike timing begins.
+        // gazePreviewDirection drives the badge while the strike timer stays idle.
         _wsNormalStartTime = null;
       } else {
         _clearGazeViolationTimer(true);
@@ -2071,7 +2100,9 @@ function _startGazeWsLoop() {
     clearTimeout(_wsSendTimer);
     _wsPendingFrame = null;
     _wsLatestFrame = null;
+    _wsLastAcceptedAt = null;
     _wsViolationStartTime = null;
+    gazePreviewDirection.value = '';
     _clearGazeViolationTimer(true);
     _gazeWsActive = false;
     gazeDetectionStatus.value = 'Reconnecting';
@@ -2199,6 +2230,8 @@ function _stopGazeWsLoop() {
   clearTimeout(_wsSendTimer);
   _wsPendingFrame = null;
   _wsLatestFrame = null;
+  _wsLastAcceptedAt = null;
+  gazePreviewDirection.value = '';
   _wsCaptureCanvas = null;
   _wsHasResult = false;
   _gazeWsActive = false;

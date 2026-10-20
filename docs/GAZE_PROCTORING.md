@@ -34,9 +34,10 @@ During an exam, `StudentDashboardView.vue` streams one JPEG at a time over the g
 WebSocket. The camera precheck uses an authenticated HTTP request, while the
 exam gaze stream sends a student JWT through its WebSocket; both require an
 active, enrolled student assigned to a published exam.
-The next frame is captured 20 ms after the previous result arrives, so a slow inference
-cannot create a browser queue of stale frames. The backend keeps at most one active
-gaze inference and one waiting frame; when busy, it asks the browser to retry with
+The next frame is captured on the next browser event-loop turn after the previous
+result arrives, so a slow inference
+cannot create a browser queue of stale frames. The backend keeps one active
+gaze inference and at most one waiting frame; when busy, it asks the browser to retry with
 a fresh image after 100 ms. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
@@ -63,7 +64,12 @@ Head yaw keeps the student's left/right sign; iris X is converted from camera
 coordinates before the two are blended. The browser sends a 640-pixel-wide
 gaze JPEG at 0.75 quality to retain iris detail. Strong horizontal geometry
 can correct a mirrored left/right or normal prediction, but does not replace
-a clear up/down model prediction.
+a clear up/down model prediction. A first confident left/right frame appears in
+the camera direction indicator while a second frame confirms it for strike
+timing. Up/down appears on the first valid result. Strong vertical eye geometry
+can select up/down even when Normal has the highest model probability, provided
+the model supports that direction. The below confidence gate is 0.25; the
+above gate is 0.22. The continuous look-away strike window remains four seconds.
 
 Gadget checks reuse a capture canvas and send a 640-pixel-wide JPEG at 0.7
 quality. A new frame is captured 100 ms after a clear response, or 300 ms while

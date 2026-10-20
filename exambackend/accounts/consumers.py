@@ -17,7 +17,7 @@ from accounts.gaze_service import (
 # The tracker's raw is_suspicious can fire at lower internal thresholds.
 # We re-check confidence here before telling the frontend it's a violation,
 # so the UI timer doesn't start on low-confidence frames.
-_WS_BELOW_CONFIDENCE   = 0.34
+_WS_BELOW_CONFIDENCE   = 0.25
 _WS_RIGHT_CONFIDENCE   = 0.30
 _WS_LEFT_CONFIDENCE    = 0.28
 _WS_ABOVE_CONFIDENCE   = 0.22  # lowered from 0.26 to match inference.py ABOVE_VIOLATION_CONFIDENCE_THRESHOLD

@@ -28,7 +28,7 @@ _CENTER_HEAD_PITCH = 0.16
 VIOLATION_CONFIDENCE_THRESHOLD = 0.34
 LEFT_CONFIDENCE_THRESHOLD = 0.28
 RIGHT_CONFIDENCE_THRESHOLD = 0.30
-BELOW_CONFIDENCE_THRESHOLD = 0.34
+BELOW_CONFIDENCE_THRESHOLD = 0.25
 ABOVE_VIOLATION_CONFIDENCE_THRESHOLD = 0.22
 # Only used when Normal is nearly tied with a look-away — not to suppress a clear left/above.
 _VIOLATION_OVER_NORMAL_MARGIN = 0.03
@@ -45,8 +45,8 @@ _ABOVE_IRIS_V = 0.018
 _ABOVE_VERT = 0.040
 # Below thresholds (relying primarily on iris movement to ignore camera angle)
 _BELOW_PITCH = 0.40
-_BELOW_IRIS_V = 0.11
-_BELOW_VERT = 0.15
+_BELOW_IRIS_V = 0.085
+_BELOW_VERT = 0.12
 # Strong-geometry-only thresholds (fire without model confidence requirement)
 _BELOW_PITCH_STRONG = 0.45  # Unused, pitch is too unreliable
 _BELOW_IRIS_V_STRONG = 0.19
@@ -287,10 +287,9 @@ def is_looking_below(geo: np.ndarray) -> bool:
     if iris_v < -0.02:
         return False
 
-    # Quick-fire shortcut: iris must be very clearly down AND head pitched noticeably.
-    # Both thresholds are intentionally high — normal reading or typing posture
-    # should never cross both simultaneously.
-    if iris_v > 0.095 and pitch > 0.10:
+    # Eye and head movement can corroborate each other before the blended
+    # vertical feature has crossed its threshold.
+    if iris_v > 0.085 and pitch > 0.08:
         return True
 
     signals = (
@@ -314,6 +313,36 @@ def is_looking_below_strong(geo: np.ndarray) -> bool:
     # Pitch is utterly unreliable due to variable webcam heights.
     # We only trust extreme downward iris movement.
     return iris_v > _BELOW_IRIS_V_STRONG
+
+
+def _pick_vertical_from_geometry(
+    geo: np.ndarray,
+    above_idx: int,
+    below_idx: int,
+    above_p: float,
+    below_p: float,
+) -> tuple[int, float] | None:
+    """Use current-frame eye geometry when Normal obscures a vertical look."""
+    iris_v = (float(geo[6]) + float(geo[8])) / 2.0
+    # A strong iris movement needs only one geometric signal; otherwise two
+    # signals must agree. Require matching iris movement: without iris
+    # landmarks, pitch and its duplicate blended feature are not independent.
+    # Keep the real model score for evidence and gating.
+    if (iris_v < -_ABOVE_IRIS_V and is_looking_above_strong(geo)
+            and above_p >= ABOVE_VIOLATION_CONFIDENCE_THRESHOLD
+            and above_p >= below_p):
+        return above_idx, above_p
+    if (iris_v > _BELOW_IRIS_V and is_looking_below_strong(geo)
+            and below_p >= BELOW_CONFIDENCE_THRESHOLD
+            and below_p >= above_p):
+        return below_idx, below_p
+    if (iris_v < -_ABOVE_IRIS_V and is_looking_above(geo)
+            and above_p >= ABOVE_VIOLATION_CONFIDENCE_THRESHOLD and above_p >= below_p):
+        return above_idx, above_p
+    if (iris_v > _BELOW_IRIS_V and is_looking_below(geo)
+            and below_p >= BELOW_CONFIDENCE_THRESHOLD and below_p >= above_p):
+        return below_idx, below_p
+    return None
 
 
 def _pick_sideways_from_geometry(
@@ -392,15 +421,25 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     """
     Pick gaze class from CNN probabilities, with geometry as a tie-break.
 
-    If Normal is the strongest class, return Normal immediately (prevents sticky
-    look-aways). A clear left/above/right/below argmax is trusted even if head
-    pose is only mildly off-center.
+    A clear left/above/right/below argmax is trusted even if head pose is only
+    mildly off-center. Current-frame vertical geometry can displace a Normal
+    argmax when the model still gives the same vertical direction some support.
     """
     probs = np.asarray(predictions, dtype=np.float32)
     normal_idx = _normal_class_index(classes)
     normal_conf = float(probs[normal_idx])
     looking_center = is_looking_at_screen(geo)
     argmax_idx = int(np.argmax(probs))
+    above_idx = _above_class_index(classes)
+    below_idx = _below_class_index(classes)
+    above_p = float(probs[above_idx])
+    below_p = float(probs[below_idx])
+    vertical = _pick_vertical_from_geometry(geo, above_idx, below_idx, above_p, below_p)
+
+    # Eye height gives the more specific direction when Normal leads the CNN,
+    # even if a simultaneous head turn also produces sideways geometry.
+    if argmax_idx == normal_idx and vertical is not None:
+        return vertical
 
     # Use only very clear geometry to reconcile a horizontal CNN prediction.
     # This corrects camera/model mirror mismatches while leaving normal and
@@ -428,16 +467,18 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
             and not is_looking_above(geo) and not is_looking_below(geo)):
         return normal_idx, normal_conf
 
-    def _below_blocked(name: str) -> bool:
-        if "below" not in name.lower():
-            return False
+    def _opposite_vertical_iris(name: str) -> bool:
         iris_v = (float(geo[6]) + float(geo[8])) / 2.0
-        return iris_v < -0.02
+        if "below" in name.lower():
+            return iris_v < -0.02
+        if "above" in name.lower():
+            return iris_v > 0.10 and is_looking_below(geo)
+        return False
 
     argmax_name = classes[argmax_idx]
     argmax_p = float(probs[argmax_idx])
     if (
-        not _below_blocked(argmax_name)
+        not _opposite_vertical_iris(argmax_name)
         and _horizontal_prediction_allowed(argmax_name, argmax_p, geo)
         and argmax_p >= _confidence_threshold_for_class_name(argmax_name)
     ):
@@ -452,7 +493,7 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
             continue
         if not _horizontal_prediction_allowed(name, prob, geo):
             continue
-        if _below_blocked(name):
+        if _opposite_vertical_iris(name):
             continue
         if best is None or prob > best[1]:
             best = (idx, prob)
@@ -462,12 +503,8 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
 
     left_idx = _left_class_index(classes)
     right_idx = _right_class_index(classes)
-    above_idx = _above_class_index(classes)
-    below_idx = _below_class_index(classes)
     left_p = float(probs[left_idx])
     right_p = float(probs[right_idx])
-    above_p = float(probs[above_idx])
-    below_p = float(probs[below_idx])
 
     sideways = _pick_sideways_from_geometry(
         geo, left_idx, right_idx, left_p, right_p, above_p,
@@ -480,11 +517,7 @@ def pick_gaze_label(predictions: np.ndarray, geo: np.ndarray, classes: list) -> 
     if is_looking_sideways(geo, "right") and right_p >= 0.22 and right_p >= left_p:
         return right_idx, right_p
 
-    if is_looking_above(geo, min_signals=1) and above_p >= 0.22 and above_p >= normal_conf * 0.8:
-        return above_idx, above_p
-    if is_looking_above_strong(geo) and above_p >= 0.18:
-        return above_idx, max(above_p, 0.50)
-    if is_looking_below(geo) and below_p >= 0.28 and below_p >= normal_conf * 0.85:
-        return below_idx, below_p
+    if vertical is not None:
+        return vertical
 
     return normal_idx, normal_conf

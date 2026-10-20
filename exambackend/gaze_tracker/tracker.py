@@ -383,22 +383,6 @@ class GazeTracker:
         label = self.classes[class_idx]
         is_normal = "normal" in label.lower()
 
-        # Strict user rule: force 'below' to normal if confidence is under 70%
-        if "below" in label.lower() and confidence < 0.75:
-            normal_idx = next((i for i, n in enumerate(self.classes) if "normal" in n.lower()), 3)
-            class_idx = normal_idx
-            label = self.classes[class_idx]
-            confidence = float(predictions[normal_idx])
-            is_normal = True
-
-        # Strict user rule: force 'above' to normal if confidence is under 30%
-        if "above" in label.lower() and confidence < 0.30:
-            normal_idx = next((i for i, n in enumerate(self.classes) if "normal" in n.lower()), 3)
-            class_idx = normal_idx
-            label = self.classes[class_idx]
-            confidence = float(predictions[normal_idx])
-            is_normal = True
-
         label_l = label.lower()
         if is_normal:
             is_suspicious = False
