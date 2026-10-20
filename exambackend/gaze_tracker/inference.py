@@ -53,9 +53,9 @@ _BELOW_IRIS_V_STRONG = 0.19
 _ABOVE_IRIS_V_STRONG = 0.05  # lowered: geometry-only fires with less iris movement upward
 # Strong-geometry-only sideways: both irises must agree on a clear movement.
 _SIDEWAYS_IRIS_STRONG = 0.10
-_ABOVE_NORMAL_IRIS_V = -0.05
+_ABOVE_NORMAL_IRIS_V = -0.06
 _ABOVE_NORMAL_PITCH = -0.08
-_ABOVE_NORMAL_MODEL_CONFIDENCE = 0.55
+_ABOVE_NORMAL_MODEL_CONFIDENCE = 0.65
 
 
 def prepare_image_batch(face_bgr: np.ndarray) -> np.ndarray:

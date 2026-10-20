@@ -351,12 +351,12 @@ class GazeFrameTests(SimpleTestCase):
             'Looking below',
         ]
         for iris_v, vert, iris_h, probabilities, expected in (
-            (-0.06, -0.045, 0.00, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
+            (-0.07, -0.045, 0.00, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
             (-0.019, -0.041, 0.00, [0.24, 0.02, 0.02, 0.67, 0.05], 3),
             (0.115, 0.155, 0.00, [0.02, 0.02, 0.02, 0.67, 0.27], 4),
             (0.090, 0.125, 0.00, [0.02, 0.02, 0.02, 0.68, 0.26], 4),
             (0.20, 0.16, 0.00, [0.02, 0.02, 0.02, 0.68, 0.26], 4),
-            (-0.06, -0.045, -0.20, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
+            (-0.07, -0.045, -0.20, [0.23, 0.02, 0.02, 0.68, 0.05], 0),
         ):
             with self.subTest(iris_v=iris_v):
                 geo = np.zeros(14, dtype=np.float32)
@@ -399,6 +399,31 @@ class GazeFrameTests(SimpleTestCase):
             np.array([0.23, 0.02, 0.02, 0.69, 0.04], dtype=np.float32), geo, classes,
         )
         self.assertEqual(direction, 3)
+
+    def test_borderline_above_requires_clearer_evidence(self):
+        from gaze_tracker.inference import pick_gaze_label
+
+        classes = [
+            'Looking above the screen', 'Looking at the left',
+            'Looking at the right', 'Looking at the screen (Normal)',
+            'Looking below',
+        ]
+        geo = np.zeros(14, dtype=np.float32)
+        geo[6] = geo[8] = -0.055
+        geo[12] = -0.045
+        direction, _ = pick_gaze_label(
+            np.array([0.23, 0.02, 0.02, 0.68, 0.05], dtype=np.float32), geo, classes,
+        )
+        self.assertEqual(direction, 3)
+
+        geo[6] = geo[8] = 0
+        for above_confidence, expected in ((0.60, 3), (0.80, 0)):
+            with self.subTest(above_confidence=above_confidence):
+                direction, _ = pick_gaze_label(
+                    np.array([above_confidence, 0.02, 0.02, 0.10, 0.06], dtype=np.float32),
+                    geo, classes,
+                )
+                self.assertEqual(direction, expected)
 
     def test_sideways_look_does_not_become_weak_below(self):
         from gaze_tracker.inference import pick_gaze_label
