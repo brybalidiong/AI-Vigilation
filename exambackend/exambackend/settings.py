@@ -142,6 +142,10 @@ def _postgres_options() -> dict:
         'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '15')),
         'sslmode': os.getenv('DB_SSLMODE', 'require'),
     }
+    if os.getenv('DB_USE_POOL') == '1':
+        # ASGI requests close Django connections after use. Reuse a small set
+        # of psycopg connections instead of opening TLS for each camera check.
+        options['pool'] = {'min_size': 1, 'max_size': 4}
     hostaddr = os.getenv('DB_HOSTADDR', '').strip()
     if hostaddr:
         options['hostaddr'] = hostaddr

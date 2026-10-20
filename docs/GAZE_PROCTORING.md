@@ -85,6 +85,9 @@ preview shows scanner status and warning counts without gadget bounding boxes.
 The production ASGI worker warms both models in the background at startup so
 the first student's exam does not trigger a cold model load. The dashboard
 warmup endpoint remains a fallback when a worker is still starting.
+Production also uses a four-connection psycopg pool so repeated ASGI requests
+reuse Supabase connections without keeping a Django connection pinned to each
+request. SQLite tests do not use the pool.
 The camera requests 1280-by-960 capture where supported. The backend uses YOLO at
 640 pixels with a 0.25 default confidence threshold;
 `GADGET_IMGSZ` and `GADGET_CONFIDENCE` can override these defaults. Checks stay
