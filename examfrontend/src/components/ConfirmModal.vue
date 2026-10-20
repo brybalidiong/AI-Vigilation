@@ -3,7 +3,6 @@
     <div
       v-if="modelValue"
       class="confirm-overlay"
-      :class="variant"
       role="presentation"
       @click.self="onCancel"
     >
@@ -94,9 +93,7 @@ watch(
   position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
   padding: 1.25rem;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.58);
   animation: overlayIn 0.3s ease;
 }
 @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
@@ -104,29 +101,15 @@ watch(
 .confirm-dialog {
   width: 100%; max-width: 420px;
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.15);
+  border: 1px solid #d9e1ec;
+  background: #fff;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
   padding: 2.5rem;
   color: #1e293b;
   font-family: 'Poppins', sans-serif;
   animation: dialogIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .confirm-dialog.danger  { border-color: rgba(239, 68, 68, 0.2); }
-.confirm-overlay.neutral {
-  background: rgba(15, 23, 42, 0.58);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-.confirm-dialog.neutral {
-  background: #fff;
-  border-color: #d9e1ec;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
-}
 
 @keyframes dialogIn {
   from { transform: scale(0.94) translateY(20px); opacity: 0; }

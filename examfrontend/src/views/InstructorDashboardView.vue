@@ -3713,7 +3713,6 @@ onMounted(async () => {
   justify-content: center;
   padding: 1.5rem;
   background: rgba(15, 23, 42, 0.58);
-  backdrop-filter: blur(7px);
 }
 
 /* Modal shell */
@@ -3852,7 +3851,6 @@ onMounted(async () => {
 .ir-backdrop {
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(6px);
   display: flex; align-items: stretch; justify-content: flex-end;
 }
 

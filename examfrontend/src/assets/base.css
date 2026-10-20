@@ -36,11 +36,6 @@
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.08);
   --shadow-xl: 0 16px 48px rgba(0,0,0,0.10);
 
-  /* Surface (flat, no glassmorphism) */
-  --glass-bg: #fbfcff;
-  --glass-border: 1px solid #e2e8f0;
-  --glass-blur: blur(0px);
-
   /* Radius */
   --radius-sm: 8px;
   --radius-md: 10px;
