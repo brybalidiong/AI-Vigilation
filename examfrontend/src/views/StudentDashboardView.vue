@@ -385,7 +385,7 @@
     </div>
 
     <!-- EXAM MODAL (taking mode only) -->
-    <div v-if="takingExam" class="fullscreen-modal no-capture" style="background: #e9e8f4; color: #111; overflow-y: auto;">
+    <div v-if="takingExam" class="fullscreen-modal exam-taking-screen no-capture">
 
       <div v-if="absenceAlert.show" class="absence-toast" role="alert" aria-live="assertive">
         <span class="absence-toast-icon" aria-hidden="true">!</span>
@@ -481,7 +481,7 @@
           <div style="display: grid; grid-template-columns: 180px 1fr; gap: 1.5rem; margin-bottom: 2rem;">
 
             <!-- Left Info Block -->
-            <div style="background: #f1f5f9; padding: 1.5rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0; height: fit-content;">
+            <div class="exam-question-info" style="padding: 1.5rem 1rem; border-radius: 8px; border: 1px solid #cbd2da; height: fit-content;">
               <h4 style="margin: 0 0 0.5rem 0; font-size: 1.1rem; color: #334155; font-weight: 600;">Question <span style="font-size: 1.25rem;">{{ currentQuestionIndex + 1 }}</span> of {{ examQuestions.length }}</h4>
               <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 1.5rem;">
                 <span v-if="studentAnswers[currentQuestion.id]">Answered</span>
@@ -494,7 +494,7 @@
             </div>
 
             <!-- Right Question Block -->
-            <div style="background: #ebf2f5; padding: 1.5rem; border-radius: 8px;">
+            <div class="exam-question-panel" style="padding: 1.5rem; border-radius: 8px;">
               <p style="margin: 0 0 1.5rem 0; font-size: 1.05rem; color: #1e1b4b; line-height: 1.6;">{{ currentQuestion.question_text }}</p>
 
               <!-- Multiple Choice -->
@@ -535,13 +535,13 @@
                     Case sensitive
                   </span>
                 </p>
-                <textarea v-model="studentAnswers[currentQuestion.id]" placeholder="Apple&#10;Banana&#10;Orange&#10;(numbered also works: 1. Apple, 2. Banana)" style="width: 100%; min-height: 140px; padding: 1rem; border: 1px solid #86efac; border-radius: 6px; font-family: inherit; resize: vertical; outline: none; background: #f0fdf4;"></textarea>
+                <textarea v-model="studentAnswers[currentQuestion.id]" placeholder="Apple&#10;Banana&#10;Orange&#10;(numbered also works: 1. Apple, 2. Banana)" style="width: 100%; min-height: 140px; padding: 1rem; border: 1px solid #86efac; border-radius: 6px; font-family: inherit; resize: vertical; outline: none;"></textarea>
               </div>
 
               <!-- Essay: long-form answer -->
               <div v-else-if="currentQuestion.question_type === 'essay'">
                 <p style="font-size: 0.82rem; color: #92400e; margin-bottom: 0.5rem; font-weight: 600;">📝 Write your essay answer below:</p>
-                <textarea v-model="studentAnswers[currentQuestion.id]" placeholder="Compose your answer here. Be thorough and support your points..." style="width: 100%; min-height: 220px; padding: 1rem; border: 1px solid #fde68a; border-radius: 6px; font-family: inherit; resize: vertical; outline: none; background: #fffbeb; line-height: 1.65;"></textarea>
+                <textarea v-model="studentAnswers[currentQuestion.id]" placeholder="Compose your answer here. Be thorough and support your points..." style="width: 100%; min-height: 220px; padding: 1rem; border: 1px solid #fde68a; border-radius: 6px; font-family: inherit; resize: vertical; outline: none; line-height: 1.65;"></textarea>
               </div>
 
               <!-- Fallback -->
@@ -3551,6 +3551,17 @@ async function performLogout() {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   background: #f0f2f5; z-index: 9999;
   display: flex; flex-direction: column; overflow: hidden;
+}
+.exam-taking-screen {
+  background: #d6dbe1;
+  color: #1f2937;
+  overflow-y: auto;
+}
+.exam-question-info { background: #e1e5e9; }
+.exam-question-panel { background: #e2e6ea; }
+.exam-question-panel textarea {
+  background: #eceff2;
+  color: #1f2937;
 }
 
 /* Permission modal */
