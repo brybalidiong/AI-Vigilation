@@ -38,6 +38,12 @@ The next frame is sent after the previous result arrives, so a slow inference
 cannot create a queue of stale frames. A one-second HTTP observer remains available for
 strike counting when the WebSocket is unavailable. The browser sends unmirrored pixels;
 the CSS selfie preview does not change the left/right direction used by inference.
+If a WebSocket result is too old to affect gaze state, the browser discards it and
+sends a fresh frame on the same connection. A missing response still closes the
+socket and activates the HTTP fallback. When the exam shows "Reconnecting," check
+the browser's `[GazeWS] closed` console entry for its close code and cause, then
+check backend errors and model availability; the label alone does not identify
+a student network problem.
 Before each exam, the camera precheck posts webcam frames to the authenticated
 `/api/student/exams/<exam_id>/precheck-face/` endpoint. YuNet returns a
 normalized face box without starting an exam attempt or storing the frame.

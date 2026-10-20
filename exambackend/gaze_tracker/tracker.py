@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import threading
 import urllib.request
 from collections import deque
 from dataclasses import dataclass, field
@@ -16,6 +15,7 @@ import tensorflow as tf
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
+# pyrefly: ignore [missing-import]
 from .inference import (
     ABOVE_VIOLATION_CONFIDENCE_THRESHOLD,
     BELOW_CONFIDENCE_THRESHOLD,
@@ -26,6 +26,7 @@ from .inference import (
     mirror_correct_geo,
     pick_gaze_label,
     prepare_image_batch,
+    unmirror_face_crop,
 )
 
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -158,8 +159,7 @@ class GazeTracker:
     ----------
     assets_dir       : folder with gaze_model_float32.tflite, class_names.json,
                        face_landmarker.task (auto-downloaded if missing).
-    mirror_webcam    : Flip input pixels before inference. Browser canvas frames
-                       are unmirrored; CSS mirroring only affects the preview.
+    mirror_webcam    : True if the frame is already mirrored (typical browser webcam).
     smoothing_window : frames to average over for temporal smoothing (0 = off).
     use_hysteresis   : whether to apply exit-frame filter.
     """
@@ -167,7 +167,7 @@ class GazeTracker:
     def __init__(
         self,
         assets_dir: Optional[str] = None,
-        mirror_webcam: bool = False,
+        mirror_webcam: bool = True,
         smoothing_window: int = 0,
         use_hysteresis: bool = False,
     ):
@@ -175,27 +175,16 @@ class GazeTracker:
         self.mirror_webcam = mirror_webcam
         self._ready = False
         self._error: Optional[str] = None
-        self._lock = threading.Lock()
 
         class_path = os.path.join(self.assets_dir, "class_names.json")
-        tflite_path = next(
-            (
-                os.path.join(self.assets_dir, filename)
-                for filename in (
-                    "EfficientNetB0_gaze_float32.tflite",
-                    "gaze_model_float32.tflite",
-                )
-                if os.path.isfile(os.path.join(self.assets_dir, filename))
-            ),
-            None,
-        )
+        tflite_path = os.path.join(self.assets_dir, "EfficientNetB0_gaze_float32.tflite")
         landmarker_path = os.path.join(self.assets_dir, "face_landmarker.task")
 
         if not os.path.isfile(class_path):
             self._error = f"Missing {class_path}"
             return
-        if tflite_path is None:
-            self._error = f"Missing gaze model in {self.assets_dir}"
+        if not os.path.isfile(tflite_path):
+            self._error = f"Missing {tflite_path}"
             return
 
         with open(class_path, "r", encoding="utf-8") as f:
@@ -211,13 +200,11 @@ class GazeTracker:
             running_mode=mp_vision.RunningMode.IMAGE,
             output_face_blendshapes=False,
             output_facial_transformation_matrixes=False,
-            num_faces=2,   # 2 so we can detect a second person in frame
+            num_faces=1,
         )
         self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
 
-        self._interpreter = tf.lite.Interpreter(
-            model_path=tflite_path, num_threads=2,
-        )
+        self._interpreter = tf.lite.Interpreter(model_path=tflite_path)
         self._interpreter.allocate_tensors()
         inputs = self._interpreter.get_input_details()
         outputs = self._interpreter.get_output_details()
@@ -246,6 +233,8 @@ class GazeTracker:
         )
         self._hysteresis = _HysteresisFilter(normal_idx=normal_idx) if use_hysteresis else None
 
+        import threading
+        self._lock = threading.Lock()
 
     @property
     def ready(self) -> bool:
@@ -370,11 +359,9 @@ class GazeTracker:
                     is_suspicious=True,
                 )
 
-            # EfficientNetB0's processed-face training pipeline preserves source
-            # orientation. Canvas frames have that same orientation, even when
-            # the browser displays a mirrored selfie preview.
-            batched_face = prepare_image_batch(processed_face)
-            geo = extract_geometric_features(results, h, w)
+            model_face = unmirror_face_crop(processed_face) if getattr(self, 'mirror_webcam', False) else processed_face
+            batched_face = prepare_image_batch(model_face)
+            geo = mirror_correct_geo(extract_geometric_features(results, h, w))
             geo_batch = np.expand_dims(geo, axis=0).astype(np.float32)
 
             self._interpreter.set_tensor(self._img_idx, batched_face)
@@ -388,10 +375,7 @@ class GazeTracker:
         predictions = self._smoother.update(raw_predictions) if getattr(self, '_smoother', None) else raw_predictions
 
         # ── Label selection ───────────────────────────────────────────────
-        # Direction heuristics use the student's perspective (selfie coordinates).
-        # Keep the model's inputs untouched; convert only the heuristic geometry.
-        direction_geo = geo if self.mirror_webcam else mirror_correct_geo(geo)
-        class_idx, confidence = pick_gaze_label(predictions, direction_geo, self.classes)
+        class_idx, confidence = pick_gaze_label(predictions, geo, self.classes)
 
         # ── Hysteresis filter ─────────────────────────────────────────────
         if getattr(self, '_hysteresis', None):
@@ -399,6 +383,23 @@ class GazeTracker:
 
         label = self.classes[class_idx]
         is_normal = "normal" in label.lower()
+
+        # Strict user rule: force 'below' to normal if confidence is under 70%
+        if "below" in label.lower() and confidence < 0.75:
+            normal_idx = next((i for i, n in enumerate(self.classes) if "normal" in n.lower()), 3)
+            class_idx = normal_idx
+            label = self.classes[class_idx]
+            confidence = float(predictions[normal_idx])
+            is_normal = True
+
+        # Strict user rule: force 'above' to normal if confidence is under 30%
+        if "above" in label.lower() and confidence < 0.30:
+            normal_idx = next((i for i, n in enumerate(self.classes) if "normal" in n.lower()), 3)
+            class_idx = normal_idx
+            label = self.classes[class_idx]
+            confidence = float(predictions[normal_idx])
+            is_normal = True
+
         label_l = label.lower()
         if is_normal:
             is_suspicious = False

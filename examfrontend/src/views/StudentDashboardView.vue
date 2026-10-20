@@ -1824,6 +1824,7 @@ let _wsFrameId = 0;
 let _wsHasResult = false;
 let _wsResponseTimeout = null;
 let _wsSendTimer = null;
+let _wsCloseCause = '';
 const WS_CONNECT_TIMEOUT_MS = 5000;
 const WS_FIRST_RESULT_TIMEOUT_MS = 20000;
 const WS_RESPONSE_TIMEOUT_MS = 5000;
@@ -1869,6 +1870,7 @@ function _startGazeWsLoop() {
   _wsMultipleFacesStartTime = null;
   _wsSuspiciousFrame       = null;
   _wsHasResult = false;
+  _wsCloseCause = '';
 
   const examId = takingExam.value.id;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1878,7 +1880,10 @@ function _startGazeWsLoop() {
   _gazeWs = new WebSocket(`${protocol}//${backendHost}/ws/student/exams/${examId}/proctoring/gaze/?token=${token}`);
   
   const socket = _gazeWs;
-  _wsResponseTimeout = setTimeout(() => socket.close(), WS_CONNECT_TIMEOUT_MS);
+  _wsResponseTimeout = setTimeout(() => {
+    _wsCloseCause = 'connection timeout';
+    socket.close();
+  }, WS_CONNECT_TIMEOUT_MS);
   _gazeWs.onopen = () => {
     if (_gazeWs !== socket) return;
     clearTimeout(_wsResponseTimeout);
@@ -1894,29 +1899,40 @@ function _startGazeWsLoop() {
     _wsPendingFrame = null;
     try {
       const data = JSON.parse(event.data);
+      if (data.error) {
+        _wsCloseCause = 'server inference error';
+        socket.close();
+        return;
+      }
       const maxResultAge = _wsHasResult
         ? WS_MAX_RESULT_AGE_MS
         : WS_FIRST_RESULT_TIMEOUT_MS;
-      if (!analyzedFrame || data.frame_id !== analyzedFrame.id
-          || Date.now() - analyzedFrame.capturedAt > maxResultAge) {
+      if (!analyzedFrame || data.frame_id !== analyzedFrame.id) {
         _wsViolationStartTime = null;
         _clearGazeViolationTimer(true);
+        _wsCloseCause = 'unmatched frame response';
         socket.close();
         return;
       }
       if (!data.frame_receipt) {
+        _wsCloseCause = data.error ? 'server inference error' : 'missing frame receipt';
         socket.close();
+        return;
+      }
+      if (Date.now() - analyzedFrame.capturedAt > maxResultAge) {
+        // Slow inference is not a broken connection. Discard the old result so
+        // it cannot affect strikes, then sample a fresh frame on this socket.
+        _wsViolationStartTime = null;
+        _clearGazeViolationTimer(true);
+        _wsLatestFrame = null;
+        _wsHasResult = true;
+        gazeDetectionStatus.value = 'AI delayed';
+        _scheduleWsFrame();
         return;
       }
       gazeDetectionStatus.value = '';
       _wsHasResult = true;
       _wsLatestFrame = { ...analyzedFrame, receipt: data.frame_receipt, receivedAt: Date.now() };
-
-      // Ignore error frames — they don't contain valid gaze state
-      if (data.error) {
-        socket.close();
-        return;
-      }
 
       // ── (A) No face / Multiple faces ──────────────────────────────────
       // Check both is_no_face flag AND label directly (in case flag is missing)
@@ -2067,8 +2083,13 @@ function _startGazeWsLoop() {
     }
   };
   
-  _gazeWs.onclose = () => {
+  _gazeWs.onclose = (event) => {
     if (_gazeWs !== socket) return;
+    console.warn('[GazeWS] closed:', {
+      code: event?.code,
+      reason: event?.reason,
+      cause: _wsCloseCause || 'connection closed',
+    });
     clearTimeout(_wsResponseTimeout);
     clearTimeout(_wsSendTimer);
     _wsPendingFrame = null;
@@ -2087,6 +2108,7 @@ function _startGazeWsLoop() {
   };
 
   _gazeWs.onerror = () => {
+    _wsCloseCause = 'socket error';
     try { socket.close(); } catch (_) { /* ignore */ }
   };
 }
@@ -2180,7 +2202,10 @@ async function _sendWsFrame() {
     questionId: currentQuestion.value?.id || null,
   };
   _wsResponseTimeout = setTimeout(() => {
-    if (_gazeWs === socket) socket.close();
+    if (_gazeWs === socket) {
+      _wsCloseCause = 'inference response timeout';
+      socket.close();
+    }
   }, _wsHasResult ? WS_RESPONSE_TIMEOUT_MS : WS_FIRST_RESULT_TIMEOUT_MS);
   socket.send(JSON.stringify({
     image: base64Image,

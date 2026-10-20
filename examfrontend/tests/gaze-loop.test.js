@@ -61,7 +61,7 @@ function harness() {
     advance: ms => { now += ms; }, image: value => { currentImage = value; } };
 }
 
-test('only one frame is in flight and stale replies trigger fallback', async () => {
+test('a slow stale reply is discarded without reconnecting or recording a violation', async () => {
   const h = harness();
   await h.run('_sendWsFrame()');
   assert.equal(h.sockets[0].sent.length, 1);
@@ -69,10 +69,16 @@ test('only one frame is in flight and stale replies trigger fallback', async () 
   await h.run('_sendWsFrame()');
   h.advance(2600);
   h.sockets[0].reply();
-  assert.equal(h.sockets[0].readyState, 3);
-  assert.equal(h.run('_gazeWsActive'), false);
+  assert.equal(h.sockets[0].readyState, 1);
+  assert.equal(h.run('_gazeWsActive'), true);
+  assert.equal(h.run('_wsLatestFrame'), null);
+  assert.equal(h.context.gazeDetectionStatus.value, 'AI delayed');
   assert.equal(h.display.direction, '');
   assert.equal(h.uploads.length, 0);
+  assert.equal([...h.timers.values()].some(timer => timer.delay === 80), true);
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply({ label: 'Looking at the screen (Normal)', is_normal: true, is_suspicious: false });
+  assert.equal(h.context.gazeDetectionStatus.value, '');
 });
 
 test('a slow cold-start result is accepted within the startup timeout', () => {
@@ -115,6 +121,13 @@ test('no response closes the socket and stopping cancels pending frame timers', 
   h.run('_stopGazeWsLoop()');
   assert.equal(h.run('_wsPendingFrame'), null);
   assert.equal(h.run('_gazeWs'), null);
+});
+
+test('a server inference error is identified before frame validation', () => {
+  const h = harness();
+  h.sockets[0].onmessage({ data: JSON.stringify({ error: 'model unavailable' }) });
+  assert.equal(h.run('_gazeWsActive'), false);
+  assert.equal(h.run('_wsCloseCause'), 'server inference error');
 });
 
 test('a reply from an old exam socket cannot alter a new session', () => {

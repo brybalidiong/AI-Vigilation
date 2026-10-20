@@ -26,6 +26,7 @@ Read the relevant implementation before editing. If documentation and code disag
 - Preserve exam timing, attempt limits, grading, and proctoring behavior unless the request changes them.
 - Add a Django migration when a model change affects the database schema.
 - Keep credentials, student photos, webcam evidence, and real student data out of source control and test fixtures. Use synthetic data for verification.
+- Commit and push completed changes to the current branch by default, unless the user says otherwise. Report deployment status separately from the Git push.
 
 ## Local commands
 
