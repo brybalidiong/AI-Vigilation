@@ -3,6 +3,7 @@
     <div
       v-if="modelValue"
       class="confirm-overlay"
+      :class="variant"
       role="presentation"
       @click.self="onCancel"
     >
@@ -113,8 +114,19 @@ watch(
   font-family: 'Poppins', sans-serif;
   animation: dialogIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.confirm-dialog.neutral { border-color: rgba(29, 52, 97, 0.25); }
 .confirm-dialog.danger  { border-color: rgba(239, 68, 68, 0.2); }
+.confirm-overlay.neutral {
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.confirm-dialog.neutral {
+  background: #fff;
+  border-color: #d9e1ec;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
+}
 
 @keyframes dialogIn {
   from { transform: scale(0.94) translateY(20px); opacity: 0; }

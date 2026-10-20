@@ -3552,15 +3552,15 @@ async function performLogout() {
   background: #f0f2f5; z-index: 9999;
   display: flex; flex-direction: column; overflow: hidden;
 }
-.exam-taking-screen {
-  background: #d6dbe1;
+.fullscreen-modal.exam-taking-screen {
+  background: #bcc5ce;
   color: #1f2937;
   overflow-y: auto;
 }
-.exam-question-info { background: #e1e5e9; }
-.exam-question-panel { background: #e2e6ea; }
+.exam-question-info { background: #d1d8df; }
+.exam-question-panel { background: #d3dae1; }
 .exam-question-panel textarea {
-  background: #eceff2;
+  background: #e6eaee;
   color: #1f2937;
 }
 
