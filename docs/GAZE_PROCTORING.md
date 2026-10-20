@@ -73,7 +73,8 @@ second frame confirms it for strike
 timing. Up/down appears on the first valid result. Strong vertical eye geometry
 can select up/down even when Normal has the highest model probability, provided
 the model supports that direction. An above override also needs a clear upward
-iris shift, or upward iris and head-pitch agreement, to avoid normal-eye jitter.
+iris shift in both eyes, or upward iris and head-pitch agreement, to avoid
+normal-eye jitter and a noisy single iris landmark.
 The below confidence gate is 0.25; the
 above gate is 0.22. The continuous look-away strike window remains four seconds.
 

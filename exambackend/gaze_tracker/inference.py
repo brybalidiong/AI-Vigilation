@@ -349,10 +349,15 @@ def _pick_vertical_from_geometry(
 
 def _above_has_independent_evidence(geo: np.ndarray) -> bool:
     """Distinguish an upward look from normal iris jitter and camera angle."""
-    iris_v = (float(geo[6]) + float(geo[8])) / 2.0
+    left_iris_v = float(geo[6])
+    right_iris_v = float(geo[8])
+    iris_v = (left_iris_v + right_iris_v) / 2.0
     pitch = float(geo[1])
-    return iris_v <= _ABOVE_NORMAL_IRIS_V or (
-        iris_v <= -0.03 and pitch <= _ABOVE_NORMAL_PITCH
+    eyes_agree = max(left_iris_v, right_iris_v) <= -0.025
+    return eyes_agree and (
+        iris_v <= _ABOVE_NORMAL_IRIS_V or (
+            iris_v <= -0.03 and pitch <= _ABOVE_NORMAL_PITCH
+        )
     )
 
 

@@ -392,6 +392,14 @@ class GazeFrameTests(SimpleTestCase):
         )
         self.assertEqual(direction, 0)
 
+        geo[1] = 0
+        geo[6] = -0.12
+        geo[8] = 0
+        direction, _ = pick_gaze_label(
+            np.array([0.23, 0.02, 0.02, 0.69, 0.04], dtype=np.float32), geo, classes,
+        )
+        self.assertEqual(direction, 3)
+
     def test_sideways_look_does_not_become_weak_below(self):
         from gaze_tracker.inference import pick_gaze_label
 
