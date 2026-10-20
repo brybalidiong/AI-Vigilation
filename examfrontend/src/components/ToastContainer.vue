@@ -1,11 +1,12 @@
 <template>
-  <div class="toast-container">
+  <div class="toast-container" aria-live="polite" aria-relevant="additions">
     <TransitionGroup name="toast">
       <div 
         v-for="toast in toasts" 
         :key="toast.id" 
         class="toast" 
         :class="`toast-${toast.type}`"
+        :role="toast.type === 'error' ? 'alert' : 'status'"
       >
         <div class="toast-icon">
           <svg v-if="toast.type === 'success'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -24,7 +25,7 @@
           </svg>
         </div>
         <div class="toast-content">{{ toast.message }}</div>
-        <button class="toast-close" @click="removeToast(toast.id)">
+        <button type="button" class="toast-close" aria-label="Dismiss notification" @click="removeToast(toast.id)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -42,8 +43,8 @@ import { toasts, removeToast } from '@/utils/toast';
 <style scoped>
 .toast-container {
   position: fixed;
-  top: 1.5rem;
-  right: 1.5rem;
+  top: 1.25rem;
+  right: 1.25rem;
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -52,78 +53,84 @@ import { toasts, removeToast } from '@/utils/toast';
 }
 
 .toast {
+  --toast-accent: #2563eb;
+  --toast-tint: #eff6ff;
   pointer-events: auto;
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: white;
-  padding: 1rem;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  min-width: 300px;
-  max-width: 400px;
-  border-left: 4px solid transparent;
+  align-items: flex-start;
+  gap: 0.85rem;
+  background: linear-gradient(90deg, var(--toast-tint) 0%, #fff 24%);
+  padding: 0.95rem 1rem;
+  border-radius: 15px;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.15), 0 2px 8px rgba(15, 23, 42, 0.06);
+  width: min(400px, calc(100vw - 2.5rem));
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid var(--toast-accent);
 }
 
 .toast-success {
-  border-left-color: #10b981;
-}
-
-.toast-success .toast-icon {
-  color: #10b981;
+  --toast-accent: #15803d;
+  --toast-tint: #ecfdf3;
 }
 
 .toast-error {
-  border-left-color: #ef4444;
-}
-
-.toast-error .toast-icon {
-  color: #ef4444;
+  --toast-accent: #b91c1c;
+  --toast-tint: #fff1f2;
 }
 
 .toast-info {
-  border-left-color: #3b82f6;
-}
-
-.toast-info .toast-icon {
-  color: #3b82f6;
+  --toast-accent: #2563eb;
+  --toast-tint: #eff6ff;
 }
 
 .toast-icon {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: var(--toast-tint);
+  color: var(--toast-accent);
 }
 
 .toast-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
 }
 
 .toast-content {
   flex: 1;
-  color: #334155;
-  font-size: 0.95rem;
-  font-weight: 500;
+  align-self: center;
+  color: #24344d;
+  font-size: 0.92rem;
+  font-weight: 600;
   font-family: 'Poppins', sans-serif;
-  line-height: 1.4;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .toast-close {
-  background: none;
+  flex: none;
+  background: #f1f5f9;
   border: none;
-  color: #94a3b8;
+  border-radius: 8px;
+  color: #64748b;
   cursor: pointer;
-  padding: 0;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
 
 .toast-close:hover {
-  color: #475569;
+  background: #e2e8f0;
+  color: #1d3461;
 }
+.toast-close:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
 .toast-close svg {
   width: 16px;
@@ -144,5 +151,12 @@ import { toasts, removeToast } from '@/utils/toast';
 .toast-leave-to {
   opacity: 0;
   transform: scale(0.9);
+}
+@media (max-width: 480px) {
+  .toast-container { top: 0.75rem; right: 0.75rem; left: 0.75rem; }
+  .toast { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter-active, .toast-leave-active { transition: none; }
 }
 </style>
