@@ -49,8 +49,6 @@ receive cross-process messages. This keeps Redis read timeouts from closing
 the live gaze stream; exam-publishing updates continue to use Redis. After
 startup, the browser allows 12 seconds for a gaze reply before reconnecting.
 Results older than 2.5 seconds are discarded so they cannot create delayed strikes.
-Gadget scans pause for 500 ms after each active response to leave CPU capacity
-for gaze inference on the shared backend.
 Before each exam, the camera precheck posts webcam frames to the authenticated
 `/api/student/exams/<exam_id>/precheck-face/` endpoint. YuNet returns a
 normalized face box without starting an exam attempt or storing the frame.
@@ -65,10 +63,14 @@ gaze JPEG at 0.75 quality to retain iris detail. Strong horizontal geometry
 can correct a mirrored left/right or normal prediction, but does not replace
 a clear up/down model prediction.
 
-Gadget checks send a 640-pixel-wide JPEG 40 ms after each active response;
-starting, disabled, and unavailable checks retry every 150 ms. A new frame is
-captured only after the prior request finishes, and responses from an ended
-exam loop cannot update the next exam's warning state.
+Gadget checks reuse a capture canvas and send a 640-pixel-wide JPEG at 0.7
+quality. A new frame is captured 100 ms after a clear response, or 300 ms while
+a device remains visible. Starting, disabled, and busy checks retry after 150 ms;
+unavailable checks retry after 500 ms. Only one browser request is in flight.
+The backend runs at most one inference and queues one additional frame; excess
+frames receive a quick busy response so stale frames cannot build up. Responses
+from an ended exam loop cannot update the next exam's warning state. The camera
+preview shows scanner status and warning counts without gadget bounding boxes.
 The camera requests 1280-by-960 capture where supported. The backend uses YOLO at
 640 pixels with a 0.25 default confidence threshold;
 `GADGET_IMGSZ` and `GADGET_CONFIDENCE` can override these defaults. Checks stay

@@ -3362,10 +3362,9 @@ def student_detect_gadgets(request, exam_id):
 
     try:
         from .gadget_service import (
-            GADGET_EXECUTOR,
-            detect_gadgets,
             gadget_detector_error,
             gadget_detector_ready,
+            submit_gadget_detection,
             warm_gadget_detector,
         )
         failure = gadget_detector_error()
@@ -3386,9 +3385,13 @@ def student_detect_gadgets(request, exam_id):
                 'warning_limit': GADGET_WARNING_TERMINATE_LIMIT,
                 'should_terminate': False,
             }, status=status.HTTP_202_ACCEPTED)
-        detections = GADGET_EXECUTOR.submit(detect_gadgets, raw).result(
-            timeout=_GADGET_INFER_TIMEOUT_SECONDS,
-        )
+        future = submit_gadget_detection(raw)
+        if future is None:
+            return Response({
+                'busy': True,
+                'retry_after_ms': 150,
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        detections = future.result(timeout=_GADGET_INFER_TIMEOUT_SECONDS)
     except ValueError:
         return Response({'error': 'Could not decode image.'}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as exc:

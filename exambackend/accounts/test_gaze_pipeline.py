@@ -2,7 +2,7 @@ import asyncio
 import base64
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -63,6 +63,20 @@ class GadgetWarmupStateTests(SimpleTestCase):
             self.assertFalse(gadget_service.gadget_detector_ready())
             self.assertEqual(str(gadget_service.gadget_detector_error()), 'synthetic model failure')
             self.assertFalse(gadget_service.warm_gadget_detector())
+
+    def test_busy_detector_drops_new_frame_instead_of_queueing_it(self):
+        from accounts import gadget_service
+
+        first, second = Future(), Future()
+        with patch.object(gadget_service, '_infer_slots', threading.BoundedSemaphore(1)), \
+                patch.object(gadget_service, 'GADGET_EXECUTOR') as executor:
+            executor.submit.side_effect = [first, second]
+            self.assertIs(gadget_service.submit_gadget_detection(b'first'), first)
+            self.assertIsNone(gadget_service.submit_gadget_detection(b'stale'))
+            first.set_result([])
+            self.assertIs(gadget_service.submit_gadget_detection(b'fresh'), second)
+            second.set_result([])
+            self.assertEqual(executor.submit.call_count, 2)
 
 
 class GazeFrameTests(SimpleTestCase):
@@ -570,6 +584,19 @@ class GazeEvidenceTests(TestCase):
         self.assertTrue(response.data['warming'])
         warm.assert_called_once_with()
         detect.assert_not_called()
+
+    def test_busy_gadget_model_requests_a_fresh_frame(self):
+        url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'
+        with patch('accounts.gadget_service.gadget_detector_ready', return_value=True), \
+                patch('accounts.gadget_service.submit_gadget_detection', return_value=None):
+            response = self.client.post(url, {
+                'image': SimpleUploadedFile('gadget.jpg', self.raw, content_type='image/jpeg'),
+            })
+
+        self.assertEqual(response.status_code, 429, response.data)
+        self.assertTrue(response.data['busy'])
+        self.assertEqual(response.data['retry_after_ms'], 150)
+        self.assertFalse(ExamProctoringEvent.objects.exists())
 
     def test_failed_gadget_warmup_returns_unavailable(self):
         url = f'/api/student/exams/{self.exam.pk}/proctoring/gadgets/'

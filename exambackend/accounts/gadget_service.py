@@ -16,6 +16,7 @@ import numpy as np
 GADGET_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix='gadget-inference')
 _warmup_lock = threading.Lock()
 _infer_lock = threading.Lock()
+_infer_slots = threading.BoundedSemaphore(2)
 _warmup_future = None
 
 DEFAULT_GADGET_NAMES = {'cell phone', 'laptop'}
@@ -81,6 +82,19 @@ def gadget_detector_error():
     if _warmup_future and _warmup_future.done():
         return _warmup_future.exception()
     return None
+
+
+def submit_gadget_detection(raw: bytes):
+    """Keep at most one running and one queued frame; discard stale excess."""
+    if not _infer_slots.acquire(blocking=False):
+        return None
+    try:
+        future = GADGET_EXECUTOR.submit(detect_gadgets, raw)
+    except Exception:
+        _infer_slots.release()
+        raise
+    future.add_done_callback(lambda _: _infer_slots.release())
+    return future
 
 
 def detect_gadgets(raw: bytes) -> list[dict]:

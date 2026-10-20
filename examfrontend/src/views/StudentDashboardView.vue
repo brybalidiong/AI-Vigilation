@@ -347,16 +347,6 @@
       <div class="cam-pip-inner" :style="{ boxShadow: pipBorderGlow, borderColor: pipBorderColor, transition: 'box-shadow 0.12s ease, border-color 0.12s ease' }">
         <video ref="examVideoEl" class="cam-pip-video" autoplay muted playsinline></video>
 
-        <!-- Gadget YOLO boxes (mirrored to match the flipped video) -->
-        <div
-          v-for="(box, idx) in gadgetOverlayBoxes"
-          :key="'gadget-box-' + idx"
-          class="cam-pip-gadget-box"
-          :style="box.style"
-        >
-          <span class="cam-pip-gadget-label">{{ box.label }}</span>
-        </div>
-
         <!-- Direction label overlay (replaces bounding box) -->
         <div v-if="takingExam && gazeCurrentDirection" class="cam-pip-direction-badge" :style="{ background: pipBorderColor }">
           {{ gazeDirectionIcon }} {{ gazeDirectionLabel }}
@@ -1020,11 +1010,12 @@ let _gadgetUnavailableNotified = false;
 let _gadgetFailureCount = 0;
 let _gadgetLoopActive = false;
 let _gadgetLoopGeneration = 0;
-/** @type {{ label: string, style: Record<string, string> }[]} */
-const gadgetOverlayBoxes = ref([]);
+let _gadgetCaptureCanvas = null;
 const GADGET_FRAME_WIDTH = 640;
 const GADGET_IDLE_POLL_MS = 150;
-const GADGET_ACTIVE_POLL_MS = 500; // leave CPU time for live gaze inference
+const GADGET_ACTIVE_POLL_MS = 100;
+const GADGET_VISIBLE_POLL_MS = 300;
+const GADGET_ERROR_POLL_MS = 500;
 let _gazeCheckTimer = null;
 let _lastGazeWarningAt = 0;
 let _gazeCheckInFlight = false;
@@ -1363,7 +1354,6 @@ async function _runGadgetDetection() {
   if (!_gadgetLoopActive || !takingExam.value || examTerminated.value || submitting.value) return;
   if (!_isGadgetDetectionEnabled()) {
     gadgetDetectionStatus.value = 'off for this question';
-    _clearGadgetOverlayBoxes();
     _gadgetDetectionTimer = setTimeout(_runGadgetDetection, GADGET_IDLE_POLL_MS);
     return;
   }
@@ -1382,13 +1372,15 @@ async function _runGadgetDetection() {
   const frameW = Math.min(GADGET_FRAME_WIDTH, video.videoWidth);
   const frameH = Math.round((video.videoHeight / video.videoWidth) * frameW);
   try {
-    const canvas = document.createElement('canvas');
-    canvas.width = frameW;
-    canvas.height = frameH;
-    const ctx = canvas.getContext('2d');
+    const canvas = _gadgetCaptureCanvas || (_gadgetCaptureCanvas = document.createElement('canvas'));
+    if (canvas.width !== frameW || canvas.height !== frameH) {
+      canvas.width = frameW;
+      canvas.height = frameH;
+    }
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+    ctx.drawImage(video, 0, 0, frameW, frameH);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.7));
     if (!blob) return;
     if (generation !== _gadgetLoopGeneration || !_gadgetLoopActive) return;
 
@@ -1404,10 +1396,10 @@ async function _runGadgetDetection() {
     if (generation !== _gadgetLoopGeneration || !_gadgetLoopActive) return;
     if (data.warming) {
       gadgetDetectionStatus.value = 'starting';
-      _clearGadgetOverlayBoxes();
     } else {
-      gadgetDetectionStatus.value = data.enabled === false ? 'off for this question' : 'active';
-      _updateGadgetOverlayBoxes(data.detections || [], frameW, frameH);
+      gadgetDetectionStatus.value = data.enabled === false
+        ? 'off for this question'
+        : (data.detected ?? Boolean(data.detections?.length)) ? 'detected' : 'active';
     }
     _gadgetFailureCount = 0;
     if (typeof data.warning_count === 'number') {
@@ -1438,6 +1430,10 @@ async function _runGadgetDetection() {
     }
   } catch (err) {
     if (generation !== _gadgetLoopGeneration || !_gadgetLoopActive) return;
+    if (err?.response?.status === 429) {
+      gadgetDetectionStatus.value = 'busy';
+      return;
+    }
     _gadgetFailureCount += 1;
     if (err?.response?.status === 503 || _gadgetFailureCount >= 2) {
       gadgetDetectionStatus.value = 'unavailable';
@@ -1450,48 +1446,20 @@ async function _runGadgetDetection() {
     if (generation === _gadgetLoopGeneration) {
       _gadgetDetectionInFlight = false;
       if (_gadgetLoopActive) {
+        const pollDelay = gadgetDetectionStatus.value === 'detected'
+          ? GADGET_VISIBLE_POLL_MS
+          : gadgetDetectionStatus.value === 'active'
+            ? GADGET_ACTIVE_POLL_MS
+            : gadgetDetectionStatus.value === 'unavailable'
+              ? GADGET_ERROR_POLL_MS
+              : GADGET_IDLE_POLL_MS;
         _gadgetDetectionTimer = setTimeout(
           _runGadgetDetection,
-          gadgetDetectionStatus.value === 'active' ? GADGET_ACTIVE_POLL_MS : GADGET_IDLE_POLL_MS,
+          pollDelay,
         );
       }
     }
   }
-}
-
-function _gadgetDisplayLabel(label) {
-  const l = String(label || '').toLowerCase();
-  if (l.includes('phone')) return 'Phone';
-  if (l.includes('laptop')) return 'Laptop';
-  return label || 'Gadget';
-}
-
-function _updateGadgetOverlayBoxes(detections, frameW, frameH) {
-  if (!detections.length || !frameW || !frameH) {
-    _clearGadgetOverlayBoxes();
-    return;
-  }
-  // Video uses CSS scaleX(-1), so mirror box X to match what the student sees.
-  gadgetOverlayBoxes.value = detections.map((item) => {
-    const [x1, y1, x2, y2] = item.box || [0, 0, 0, 0];
-    const left = ((frameW - x2) / frameW) * 100;
-    const top = (y1 / frameH) * 100;
-    const width = (Math.max(0, x2 - x1) / frameW) * 100;
-    const height = (Math.max(0, y2 - y1) / frameH) * 100;
-    return {
-      label: _gadgetDisplayLabel(item.label),
-      style: {
-        left: `${left}%`,
-        top: `${top}%`,
-        width: `${width}%`,
-        height: `${height}%`,
-      },
-    };
-  });
-}
-
-function _clearGadgetOverlayBoxes() {
-  gadgetOverlayBoxes.value = [];
 }
 
 function _startGadgetDetectionTimer() {
@@ -1512,7 +1480,7 @@ function _stopGadgetDetectionTimer() {
   }
   _gadgetDetectionInFlight = false;
   gadgetDetectionStatus.value = 'stopped';
-  _clearGadgetOverlayBoxes();
+  _gadgetCaptureCanvas = null;
 }
 
 async function _runGazeCheck() {
@@ -3591,30 +3559,6 @@ async function performLogout() {
 @keyframes pipIn { from { opacity: 0; transform: scale(0.7) translateY(-20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 .cam-pip-inner { position: relative; width: 240px; border-radius: 14px; overflow: hidden; background: #0f0f0f; border: 2.5px solid #34d399; aspect-ratio: 4/3; }
 .cam-pip-video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
-.cam-pip-gadget-box {
-  position: absolute;
-  z-index: 3;
-  border: 2px solid #f97316;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-  box-sizing: border-box;
-}
-.cam-pip-gadget-label {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform: translateY(-100%);
-  background: #f97316;
-  color: #111;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  padding: 0.08rem 0.28rem;
-  border-radius: 3px 3px 0 0;
-  white-space: nowrap;
-  text-transform: uppercase;
-}
 .cam-pip-direction-badge { position: absolute; top: 0.4rem; right: 0.4rem; z-index: 2; color: #fff; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em; padding: 0.2rem 0.5rem; border-radius: 999px; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.5); animation: dirBadgePop 0.15s cubic-bezier(0.34,1.56,0.64,1) both; }
 @keyframes dirBadgePop { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
 .cam-pip-badge { position: absolute; top: 0.5rem; left: 0.5rem; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.07em; padding: 0.2rem 0.55rem; border-radius: 999px; display: flex; align-items: center; gap: 0.3rem; }
