@@ -24,6 +24,7 @@ Read the relevant implementation before editing. If documentation and code disag
 - Enforce roles and exam ownership on the backend; frontend route guards alone are insufficient.
 - Keep API fields consistent between Django handlers and Vue callers.
 - Preserve exam timing, attempt limits, grading, and proctoring behavior unless the request changes them.
+- Treat the current gaze and gadget detectors as locked behavior. Do not change their inference, thresholds, frame capture or scheduling, direction decisions, warnings, evidence, or strike handling as a side effect of unrelated work. Change either detector only when the user explicitly requests a change to that detector; then keep the change scoped to the requested behavior and run its relevant checks.
 - Add a Django migration when a model change affects the database schema.
 - Keep credentials, student photos, webcam evidence, and real student data out of source control and test fixtures. Use synthetic data for verification.
 - Commit and push completed changes to the current branch by default, unless the user says otherwise. Report deployment status separately from the Git push.

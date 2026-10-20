@@ -50,6 +50,16 @@ For grading changes, use the custom [exam-grading skill](.agents/skills/exam-gra
 
 ## Gaze proctoring
 
+The current gaze and gadget detection behavior is a protected baseline. Work on
+dashboards, exam flows, APIs, styling, performance, or deployment must preserve
+both detectors unless the user explicitly requests a change to gaze detection or
+gadget detection. This includes their model inference, sensitivity thresholds,
+frame cadence, direction or object labels, warnings, evidence capture, and strike
+handling. Shared files can still be edited for other features, but those detector
+paths and their behavior should remain unchanged. For an explicitly requested
+detector change, update only the relevant detector behavior and verify it with
+focused tests.
+
 During an exam, `StudentDashboardView.vue` sends webcam frames through the gaze WebSocket. One frame is sent at a time; HTTP fallback supports strike counting when the WebSocket is unavailable.
 
 - WebSocket route: `/ws/student/exams/<exam_id>/proctoring/gaze/`.
