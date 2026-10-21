@@ -73,10 +73,10 @@
             <div class="dashboard-welcome__copy">
               <span class="dashboard-welcome__eyebrow">Administration overview</span>
               <h2>Keep your campus ready for every exam.</h2>
-              <p>Manage instructor and student access, assign institutes, and review identity photos in one place.</p>
+              <p>Manage instructor and student access, assign institutes, and track student ID verification in one place.</p>
             </div>
             <button type="button" class="dashboard-welcome__action" @click="pendingFaceCount ? openPendingReviews() : selectAdminSection('students')">
-              {{ pendingFaceCount ? `Review ${pendingFaceCount} photo${pendingFaceCount === 1 ? '' : 's'}` : 'Manage students' }}
+              {{ pendingFaceCount ? `View ${pendingFaceCount} unverified student${pendingFaceCount === 1 ? '' : 's'}` : 'Manage students' }}
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
             </button>
           </div>
@@ -106,11 +106,11 @@
                 <h2 v-else class="stat-value">{{ enrolledStudentCount }}</h2>
               </div>
             </button>
-            <button type="button" class="stat-card stat-card--link" :class="{ 'stat-card--attention': pendingFaceCount > 0 }" id="stat-review" :aria-label="`Review ${pendingFaceCount} pending photos`" @click="openPendingReviews">
+            <button type="button" class="stat-card stat-card--link" :class="{ 'stat-card--attention': pendingFaceCount > 0 }" id="stat-review" :aria-label="`View ${pendingFaceCount} unverified student IDs`" @click="openPendingReviews">
               <div class="stat-icon review-icon">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg>
               </div>
-              <div class="stat-body"><p class="stat-label">Photos to Review</p><SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" /><h2 v-else class="stat-value">{{ pendingFaceCount }}</h2></div>
+              <div class="stat-body"><p class="stat-label">Student IDs Needed</p><SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" /><h2 v-else class="stat-value">{{ pendingFaceCount }}</h2></div>
             </button>
             <div class="stat-card" id="stat-domain">
               <div class="stat-icon domain-icon">
@@ -130,7 +130,7 @@
             <div class="overview-actions-heading">
               <div>
                 <h2>Quick actions</h2>
-                <p>Manage people and review identity submissions.</p>
+                <p>Manage people and track student ID verification.</p>
               </div>
             </div>
             <div class="action-grid">
@@ -152,7 +152,7 @@
               </button>
               <button class="action-card" @click="openPendingReviews" id="action-review-photos">
                 <span class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg></span>
-                <span class="action-copy"><strong>Review photos <span class="action-count">{{ pendingFaceCount }}</span></strong><small>Check identity submissions</small></span>
+                <span class="action-copy"><strong>IDs needed <span class="action-count">{{ pendingFaceCount }}</span></strong><small>View students who need to upload an ID</small></span>
                 <span class="action-arrow" aria-hidden="true">→</span>
               </button>
             </div>
@@ -258,7 +258,7 @@
             <div>
               <span class="admin-section-kicker">People & access</span>
               <h2>Student management</h2>
-              <p>Manage enrollment, institutes, and identity photo reviews.</p>
+              <p>Manage enrollment, institutes, and student ID status.</p>
             </div>
           </div>
           <div class="course-tabstrip admin-page-tabs" role="tablist" aria-label="Student management">
@@ -274,7 +274,7 @@
                <option value="all">All students</option>
                <option value="enrolled">Enrolled</option>
                <option value="disabled">Access disabled</option>
-               <option value="pending">Photos pending review</option>
+               <option value="unverified">Student ID needed</option>
              </select>
              <select v-model="studentInstituteFilter" class="admin-filter" aria-label="Filter students by institute">
                <option value="all">All institutes</option>
@@ -298,7 +298,7 @@
                   <th>Email</th>
                   <th>Institute</th>
                   <th>Status</th>
-                  <th style="min-width:200px">Face ID</th>
+                  <th style="min-width:200px">Student ID</th>
                   <th style="text-align: right;">Actions</th>
                 </tr>
               </thead>
@@ -340,7 +340,7 @@
                           <img v-if="st.face_photo_url" :src="st.face_photo_url" class="face-thumb-img" alt="Approved" />
                           <span v-else class="face-thumb-placeholder">✓</span>
                         </div>
-                        <span class="face-label face-label--approved">{{ st.face_reupload_allowed ? 'New photo allowed' : 'Approved' }}</span>
+                        <span class="face-label face-label--approved">{{ st.face_reupload_allowed ? 'New ID allowed' : 'Verified' }}</span>
                       </div>
                       <label class="face-toggle" :for="`reupload-toggle-${st.id}`">
                         <input
@@ -351,12 +351,12 @@
                           @change="toggleReupload(st, $event)"
                         />
                         <span class="face-toggle-slider"></span>
-                        <span class="face-toggle-label">Allow new photo</span>
+                        <span class="face-toggle-label">Allow new ID</span>
                       </label>
                     </div>
                     <!-- NONE -->
                     <div v-else class="face-cell">
-                      <span class="face-label face-label--none">— Not submitted</span>
+                      <span class="face-label face-label--none">— ID needed</span>
                     </div>
                   </td>
                   <td style="text-align: right;">
@@ -375,8 +375,8 @@
           <form v-else id="student-register-panel" class="create-form-wrapper admin-entry-form" role="tabpanel" aria-labelledby="add-student-btn" @submit.prevent="enrollStudent">
             <div class="entry-heading"><div><h3 class="form-title">Register student</h3><p>Use the student's school email to allow Google sign-in.</p></div></div>
             <div class="inline-form">
-              <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name"/></label>
-              <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name"/></label>
+              <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name" required/></label>
+              <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name" required/></label>
               <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="student-email"/></label>
               <label class="entry-field entry-field--institute" for="student-institute">Institute
                 <select v-model="newStudent.institute" id="student-institute" required>
@@ -498,7 +498,7 @@ const reviewStudent = ref(null);
 const studentStatusFilter = ref('all');
 const studentInstituteFilter = ref('all');
 const hasStudentFilters = computed(() => Boolean(studentSearch.value) || studentStatusFilter.value !== 'all' || studentInstituteFilter.value !== 'all');
-const pendingFaceCount = computed(() => students.value.filter((student) => student.face_status === 'pending').length);
+const pendingFaceCount = computed(() => students.value.filter((student) => student.face_status !== 'approved').length);
 const activeInstructorCount = computed(() => instructors.value.filter((instructor) => instructor.is_active).length);
 const enrolledStudentCount = computed(() => students.value.filter((student) => student.is_enrolled).length);
 function showActionSuccess(title, text) {
@@ -559,7 +559,7 @@ function closeStudentForm() {
 function openPendingReviews() {
   activeTab.value = 'students';
   closeStudentForm();
-  studentStatusFilter.value = 'pending';
+  studentStatusFilter.value = 'unverified';
   studentInstituteFilter.value = 'all';
   studentSearch.value = '';
 }
@@ -850,7 +850,7 @@ const filteredInstructors = computed(() => {
 const filteredStudents = computed(() => {
   const q = studentSearch.value.trim().toLowerCase();
   return students.value.filter((student) => {
-    if (studentStatusFilter.value === 'pending' && student.face_status !== 'pending') return false;
+    if (studentStatusFilter.value === 'unverified' && student.face_status === 'approved') return false;
     if (studentStatusFilter.value === 'enrolled' && !student.is_enrolled) return false;
     if (studentStatusFilter.value === 'disabled' && student.is_enrolled) return false;
     if (studentInstituteFilter.value === 'unassigned' && student.institute) return false;

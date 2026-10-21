@@ -59,8 +59,8 @@
     <!-- ── Cards Grid ──────────────────────────────────────────── -->
     <div class="cards-grid">
 
-      <!-- Face ID Photo (spans full width) -->
-      <div v-if="user.role !== 'instructor'" class="info-card face-id-card" style="grid-column: 1 / -1;">
+      <!-- Student ID verification -->
+      <div v-if="user.role === 'student'" class="info-card face-id-card" style="grid-column: 1 / -1;">
         <div class="card-header">
           <div class="card-header-icon icon-indigo">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -69,12 +69,12 @@
             </svg>
           </div>
           <div class="card-header-text">
-            <h2 class="card-title">Face ID Photo</h2>
-            <p class="card-subtitle">Upload a clear 2×2 or formal ID photo for exam identity verification.</p>
+            <h2 class="card-title">DNSC Student ID</h2>
+            <p class="card-subtitle">Upload the front of your DNSC student ID. Its printed name is checked against your account automatically.</p>
           </div>
           <!-- Status badge -->
           <div v-if="faceStatus === 'approved'" class="fid-badge fid-badge--registered">
-            <span class="fid-dot fid-dot--green"></span> Approved
+            <span class="fid-dot fid-dot--green"></span> Verified
           </div>
           <div v-else-if="faceStatus === 'pending'" class="fid-badge fid-badge--pending">
             <span class="fid-dot fid-dot--blue"></span> Pending Approval
@@ -89,7 +89,7 @@
           <!-- ── APPROVED & LOCKED ──────────────────────────────────── -->
           <div v-if="faceStatus === 'approved' && !faceReuploadAllowed" class="fid-locked-wrap">
             <div class="fid-locked-photo">
-              <img v-if="facePreviewUrl" :src="facePreviewUrl" alt="Approved face photo" class="fid-preview-img" />
+              <img v-if="facePreviewUrl" :src="facePreviewUrl" alt="Verified student ID" class="fid-preview-img" />
               <div v-else class="fid-preview-placeholder">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.35">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -104,8 +104,8 @@
               </div>
             </div>
             <div class="fid-guidelines">
-              <p class="fid-guide-title">Photo approved</p>
-              <p class="fid-locked-note">Your face photo has been verified and locked by the admin. Contact your administrator if you need to update it.</p>
+              <p class="fid-guide-title">Student ID verified</p>
+              <p class="fid-locked-note">The name on your ID matches your account. Your ID portrait will be used for the webcam face check before exams. Contact your administrator if you need to replace this ID.</p>
             </div>
           </div>
 
@@ -141,7 +141,7 @@
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>
               </svg>
-              <span>Click to upload photo</span>
+              <span>Click to upload student ID</span>
             </div>
             <div class="fid-preview-overlay">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -149,7 +149,7 @@
                 <polyline points="17 8 12 3 7 8"/>
                 <line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              <span>{{ facePreviewUrl ? 'Change Photo' : 'Upload Photo' }}</span>
+              <span>{{ facePreviewUrl ? 'Change ID' : 'Upload ID' }}</span>
             </div>
             <input
               ref="faceFileInput"
@@ -162,23 +162,23 @@
 
           <!-- Guidelines -->
           <div class="fid-guidelines">
-            <p class="fid-guide-title">Photo Requirements</p>
+            <p class="fid-guide-title">Student ID requirements</p>
             <ul class="fid-guide-list">
               <li>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                Clear, front-facing photo — face fully visible
+                Show the entire front of your DNSC student ID, upright and in focus
               </li>
               <li>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                Good lighting, no shadows on face
+                Printed name and STUDENT label must be clearly readable
               </li>
               <li>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                2×2 ID or formal photo recommended
+                The printed first and last names must match your account
               </li>
               <li>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                No glasses, hats, or heavy filters
+                The ID portrait must be clear for the exam webcam check
               </li>
             </ul>
 
@@ -201,7 +201,7 @@
                 <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
-                {{ loading ? 'Saving…' : 'Save Face Photo' }}
+                {{ loading ? 'Verifying…' : 'Verify Student ID' }}
               </button>
             </div>
           </div>
@@ -231,16 +231,17 @@
           <div class="field-wrap">
             <label class="field-label" for="profile-first-name">First Name</label>
             <div class="field-box" :class="{ locked: !isEditing }">
-              <input id="profile-first-name" type="text" v-model="form.first_name" :readonly="!isEditing" autocomplete="given-name" placeholder="Enter first name" />
+              <input id="profile-first-name" type="text" v-model="form.first_name" :readonly="user.role === 'student' || !isEditing" autocomplete="given-name" placeholder="Enter first name" />
             </div>
           </div>
 
           <div class="field-wrap">
             <label class="field-label" for="profile-last-name">Last Name</label>
             <div class="field-box" :class="{ locked: !isEditing }">
-              <input id="profile-last-name" type="text" v-model="form.last_name" :readonly="!isEditing" autocomplete="family-name" placeholder="Enter last name" />
+              <input id="profile-last-name" type="text" v-model="form.last_name" :readonly="user.role === 'student' || !isEditing" autocomplete="family-name" placeholder="Enter last name" />
             </div>
           </div>
+          <p v-if="user.role === 'student'" class="field-hint">Contact an administrator if your account name needs correcting before ID verification.</p>
 
           <div class="field-wrap">
             <label class="field-label" for="profile-mobile-number">Mobile Number</label>
@@ -335,7 +336,7 @@ const props = defineProps({
 const emit = defineEmits(['save-profile', 'dismiss-notice']);
 const successTitle = computed(() => {
   if (props.successMsg.includes('face photo could not')) return 'Profile saved; photo needs attention';
-  if (props.successMsg.includes('face photo was submitted')) return 'Face photo submitted';
+  if (props.successMsg.includes('student ID was verified')) return 'Student ID verified';
   return 'Profile updated';
 });
 
@@ -364,10 +365,7 @@ function resetForm() {
   newPhotoFile.value    = null;
   previewPhotoUrl.value = props.user.photo  || '';
   newFaceFile.value     = null;
-  // Show pending photo if awaiting review, else show approved photo
-  facePreviewUrl.value  = (props.faceStatus === 'pending' ? props.user.face_pending_photo_url : null)
-                          || props.facePhotoUrl
-                          || '';
+  facePreviewUrl.value  = props.faceStatus === 'approved' ? (props.facePhotoUrl || '') : '';
   faceUploadError.value = '';
 }
 

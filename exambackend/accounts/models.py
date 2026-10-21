@@ -33,6 +33,7 @@ class UserProfile(models.Model):
     mobile_number = models.CharField(max_length=20, blank=True, default='')
     face_photo = models.ImageField(upload_to='face_photos/', null=True, blank=True)
     face_encoding = models.TextField(null=True, blank=True)  # JSON-serialized face embedding
+    id_verified_at = models.DateTimeField(null=True, blank=True)
     # ── Face approval workflow ──────────────────────────────────────────────
     face_status = models.CharField(
         max_length=10,

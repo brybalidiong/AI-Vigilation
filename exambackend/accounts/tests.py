@@ -11,6 +11,9 @@ from io import BytesIO
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import patch
+from tempfile import TemporaryDirectory
+import cv2
+import numpy as np
 from django.utils import timezone
 
 from accounts.grading import grade_question
@@ -18,6 +21,93 @@ from accounts.models import (
     EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, StudentAnswer,
     StudentSet, Subject, UserProfile,
 )
+from accounts.student_id_service import StudentIdError, _name_matches, verify_student_id
+
+
+class StudentIdReadingTests(SimpleTestCase):
+    def setUp(self):
+        image = np.zeros((1000, 700, 3), dtype=np.uint8)
+        self.image = cv2.imencode('.jpg', image)[1].tobytes()
+
+    def test_middle_initial_does_not_prevent_exact_first_and_last_name_match(self):
+        self.assertTrue(_name_matches('ALEX Q. REYES', 'Alex', 'Reyes'))
+        self.assertFalse(_name_matches('ALEX Q. SANTOS', 'Alex', 'Reyes'))
+        self.assertFalse(_name_matches('ALEX REYES AND SANTOS', 'Alex', 'Reyes'))
+
+    @patch('accounts.student_id_service._get_face_features')
+    @patch('accounts.student_id_service._read_text')
+    def test_matching_dnsc_student_id_extracts_portrait(self, read_text, get_features):
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. REYES']
+        get_features.return_value = np.array([[0.1, 0.2]], dtype=np.float32)
+        self.assertEqual(len(verify_student_id(self.image, 'Alex', 'Reyes')), 2)
+        get_features.assert_called_once()
+
+    @patch('accounts.student_id_service._get_face_features')
+    @patch('accounts.student_id_service._read_text')
+    def test_mismatched_name_rejects_before_portrait_is_used(self, read_text, get_features):
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. SANTOS']
+        with self.assertRaises(StudentIdError):
+            verify_student_id(self.image, 'Alex', 'Reyes')
+        get_features.assert_not_called()
+
+    @patch('accounts.student_id_service._read_text', return_value='SCHOOL CARD')
+    def test_other_school_is_rejected(self, _read_text):
+        with self.assertRaises(StudentIdError):
+            verify_student_id(self.image, 'Alex', 'Reyes')
+
+    @patch('accounts.student_id_service._read_text')
+    def test_missing_student_label_is_rejected(self, read_text):
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'FACULTY']
+        with self.assertRaises(StudentIdError):
+            verify_student_id(self.image, 'Alex', 'Reyes')
+
+    @patch('accounts.student_id_service._get_face_features', return_value=None)
+    @patch('accounts.student_id_service._read_text')
+    def test_unreadable_portrait_is_rejected(self, read_text, _features):
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. REYES']
+        with self.assertRaises(StudentIdError):
+            verify_student_id(self.image, 'Alex', 'Reyes')
+
+
+class StudentIdUploadTests(TestCase):
+    def setUp(self):
+        self.temp_media = TemporaryDirectory()
+        self.addCleanup(self.temp_media.cleanup)
+        self.media_override = override_settings(MEDIA_ROOT=self.temp_media.name)
+        self.media_override.enable()
+        self.addCleanup(self.media_override.disable)
+        self.student = User.objects.create_user(
+            username='alex@dnsc.edu.ph', email='alex@dnsc.edu.ph',
+            first_name='Alex', last_name='Reyes',
+        )
+        UserProfile.objects.create(user=self.student, role='student', is_enrolled=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.student)
+
+    def test_student_cannot_change_account_name_before_upload(self):
+        result = self.client.post('/api/auth/me/update/', {'first_name': 'Someone'}, format='multipart')
+        self.assertEqual(result.status_code, 400)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.first_name, 'Alex')
+
+    @patch('accounts.student_id_service.verify_student_id', return_value=[0.1, 0.2])
+    def test_matching_id_is_automatically_approved(self, verify):
+        upload = SimpleUploadedFile('synthetic.jpg', b'synthetic-image', content_type='image/jpeg')
+        result = self.client.post('/api/auth/me/update/', {'face_photo': upload}, format='multipart')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['user']['face_status'], 'approved')
+        self.student.profile.refresh_from_db()
+        self.assertIsNotNone(self.student.profile.id_verified_at)
+        verify.assert_called_once_with(b'synthetic-image', 'Alex', 'Reyes')
+
+    @patch('accounts.student_id_service.verify_student_id', side_effect=StudentIdError('Name mismatch.'))
+    def test_rejected_id_does_not_change_verification(self, _verify):
+        upload = SimpleUploadedFile('synthetic.jpg', b'synthetic-image', content_type='image/jpeg')
+        result = self.client.post('/api/auth/me/update/', {'face_photo': upload}, format='multipart')
+        self.assertEqual(result.status_code, 400)
+        self.student.profile.refresh_from_db()
+        self.assertIsNone(self.student.profile.id_verified_at)
+        self.assertFalse(self.student.profile.face_photo)
 
 
 class AdminAccessWorkflowTests(TestCase):
@@ -72,7 +162,8 @@ class AdminAccessWorkflowTests(TestCase):
         profile = self.student.profile
         profile.face_photo = 'face_photos/synthetic.jpg'
         profile.face_status = UserProfile.FACE_STATUS_APPROVED
-        profile.save(update_fields=['face_photo', 'face_status'])
+        profile.id_verified_at = timezone.now()
+        profile.save(update_fields=['face_photo', 'face_status', 'id_verified_at'])
         url = f'/api/admin/students/{self.student.pk}/'
         first = self.client.patch(url, {'action': 'toggle_reupload'}, format='json')
         self.assertEqual(first.status_code, 200, first.data)
@@ -83,21 +174,38 @@ class AdminAccessWorkflowTests(TestCase):
         self.assertFalse(second.data['face_reupload_allowed'])
         self.assertEqual(second.data['face_status'], UserProfile.FACE_STATUS_APPROVED)
 
-    def test_admin_can_approve_stored_face_photo_without_local_path(self):
+    def test_legacy_photo_cannot_be_manually_approved(self):
         profile = self.student.profile
         profile.face_pending_photo = 'face_pending/synthetic.jpg'
         profile.save(update_fields=['face_pending_photo'])
-        with patch.object(type(profile.face_pending_photo), 'open', return_value=BytesIO(b'synthetic-image')):
-            with patch('accounts.face_service.extract_face_encoding_bytes', return_value=[0.1, 0.2]) as extract:
-                response = self.client.patch(
-                    f'/api/admin/students/{self.student.pk}/',
-                    {'action': 'approve_face'}, format='json',
-                )
-        self.assertEqual(response.status_code, 200, response.data)
-        extract.assert_called_once_with(b'synthetic-image')
+        response = self.client.patch(
+            f'/api/admin/students/{self.student.pk}/',
+            {'action': 'approve_face'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
         profile.refresh_from_db()
-        self.assertEqual(profile.face_status, UserProfile.FACE_STATUS_APPROVED)
-        self.assertFalse(profile.face_pending_photo)
+        self.assertIsNone(profile.id_verified_at)
+        self.assertTrue(profile.face_pending_photo)
+
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_admin_name_correction_requires_new_id(self):
+        self.student.first_name = 'Alex'
+        self.student.last_name = 'Reyes'
+        self.student.save(update_fields=['first_name', 'last_name'])
+        profile = self.student.profile
+        profile.face_photo = 'face_photos/synthetic.jpg'
+        profile.face_encoding = '[0.1, 0.2]'
+        profile.face_status = UserProfile.FACE_STATUS_APPROVED
+        profile.id_verified_at = timezone.now()
+        profile.save(update_fields=['face_photo', 'face_encoding', 'face_status', 'id_verified_at'])
+        response = self.client.post('/api/admin/students/', {
+            'email': self.student.email, 'first_name': 'Alex', 'last_name': 'Santos', 'institute': 'IC',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        profile.refresh_from_db()
+        self.assertIsNone(profile.id_verified_at)
+        self.assertIsNone(profile.face_encoding)
+        self.assertEqual(profile.face_status, UserProfile.FACE_STATUS_NONE)
 
     def test_admin_rejects_stored_face_photo_through_storage(self):
         profile = self.student.profile

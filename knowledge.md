@@ -18,7 +18,7 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 - **Device access:** The frontend entry point shows a blocking message on phones and tablets, including iPads requesting desktop mode, before it initializes the router or Firebase. Users must open the site on a laptop or desktop computer. This client-side check identifies common devices but cannot guarantee exclusion when browser device properties are deliberately spoofed.
 - **Backend:** Django, Django REST Framework, and Channels in `exambackend/`.
 - **Database:** PostgreSQL/Supabase, with an optional local SQLite configuration.
-- **Identity:** Firebase integration and OpenCV YuNet/SFace models; face verification code lives in `exambackend/accounts/face_service.py`.
+- **Identity:** Firebase integration, DNSC student ID OCR in `exambackend/accounts/student_id_service.py`, and OpenCV YuNet/SFace models in `exambackend/accounts/face_service.py`. Students upload the front of their DNSC ID; the backend reads the school header, STUDENT label, and printed first/last name, compares the name with the admin-managed account name, and stores an embedding from the ID portrait. The exam precheck compares the webcam face with that portrait. A failed or unreadable ID is rejected without changing verification state. Previously approved face photos require a new ID upload. OCR/name matching does not establish that an ID card is genuine.
 - **Proctoring:** Gaze tracking uses MediaPipe and TensorFlow Lite; gadget detection lives in `exambackend/accounts/gadget_service.py`.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.

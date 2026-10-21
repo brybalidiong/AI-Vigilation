@@ -55,6 +55,13 @@ def _is_instructor(user):
     return bool(user and user.is_authenticated and user.is_active and user.is_staff and not user.is_superuser)
 
 
+def _effective_face_status(profile):
+    return (UserProfile.FACE_STATUS_APPROVED if profile and profile.id_verified_at
+            and profile.face_photo and profile.face_encoding
+            and profile.face_status == UserProfile.FACE_STATUS_APPROVED
+            else UserProfile.FACE_STATUS_NONE)
+
+
 PROCTORING_EVENT_PENALTIES = {
     ExamProctoringEvent.EVENT_TAB_SWITCH: 12,
     ExamProctoringEvent.EVENT_WINDOW_BLUR: 4,
@@ -791,7 +798,7 @@ def admin_students(request):
             face_photo_url = None
             face_pending_url = None
             if p:
-                if p.face_photo:
+                if p.face_photo and p.id_verified_at:
                     face_photo_url = request.build_absolute_uri(p.face_photo.url)
                 if p.face_pending_photo:
                     face_pending_url = request.build_absolute_uri(p.face_pending_photo.url)
@@ -803,7 +810,7 @@ def admin_students(request):
                 'full_name': u.get_full_name() or u.email,
                 'is_enrolled': p and p.is_enrolled,
                 'institute': p.institute if p else '',
-                'face_status': p.face_status if p else 'none',
+                'face_status': _effective_face_status(p),
                 'face_reupload_allowed': p.face_reupload_allowed if p else False,
                 'face_photo_url': face_photo_url,
                 'face_pending_photo_url': face_pending_url,
@@ -843,6 +850,10 @@ def admin_students(request):
             {'error': 'This email belongs to an instructor account.'},
             status=status.HTTP_409_CONFLICT,
         )
+    name_changed = not created and (
+        (bool(first_name) and first_name != user.first_name)
+        or (bool(last_name) and last_name != user.last_name)
+    )
     if not created:
         if first_name:
             user.first_name = first_name
@@ -856,10 +867,14 @@ def admin_students(request):
     )
     profile.is_enrolled = True
     profile.institute = institute
+    if name_changed:
+        profile.id_verified_at = None
+        profile.face_status = UserProfile.FACE_STATUS_NONE
+        profile.face_encoding = None
     if profile.role != 'student':
         profile.role = 'student'
     with transaction.atomic():
-        profile.save(update_fields=['role', 'is_enrolled', 'institute'])
+        profile.save(update_fields=['role', 'is_enrolled', 'institute', 'id_verified_at', 'face_status', 'face_encoding'])
         if not user.is_active:
             user.is_active = True
             user.save(update_fields=['is_active'])
@@ -893,14 +908,14 @@ def admin_student_detail(request, student_id):
     profile = student.profile
 
     if request.method == 'GET':
-        face_photo_url = request.build_absolute_uri(profile.face_photo.url) if profile.face_photo else None
+        face_photo_url = request.build_absolute_uri(profile.face_photo.url) if profile.face_photo and profile.id_verified_at else None
         face_pending_url = request.build_absolute_uri(profile.face_pending_photo.url) if profile.face_pending_photo else None
         return Response({
             'id': student.id,
             'email': student.email,
             'full_name': student.get_full_name() or student.email,
             'institute': profile.institute,
-            'face_status': profile.face_status,
+            'face_status': _effective_face_status(profile),
             'face_reupload_allowed': profile.face_reupload_allowed,
             'face_photo_url': face_photo_url,
             'face_pending_photo_url': face_pending_url,
@@ -918,36 +933,7 @@ def admin_student_detail(request, student_id):
             return Response({'id': student.id, 'institute': institute})
 
         if action == 'approve_face':
-            if not profile.face_pending_photo:
-                return Response({'error': 'No pending face photo to approve.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # If encoding wasn't cached at upload time (older submissions), compute it now.
-            if not profile.face_encoding:
-                import json as json_module
-                from .face_service import extract_face_encoding_bytes
-                try:
-                    with profile.face_pending_photo.open('rb') as pending_photo:
-                        encoding = extract_face_encoding_bytes(pending_photo.read())
-                except Exception:
-                    encoding = None
-                if not encoding:
-                    return Response(
-                        {'error': 'Could not detect a face in the pending photo. Please reject it and ask the student to re-upload.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                profile.face_encoding = json_module.dumps(encoding)
-
-            # Promote pending photo to the approved slot
-            profile.face_photo = profile.face_pending_photo
-            profile.face_pending_photo = None
-            profile.face_status = UserProfile.FACE_STATUS_APPROVED
-            profile.face_reupload_allowed = False
-            profile.save(update_fields=['face_photo', 'face_pending_photo', 'face_encoding', 'face_status', 'face_reupload_allowed'])
-            return Response({
-                'message': 'Face photo approved.',
-                'face_status': profile.face_status,
-                'face_photo_url': request.build_absolute_uri(profile.face_photo.url) if profile.face_photo else None,
-            })
+            return Response({'error': 'Students must upload a DNSC student ID for automatic verification.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
         elif action == 'reject_face':
@@ -977,7 +963,7 @@ def admin_student_detail(request, student_id):
             # Flip the reupload flag. If enabling, reset status so student can submit fresh.
             profile.face_reupload_allowed = not profile.face_reupload_allowed
             profile.face_status = (
-                UserProfile.FACE_STATUS_NONE if profile.face_reupload_allowed or not profile.face_photo
+                UserProfile.FACE_STATUS_NONE if profile.face_reupload_allowed or not profile.face_photo or not profile.id_verified_at
                 else UserProfile.FACE_STATUS_APPROVED
             )
             profile.save(update_fields=['face_reupload_allowed', 'face_status'])
@@ -2178,10 +2164,10 @@ def google_login(request):
                     'mobile_number': profile.mobile_number,
                     'photo': _get_profile_photo_url(request, profile),
                     'role': profile.role,
-                    'face_photo_url': request.build_absolute_uri(profile.face_photo.url) if profile.face_photo else None,
-                    'face_pending_photo_url': request.build_absolute_uri(profile.face_pending_photo.url) if profile.face_pending_photo else None,
-                    'face_registered': bool(profile.face_encoding),
-                    'face_status': profile.face_status,
+                    'face_photo_url': request.build_absolute_uri(profile.face_photo.url) if profile.face_photo and profile.id_verified_at else None,
+                    'face_pending_photo_url': None,
+                    'face_registered': bool(profile.face_encoding and profile.id_verified_at),
+                    'face_status': _effective_face_status(profile),
                     'face_reupload_allowed': profile.face_reupload_allowed,
                 },
             },
@@ -2401,7 +2387,6 @@ def _gaze_direction_enabled(exam_set, label, question_id=None):
 @parser_classes([MultiPartParser, FormParser])
 def update_profile(request):
     """Update the logged-in user's profile settings (including picture upload)."""
-    import os as _os
     user = request.user
     profile = getattr(user, 'profile', None)
     if not profile:
@@ -2409,6 +2394,10 @@ def update_profile(request):
 
     first_name = request.data.get('first_name', user.first_name)
     last_name = request.data.get('last_name', user.last_name)
+    if profile.role == 'student' and (
+        first_name != user.first_name or last_name != user.last_name
+    ):
+        return Response({'error': 'Student account names are managed by the administrator. Contact the admin to correct your name.'}, status=status.HTTP_400_BAD_REQUEST)
     mobile_number = request.data.get('mobile_number', profile.mobile_number)
 
     user.first_name = first_name
@@ -2420,44 +2409,40 @@ def update_profile(request):
     if 'custom_photo' in request.FILES:
         profile.custom_photo = request.FILES['custom_photo']
 
-    face_encoding_error = None
     if 'face_photo' in request.FILES:
-        # ── Approval-gate ────────────────────────────────────────────────────
+        if profile.role != 'student':
+            return Response({'error': 'Student ID verification is only available to students.'}, status=status.HTTP_403_FORBIDDEN)
         is_locked = (
-            profile.face_status == UserProfile.FACE_STATUS_APPROVED
+            bool(profile.id_verified_at)
+            and profile.face_status == UserProfile.FACE_STATUS_APPROVED
             and not profile.face_reupload_allowed
         )
         if is_locked:
-            face_encoding_error = (
-                'Your face photo is already approved and locked. '
-                'Contact the admin to allow a new submission.'
-            )
-        else:
-            import json as _json
-            face_file = request.FILES['face_photo']
-            from .face_service import save_temp_image, extract_face_encoding
-            tmp_path = save_temp_image(face_file)
-            try:
-                # Quick face presence check (reject unusable photos early)
-                encoding = extract_face_encoding(tmp_path)
-                if not encoding:
-                    face_encoding_error = (
-                        'Could not detect a face in this photo. '
-                        'Please ensure your face is clearly visible and well-lit.'
-                    )
-                else:
-                    face_file.seek(0)
-                    # Save to pending slot; store encoding now so approve doesn't need to re-run detection
-                    profile.face_pending_photo.save(face_file.name, face_file, save=False)
-                    profile.face_encoding = _json.dumps(encoding)  # cached for approval
-                    profile.face_status = UserProfile.FACE_STATUS_PENDING
-                    profile.face_reupload_allowed = False
-            except Exception as exc:
-                import logging as _logging
-                _logging.getLogger(__name__).error("Face detection raised: %s", exc)
-                face_encoding_error = 'Face verification service encountered an error. Please try again.'
-            finally:
-                _os.unlink(tmp_path)
+            return Response({'error': 'Your student ID is already verified. Contact the admin to allow a new submission.'}, status=status.HTTP_400_BAD_REQUEST)
+        from .student_id_service import StudentIdError, verify_student_id
+        import json as _json
+        import uuid
+        uploaded = request.FILES['face_photo']
+        file_extension = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(uploaded.content_type)
+        if not file_extension:
+            return Response({'error': 'Upload a JPG, PNG, or WebP student ID photo.'}, status=status.HTTP_400_BAD_REQUEST)
+        if uploaded.size > 5 * 1024 * 1024:
+            return Response({'error': 'Upload a student ID image under 5 MB.'}, status=status.HTTP_400_BAD_REQUEST)
+        image_bytes = uploaded.read()
+        try:
+            encoding = verify_student_id(image_bytes, user.first_name, user.last_name)
+        except StudentIdError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Student ID verification failed')
+            return Response({'error': 'Student ID verification is unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        profile.face_photo.save(f'{uuid.uuid4().hex}.{file_extension}', ContentFile(image_bytes), save=False)
+        profile.face_encoding = _json.dumps(encoding)
+        profile.id_verified_at = timezone.now()
+        profile.face_status = UserProfile.FACE_STATUS_APPROVED
+        profile.face_reupload_allowed = False
+        profile.face_pending_photo = None
 
     profile.save()
 
@@ -2472,16 +2457,13 @@ def update_profile(request):
             'mobile_number': profile.mobile_number,
             'photo': _get_profile_photo_url(request, profile),
             'role': profile.role,
-            'face_photo_url': request.build_absolute_uri(profile.face_photo.url) if profile.face_photo else None,
+            'face_photo_url': request.build_absolute_uri(profile.face_photo.url) if profile.face_photo and profile.id_verified_at else None,
             'face_pending_photo_url': request.build_absolute_uri(profile.face_pending_photo.url) if profile.face_pending_photo else None,
-            'face_registered': bool(profile.face_encoding),
-            'face_status': profile.face_status,
+            'face_registered': bool(profile.face_encoding and profile.id_verified_at),
+            'face_status': _effective_face_status(profile),
             'face_reupload_allowed': profile.face_reupload_allowed,
         }
     }
-    if face_encoding_error:
-        response_data['face_encoding_error'] = face_encoding_error
-
     return Response(response_data)
 
 # ---------------------------------------------------------------------------
@@ -3721,61 +3703,10 @@ def student_precheck_face(request, exam_id):
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def admin_upload_face_photo(request, student_id):
-    """
-    POST admin/students/<student_id>/face-photo/
-
-    Admin uploads a formal face photo for a student.
-    The backend extracts and stores the face encoding in UserProfile.face_encoding.
-
-    Body (multipart/form-data):
-        face_photo  (File) — The formal face photo (JPG/PNG recommended)
-
-    Returns:
-        200 OK    — Encoding extracted and saved successfully
-        400       — No face detected in the uploaded photo
-        403       — Caller is not a superuser/admin
-        404       — Student not found
-    """
+    """Retire the manual portrait upload path; IDs are student verified."""
     if not request.user.is_superuser:
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-
-    try:
-        profile = UserProfile.objects.select_related('user').get(pk=student_id, role='student')
-    except UserProfile.DoesNotExist:
-        return Response({'error': 'Student not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-    uploaded_file = request.FILES.get('face_photo')
-    if not uploaded_file:
-        return Response({'error': 'No face_photo file provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    import os
-    from .face_service import save_temp_image, extract_face_encoding
-    tmp_path = save_temp_image(uploaded_file)
-    try:
-        encoding = extract_face_encoding(tmp_path)
-    finally:
-        os.unlink(tmp_path)  # Always clean up temp file
-
-    if encoding is None:
-        return Response(
-            {'error': 'No face detected in the uploaded photo. Please use a clear, front-facing photo.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    import json as json_module
-    # Save the photo file and the encoding
-    profile.face_photo.save(uploaded_file.name, uploaded_file, save=False)
-    profile.face_encoding = json_module.dumps(encoding)
-    profile.save(update_fields=['face_photo', 'face_encoding'])
-
-    return Response(
-        {
-            'message': 'Face photo uploaded and encoding saved successfully.',
-            'student_email': profile.user.email,
-            'face_photo_url': request.build_absolute_uri(profile.face_photo.url) if profile.face_photo else None,
-        },
-        status=status.HTTP_200_OK,
-    )
+    return Response({'error': 'Students now upload DNSC IDs for automatic verification.'}, status=status.HTTP_410_GONE)
 
 
 @api_view(['POST'])
@@ -3818,17 +3749,8 @@ def student_verify_face(request, exam_id):
     except UserProfile.DoesNotExist:
         return Response({'error': 'Student profile not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    if profile.face_status != UserProfile.FACE_STATUS_APPROVED:
-        status_msg = {
-            UserProfile.FACE_STATUS_NONE: (
-                'No face photo has been submitted for your account. '
-                'Please upload a face photo in your profile settings and wait for admin approval.'
-            ),
-            UserProfile.FACE_STATUS_PENDING: (
-                'Your face photo is pending admin approval. '
-                'Please wait for the administrator to review your submission before taking the exam.'
-            ),
-        }.get(profile.face_status, 'Your face photo has not been approved by the admin.')
+    if _effective_face_status(profile) != UserProfile.FACE_STATUS_APPROVED:
+        status_msg = 'Upload your DNSC student ID in profile settings for automatic name verification before taking the exam.'
         return Response(
             {'error': status_msg, 'verified': False},
             status=status.HTTP_404_NOT_FOUND,

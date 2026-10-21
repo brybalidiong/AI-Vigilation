@@ -860,9 +860,7 @@ async function handleProfileUpdate(formData) {
     if (response.data.user?.face_registered !== undefined) {
       faceRegistered.value = Boolean(response.data.user.face_registered);
     }
-    if (response.data.user?.face_photo_url) {
-      facePhotoUrl.value = response.data.user.face_photo_url;
-    }
+    facePhotoUrl.value = response.data.user?.face_photo_url || '';
     if (response.data.user?.face_status !== undefined) {
       faceStatus.value = response.data.user.face_status;
     }
@@ -872,8 +870,8 @@ async function handleProfileUpdate(formData) {
     if (response.data.face_encoding_error) {
       faceError.value = response.data.face_encoding_error;
       profileSuccess.value = "Your profile was saved, but the face photo could not be accepted.";
-    } else if (faceStatus.value === 'pending') {
-      profileSuccess.value = "Your face photo was submitted for review.";
+    } else if (formData.has('face_photo')) {
+      profileSuccess.value = "Your student ID was verified automatically. The ID portrait will be checked against your webcam before exams.";
     } else {
       profileSuccess.value = "Your profile has been updated.";
     }

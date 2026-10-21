@@ -8,7 +8,7 @@ WORKDIR /app
 
 # OpenCV and the model runtimes need these shared libraries on slim images.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libegl1 libgles2 libgl1 libglib2.0-0 libgomp1 \
+    libegl1 libgles2 libgl1 libglib2.0-0 libgomp1 tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
