@@ -333,6 +333,7 @@ class ExamProctoringEvent(models.Model):
     EVENT_GAZE_VIOLATION = 'gaze_violation'
     EVENT_GAZE_NO_FACE = 'gaze_no_face'
     EVENT_GADGET_DETECTED = 'gadget_detected'
+    EVENT_WARNING_SHOWN = 'warning_shown'
     EVENT_TYPES = [
         (EVENT_TAB_SWITCH, 'Tab switch'),
         (EVENT_WINDOW_BLUR, 'Window blur'),
@@ -353,6 +354,7 @@ class ExamProctoringEvent(models.Model):
         (EVENT_GAZE_VIOLATION, 'Gaze away from screen'),
         (EVENT_GAZE_NO_FACE, 'Face not visible'),
         (EVENT_GADGET_DETECTED, 'Prohibited gadget detected'),
+        (EVENT_WARNING_SHOWN, 'Warning displayed'),
     ]
 
     submission = models.ForeignKey(

@@ -16,18 +16,20 @@ class BrowserProctoringEventTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(student)
 
-    def test_screen_sharing_stop_and_screenshot_attempt_are_recorded(self):
+    def test_browser_actions_and_face_warning_are_recorded(self):
         response = self.client.post(
             f'/api/student/exams/{self.exam.pk}/proctoring/events/',
             {'events': [
                 {'event_type': 'screen_share_stopped', 'message': 'Screen sharing stopped', 'source': 'screen_share', 'severity': 'critical'},
                 {'event_type': 'screenshot_attempt', 'message': 'Screenshot shortcut pressed', 'source': 'keyboard'},
+                {'event_type': 'tab_switch', 'message': 'Student switched tabs', 'source': 'visibilitychange'},
+                {'event_type': 'warning_shown', 'message': 'Face-not-visible notice displayed', 'source': 'face_absence_notice'},
             ]},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data['logged'], 2)
+        self.assertEqual(response.data['logged'], 4)
         self.assertEqual(
             list(ExamProctoringEvent.objects.values_list('event_type', flat=True)),
-            ['screen_share_stopped', 'screenshot_attempt'],
+            ['screen_share_stopped', 'screenshot_attempt', 'tab_switch', 'warning_shown'],
         )

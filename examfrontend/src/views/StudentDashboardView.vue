@@ -15,6 +15,19 @@
       @dismiss="dismissTerminatedScreen" 
     />
 
+    <div v-if="takingExam && browserWarning.show" class="proctor-overlay browser-leave-overlay" role="alertdialog" aria-modal="true" aria-labelledby="browser-warning-title">
+      <div class="proctor-box alttab">
+        <div class="proctor-icon" aria-hidden="true">!</div>
+        <h2 id="browser-warning-title">{{ browserWarning.title }}</h2>
+        <p>{{ browserWarning.message }}</p>
+        <div class="proctor-counter">
+          <span class="strike-count">{{ tabSwitchCount }}</span>
+          <span class="strike-label">/ {{ TAB_SWITCH_LIMIT }} warnings</span>
+        </div>
+        <button type="button" class="proctor-dismiss" @click="dismissBrowserWarning">I Understand — Return to Exam</button>
+      </div>
+    </div>
+
     <div class="dashboard-container">
       
       <!-- LEFT SIDEBAR -->
@@ -399,7 +412,7 @@
         </div>
       </div>
 
-      <!-- ——— PROCTORING WARNING OVERLAY (inside exam modal, for split-screen + alttab warnings) ——— -->
+      <!-- Detector and restricted-action warnings. Browser departure warnings live above the exam modal. -->
       <div v-if="proctoringWarning.show" class="proctor-overlay">
         <div class="proctor-box" :class="proctoringWarning.type">
           <div class="proctor-icon">
@@ -937,6 +950,7 @@ const gadgetDetectionStatus = ref('starting');
 const gazeDetectionStatus = ref('');
 const terminateReason = ref('tab');
 const proctoringWarning = ref({ show: false, type: '', title: '', message: '' });
+const browserWarning = ref({ show: false, title: '', message: '' });
 
 // ── Notification sound ───────────────────────────────────────────────────────
 function playWarningSound() {
@@ -993,7 +1007,7 @@ let _cutHandler = null;
 let _contextHandler = null;
 let _screenShareStream = null;
 let _screenShareVideo = null;
-let _lastScreenshotAttemptAt = 0;
+const _lastShortcutLoggedAt = new Map();
 const screenShareReady = ref(false);
 const screenShareLoading = ref(false);
 // State flags
@@ -1073,6 +1087,14 @@ async function _recordProctoringStrike(eventType, { message = '', source = '', m
 }
 
 function _notifyExamineeAbsent() {
+  if (!absenceAlert.value.show && takingExam.value && !examTerminated.value) {
+    void _logProctoringEvent('warning_shown', {
+      message: 'Face-not-visible notice displayed during the exam',
+      source: 'face_absence_notice',
+      metadata: { warning_type: 'face_not_visible' },
+      severity: 'info',
+    });
+  }
   absenceAlert.value = {
     show: true,
     message: 'Return to your webcam view so proctoring can see your face.',
@@ -1354,7 +1376,7 @@ async function _captureProctoringSnapshot(caption = 'Periodic webcam capture', {
 
 async function _captureLeaveScreen(examId, eventPromise) {
   const video = _screenShareVideo;
-  if (!examId || !video?.videoWidth || !_screenShareStream?.active) return false;
+  if (!examId || !video || !_screenShareStream?.active) return false;
   try {
     // Give the shared monitor a moment to show the newly selected tab/window.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1369,7 +1391,7 @@ async function _captureLeaveScreen(examId, eventPromise) {
     const form = new FormData();
     form.append('image', blob, `screen_switch_${Date.now()}.jpg`);
     form.append('evidence_type', 'screen');
-    form.append('caption', 'Screen shown after leaving exam window');
+    form.append('caption', 'Shared display captured after leaving the exam window');
     const eventId = await eventPromise;
     if (eventId) form.append('event_id', String(eventId));
     await api.post(`/api/student/exams/${examId}/proctoring/evidence/`, form, {
@@ -2019,6 +2041,12 @@ function _startGazeWsLoop() {
               title: 'Multiple Faces Detected',
               message: 'Only you should be visible to the camera during this exam. Please ensure no other individuals are in the camera view.',
             };
+            void _logProctoringEvent('warning_shown', {
+              message: 'Multiple-faces warning displayed during the exam',
+              source: 'multiple_faces_notice',
+              metadata: { warning_type: 'multiple_faces' },
+              severity: 'warning',
+            });
           }
         } else {
           // Plain no_face: clear the indicator, HTTP handles strike counting
@@ -3010,6 +3038,8 @@ async function _doOpenExam(exam) {
   examTerminated.value = false;
   _isAway = false;
   _browserTerminationPending = false;
+  _lastShortcutLoggedAt.clear();
+  browserWarning.value = { show: false, title: '', message: '' };
 
   try {
     const qRes = await getWithRetry(`/api/student/exams/${exam.id}/questions/`);
@@ -3153,6 +3183,7 @@ function closeTakeExam() {
   _isAway = false;
   _splitScreenActive = false;
   _browserTerminationPending = false;
+  browserWarning.value = { show: false, title: '', message: '' };
   proctoringWarning.value = { show: false, type: '', title: '', message: '' };
   if (!examTerminated.value) tabSwitchCount.value = 0;
   if (_examTimer) { clearInterval(_examTimer); _examTimer = null; }
@@ -3176,6 +3207,12 @@ function dismissProctoringWarning() {
     return;
   }
   proctoringWarning.value.show = false;
+}
+
+function dismissBrowserWarning() {
+  if (document.hidden || !document.hasFocus()) return;
+  if (browserWarning.value.type === 'splitscreen' && isSplitScreen.value) return;
+  browserWarning.value.show = false;
 }
 
 function dismissTerminatedScreen() {
@@ -3204,11 +3241,9 @@ async function _onLeaveExam(source) {
 
   if (count >= TAB_SWITCH_LIMIT) {
     _browserTerminationPending = true;
-    // Show terminated overlay immediately
-    proctoringWarning.value = {
+    browserWarning.value = {
       show: true,
-      type: 'alttab',
-      title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT}`,
+      title: `Warning ${count} of ${TAB_SWITCH_LIMIT}`,
       message: 'Your exam has been terminated due to too many tab switches or minimizing the screen.',
     };
     // Preserve the linked evidence before final submission closes this attempt.
@@ -3218,11 +3253,10 @@ async function _onLeaveExam(source) {
   }
 
   // Show warning immediately when they leave
-  proctoringWarning.value = {
+  browserWarning.value = {
     show: true,
-    type: 'alttab',
-    title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT}`,
-    message: `You minimized the screen or switched tabs. This is not allowed. You have ${TAB_SWITCH_LIMIT - tabSwitchCount.value} warning${TAB_SWITCH_LIMIT - tabSwitchCount.value === 1 ? '' : 's'} remaining before your exam is automatically terminated.`,
+    title: `Warning ${count} of ${TAB_SWITCH_LIMIT}`,
+    message: `You minimized the screen or switched tabs. This is not allowed. You have ${TAB_SWITCH_LIMIT - count} warning${TAB_SWITCH_LIMIT - count === 1 ? '' : 's'} remaining before your exam is automatically terminated.`,
   };
 
   // Record in background - fire and forget
@@ -3283,7 +3317,8 @@ function _onKeydown(e) {
   // Block Ctrl+C (copy), Ctrl+X (cut), Ctrl+A (select all), Ctrl+P (print)
   if (ctrl && ['c','x','a','p'].includes(key.toLowerCase()) && !shift) {
     e.preventDefault();
-    if (['c','x'].includes(key.toLowerCase())) _onCheatAttempt('copy');
+    if (key.toLowerCase() === 'c') _onCheatAttempt('copy');
+    if (key.toLowerCase() === 'x') _onCheatAttempt('cut');
     return;
   }
 
@@ -3322,18 +3357,24 @@ function _onCheatAttempt(reason) {
     cut        : 'Action Not Allowed',
     rightclick : 'Action Not Allowed',
   };
-  // Show warning — action is blocked but NOT logged as a violation strike
+  // Show the warning and record the attempted action in the exam log.
   proctoringWarning.value = {
     show    : true,
     type    : 'cheat',
     title   : titles[reason] || 'Action Not Allowed',
     message : messages[reason] || 'This action is not allowed during an exam.',
   };
-  if (reason === 'screenshot' && Date.now() - _lastScreenshotAttemptAt > 1000) {
-    _lastScreenshotAttemptAt = Date.now();
-    void _logProctoringEvent('screenshot_attempt', {
-      message: 'Screenshot shortcut pressed during exam',
-      source: 'keyboard',
+  const eventTypes = {
+    screenshot: 'screenshot_attempt',
+    copy: 'copy_attempt',
+    cut: 'cut_attempt',
+    rightclick: 'right_click',
+  };
+  if (eventTypes[reason] && Date.now() - (_lastShortcutLoggedAt.get(reason) || 0) > 1000) {
+    _lastShortcutLoggedAt.set(reason, Date.now());
+    void _logProctoringEvent(eventTypes[reason], {
+      message: messages[reason],
+      source: reason === 'rightclick' ? 'contextmenu' : 'keyboard',
       severity: 'warning',
     });
   }
@@ -3349,7 +3390,7 @@ function _handleSplitScreen() {
       
       if (tabSwitchCount.value >= TAB_SWITCH_LIMIT) {
         _browserTerminationPending = true;
-        proctoringWarning.value = {
+        browserWarning.value = {
           show: true,
           type: 'splitscreen',
           title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT}`,
@@ -3366,7 +3407,7 @@ function _handleSplitScreen() {
       }
 
       // Record in background - fire and forget (still recording as tab_switch to unify them)
-      _logProctoringEvent('tab_switch', {
+      void _logProctoringEvent('tab_switch', {
         message: 'Split screen or non-maximized window detected',
         source: 'split_screen',
         severity: 'warning',
@@ -3374,7 +3415,7 @@ function _handleSplitScreen() {
       });
       
       // Always show/keep the split-screen warning when in split mode
-      proctoringWarning.value = {
+      browserWarning.value = {
         show: true,
         type: 'splitscreen',
         title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT} (Split Screen Detected)`,
@@ -3383,9 +3424,9 @@ function _handleSplitScreen() {
     }
   } else {
     _splitScreenActive = false;
-    if (proctoringWarning.value.type === 'splitscreen' && proctoringWarning.value.show) {
+    if (browserWarning.value.type === 'splitscreen' && browserWarning.value.show) {
       // Student maximized — auto-dismiss the split-screen warning
-      proctoringWarning.value.show = false;
+      browserWarning.value.show = false;
     }
   }
 }
@@ -3819,6 +3860,7 @@ async function performLogout() {
 
 /* Proctoring overlay */
 .proctor-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.88); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; animation: proctorFadeIn 0.25s ease; }
+.browser-leave-overlay { z-index: 10060; }
 @keyframes proctorFadeIn { from { opacity: 0; } to { opacity: 1; } }
 .proctor-box { max-width: 480px; width: 90%; background: #fff; border-radius: 24px; padding: 2.5rem 2rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.9rem; border: 1px solid #e8eaed; box-shadow: 0 32px 80px rgba(0,0,0,0.25); animation: proctorSlideUp 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
 @keyframes proctorSlideUp { from { transform: scale(0.9) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }

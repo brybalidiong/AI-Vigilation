@@ -31,11 +31,11 @@ test('last termination capture remains visible when no violation image was recor
 test('evidence cards identify the event and preserve distinct capture times', () => {
   const gadget = { caption: 'Gadget AI: cell phone' };
   const gaze = { caption: 'Gaze AI: Looking at the right' };
-  assert.equal(evidenceCategory(gadget), 'Gadget');
-  assert.equal(evidenceDescription(gadget), 'Cell phone detected');
-  assert.equal(evidenceCategory(gaze), 'Gaze');
-  assert.equal(evidenceDescription(gaze), 'Looking right');
-  assert.equal(evidenceDescription({ caption: 'Exam session start snapshot' }), 'Exam started');
+  assert.equal(evidenceCategory(gadget), 'Gadget detection');
+  assert.equal(evidenceDescription(gadget), 'Prohibited cell phone detected during the exam');
+  assert.equal(evidenceCategory(gaze), 'Gaze deviation');
+  assert.equal(evidenceDescription(gaze), 'Student looked right during the exam');
+  assert.equal(evidenceDescription({ caption: 'Exam session start snapshot' }), 'Webcam capture at the start of the exam');
 });
 
 test('a switched-screen image remains distinct evidence with a clear label', () => {
@@ -45,6 +45,14 @@ test('a switched-screen image remains distinct evidence with a clear label', () 
     { id: 10, caption: 'Exam auto-terminated (tab)' },
   ]);
   assert.deepEqual(grouped.evidence.map((shot) => shot.id), [9]);
-  assert.equal(evidenceCategory(screen), 'Tab switch');
-  assert.equal(evidenceDescription(screen), 'Screen shown after leaving exam');
+  assert.equal(evidenceCategory(screen), 'Exam window left');
+  assert.equal(evidenceDescription(screen), 'Shared display captured after the student left the exam window');
+});
+
+test('new shared-display captions stay visible and use a formal label', () => {
+  const screen = { id: 11, evidence_type: 'screen', caption: 'Shared display captured after leaving the exam window' };
+  const grouped = groupExamEvidence([screen, { id: 12, caption: 'Exam auto-terminated (tab)' }]);
+  assert.deepEqual(grouped.evidence.map((shot) => shot.id), [11]);
+  assert.equal(evidenceCategory(screen), 'Exam window left');
+  assert.equal(evidenceDescription(screen), 'Shared display captured after the student left the exam window');
 });

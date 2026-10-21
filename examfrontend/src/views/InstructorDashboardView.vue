@@ -2655,7 +2655,10 @@ function formatEventType(eventType) {
     exam_submitted: 'Exam submitted',
     screenshot_attempt: 'Screenshot attempt',
     screen_share_stopped: 'Screen sharing stopped',
+    warning_shown: 'Warning displayed',
     copy_attempt: 'Copy attempt',
+    cut_attempt: 'Cut attempt',
+    right_click: 'Right-click attempt',
     time_up: 'Time up',
   };
   return labels[eventType] || String(eventType || '').replace(/_/g, ' ');
