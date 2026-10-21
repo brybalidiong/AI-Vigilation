@@ -110,8 +110,11 @@ make the backend permanently free.
    Firebase Authentication **Authorized domains** list so Google sign-in works.
 8. Run the smoke checks below with synthetic accounts. Verify an instructor
    can publish an exam and an enrolled student's open dashboard updates
-   immediately. Verify face approval, exam file upload, and evidence storage
-   against the private Supabase bucket. Load test proctoring before inviting
+   immediately. Verify DNSC student ID OCR/name matching, the ID portrait
+   webcam check, exam file upload, and evidence storage against the private
+   Supabase bucket. The backend image includes Tesseract OCR. Existing manual
+   face-photo approvals do not grant exam access until the student uploads a
+   verified ID. Load test proctoring before inviting
    the expected number of simultaneous students before inviting a real class.
 
 To update the backend after pushing code, pull the new commit and run the
