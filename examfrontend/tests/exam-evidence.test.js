@@ -37,3 +37,14 @@ test('evidence cards identify the event and preserve distinct capture times', ()
   assert.equal(evidenceDescription(gaze), 'Looking right');
   assert.equal(evidenceDescription({ caption: 'Exam session start snapshot' }), 'Exam started');
 });
+
+test('a switched-screen image remains distinct evidence with a clear label', () => {
+  const screen = { id: 9, evidence_type: 'screen', caption: 'Screen shown after leaving exam window' };
+  const grouped = groupExamEvidence([
+    screen,
+    { id: 10, caption: 'Exam auto-terminated (tab)' },
+  ]);
+  assert.deepEqual(grouped.evidence.map((shot) => shot.id), [9]);
+  assert.equal(evidenceCategory(screen), 'Tab switch');
+  assert.equal(evidenceDescription(screen), 'Screen shown after leaving exam');
+});

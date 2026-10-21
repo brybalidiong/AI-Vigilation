@@ -15,6 +15,9 @@
         <p v-else-if="terminateReason === 'gadget'">
           A prohibited gadget was detected {{ gadgetWarningCount }} time{{ gadgetWarningCount !== 1 ? 's' : '' }}.
         </p>
+        <p v-else-if="terminateReason === 'screen_share'">
+          Entire-screen sharing stopped during the exam.
+        </p>
         <p v-else>
           You minimized the screen or switched tabs {{ switchCount }} time{{ switchCount !== 1 ? 's' : '' }}.
         </p>

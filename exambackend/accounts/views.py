@@ -69,6 +69,7 @@ PROCTORING_EVENT_PENALTIES = {
     ExamProctoringEvent.EVENT_COPY_ATTEMPT: 5,
     ExamProctoringEvent.EVENT_CUT_ATTEMPT: 5,
     ExamProctoringEvent.EVENT_SCREENSHOT_ATTEMPT: 10,
+    ExamProctoringEvent.EVENT_SCREEN_SHARE_STOPPED: 12,
     ExamProctoringEvent.EVENT_RIGHT_CLICK: 3,
     ExamProctoringEvent.EVENT_GAZE_VIOLATION: 6,
     ExamProctoringEvent.EVENT_GAZE_NO_FACE: 8,
@@ -2902,6 +2903,8 @@ def student_submit_answers(request, exam_id):
             f'Exam auto-terminated: gaze violations ({gaze_violations}), '
             f'face not visible ({gaze_no_face}).'
         )
+    elif terminated and termination_reason == 'screen_share':
+        end_message = 'Exam auto-terminated because entire-screen sharing stopped.'
     elif terminated:
         end_message = f'Exam auto-terminated (tab switches: {tab_switches}).'
 

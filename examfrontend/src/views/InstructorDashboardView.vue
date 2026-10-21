@@ -2654,6 +2654,7 @@ function formatEventType(eventType) {
     exam_terminated: 'Exam terminated',
     exam_submitted: 'Exam submitted',
     screenshot_attempt: 'Screenshot attempt',
+    screen_share_stopped: 'Screen sharing stopped',
     copy_attempt: 'Copy attempt',
     time_up: 'Time up',
   };

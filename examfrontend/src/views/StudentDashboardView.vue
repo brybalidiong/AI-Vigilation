@@ -304,7 +304,7 @@
             </svg>
           </div>
           <h2>System Pre-Check</h2>
-          <p>This exam requires your camera and microphone. Sit close enough for your face to be clearly detected before continuing.</p>
+          <p>This exam requires your camera, microphone, and entire-screen sharing. Screen sharing lets your instructor review the screen shown when you leave the exam tab.</p>
         </div>
 
         <div class="perm-preview-wrap">
@@ -321,17 +321,22 @@
         </div>
 
         <p class="perm-caution">Caution: Sitting too far from the camera may cause "face not detected" violations during the exam.</p>
+        <p class="perm-caution">Choose <strong>Entire Screen</strong> in the browser sharing prompt. The exam records a screen image only when you leave the exam window; other tab URLs are not available to the site.</p>
         <p v-if="mediaStreamActive" class="perm-face-status" :class="`perm-face-status--${precheckStatus}`" role="status">{{ precheckMessage }}</p>
+        <p v-if="screenShareReady" class="perm-face-status perm-face-status--ready" role="status">Entire-screen sharing is active.</p>
         <p v-if="permissionError" class="perm-error">⚠️ {{ permissionError }}</p>
 
         <div class="perm-actions">
-          <button class="ghost-btn" @click="cancelPermissionModal" :disabled="permissionLoading">Cancel</button>
+          <button class="ghost-btn" @click="cancelPermissionModal" :disabled="permissionLoading || screenShareLoading">Cancel</button>
           <button v-if="mediaStreamActive && precheckStatus === 'unavailable'" class="ghost-btn" @click="_startPrecheckFaceCheck">Retry face check</button>
+          <button v-if="mediaStreamActive && !screenShareReady" class="ghost-btn" @click="requestScreenShare" :disabled="screenShareLoading">
+            {{ screenShareLoading ? 'Requesting screen...' : 'Share entire screen' }}
+          </button>
           
           <template v-if="mediaStreamActive">
-             <button class="primary-btn perm-allow-btn" @click="proceedFromPermissionModal()" :disabled="!precheckFaceVisible">
+             <button class="primary-btn perm-allow-btn" @click="proceedFromPermissionModal()" :disabled="!precheckFaceVisible || !screenShareReady || screenShareLoading">
                <span v-if="precheckStatus === 'checking'" class="perm-spinner"></span>
-               {{ precheckFaceVisible ? 'Continue to Exam' : precheckStatus === 'too_far' ? 'Move closer to continue' : 'Checking face...' }}
+               {{ !screenShareReady && precheckFaceVisible ? 'Share screen to continue' : precheckFaceVisible ? 'Continue to Exam' : precheckStatus === 'too_far' ? 'Move closer to continue' : 'Checking face...' }}
              </button>
           </template>
           <template v-else>
@@ -986,10 +991,15 @@ let _beforeUnloadHandler = null;
 let _copyHandler = null;
 let _cutHandler = null;
 let _contextHandler = null;
-let _ignoreBlurUntil = 0;
+let _screenShareStream = null;
+let _screenShareVideo = null;
+let _lastScreenshotAttemptAt = 0;
+const screenShareReady = ref(false);
+const screenShareLoading = ref(false);
 // State flags
 let _isAway = false; // true while student is away â€” prevents double-counting
 let _splitScreenActive = false;
+let _browserTerminationPending = false;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
@@ -1338,6 +1348,37 @@ async function _captureProctoringSnapshot(caption = 'Periodic webcam capture', {
     return true;
   } catch (err) {
     console.warn('Proctoring evidence upload failed:', err?.response?.data || err);
+    return false;
+  }
+}
+
+async function _captureLeaveScreen(examId, eventPromise) {
+  const video = _screenShareVideo;
+  if (!examId || !video?.videoWidth || !_screenShareStream?.active) return false;
+  try {
+    // Give the shared monitor a moment to show the newly selected tab/window.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (!video.videoWidth || !_screenShareStream?.active || !_isAway) return false;
+    const canvas = document.createElement('canvas');
+    const width = Math.min(1280, video.videoWidth);
+    canvas.width = width;
+    canvas.height = Math.round(video.videoHeight * width / video.videoWidth);
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+    if (!blob) return false;
+    const form = new FormData();
+    form.append('image', blob, `screen_switch_${Date.now()}.jpg`);
+    form.append('evidence_type', 'screen');
+    form.append('caption', 'Screen shown after leaving exam window');
+    const eventId = await eventPromise;
+    if (eventId) form.append('event_id', String(eventId));
+    await api.post(`/api/student/exams/${examId}/proctoring/evidence/`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 5000,
+    });
+    return true;
+  } catch (err) {
+    console.warn('Screen evidence upload failed:', err?.response?.data || err);
     return false;
   }
 }
@@ -2641,6 +2682,7 @@ async function openTakeExam(exam) {
   }
 
   // Recheck face position for every exam, including when the camera is already active.
+  _stopScreenShare();
   pendingExam = exam;
   permissionError.value = "";
   precheckFaceVisible.value = false;
@@ -2685,8 +2727,76 @@ async function requestMediaPermissions() {
   }
 }
 
+function _stopScreenShare() {
+  const stream = _screenShareStream;
+  _screenShareStream = null;
+  screenShareReady.value = false;
+  if (stream) {
+    stream.getVideoTracks().forEach((track) => { track.onended = null; track.stop(); });
+  }
+  if (_screenShareVideo) {
+    _screenShareVideo.pause();
+    _screenShareVideo.srcObject = null;
+    _screenShareVideo = null;
+  }
+}
+
+async function requestScreenShare() {
+  if (!navigator.mediaDevices?.getDisplayMedia || screenShareLoading.value) {
+    permissionError.value = 'This browser does not support screen sharing. Use a current desktop browser.';
+    return;
+  }
+  permissionError.value = '';
+  screenShareLoading.value = true;
+  let stream = null;
+  try {
+    // This must run directly from the student's click. The browser always asks
+    // which surface to share; a single tab cannot show other opened tabs.
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: 'monitor' },
+      audio: false,
+      monitorTypeSurfaces: 'include',
+      surfaceSwitching: 'exclude',
+    });
+    if (!showPermissionModal.value || !pendingExam) {
+      stream.getTracks().forEach((item) => item.stop());
+      return;
+    }
+    const track = stream.getVideoTracks()[0];
+    if (track?.getSettings().displaySurface !== 'monitor') {
+      stream.getTracks().forEach((item) => item.stop());
+      stream = null;
+      throw new Error('Select Entire Screen, not a browser tab or window, then try again.');
+    }
+    _stopScreenShare();
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    await video.play();
+    _screenShareStream = stream;
+    _screenShareVideo = video;
+    screenShareReady.value = true;
+    track.onended = () => {
+      screenShareReady.value = false;
+      if (takingExam.value && !examTerminated.value && !submitting.value) {
+        void _onScreenShareEnded();
+      } else {
+        _stopScreenShare();
+      }
+    };
+  } catch (err) {
+    stream?.getTracks().forEach((item) => item.stop());
+    permissionError.value = err?.message?.startsWith('Select Entire Screen')
+      ? err.message
+      : 'Screen sharing was cancelled or unavailable. Share your entire screen to start the exam.';
+  } finally {
+    screenShareLoading.value = false;
+  }
+}
+
 async function proceedFromPermissionModal() {
-  if (!mediaStreamActive.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') return;
+  if (!mediaStreamActive.value || !screenShareReady.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') return;
   showPermissionModal.value = false;
   // Keep checking face position while identity verification runs.
   fvAttemptsLeft.value = FV_MAX_ATTEMPTS - 1;
@@ -2738,7 +2848,7 @@ async function _runFaceVerification() {
       // Briefly confirm success, then proceed without making the student wait.
       setTimeout(async () => {
         fvShow.value = false;
-        if (!precheckFaceVisible.value || precheckStatus.value !== 'ready') {
+        if (!screenShareReady.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') {
           showPermissionModal.value = true;
           await nextTick();
           if (permVideoEl.value && activeMediaStream) permVideoEl.value.srcObject = activeMediaStream;
@@ -2785,6 +2895,7 @@ function _onFaceVerifyCancel() {
   _stopPrecheckFaceCheck();
   fvShow.value = false;
   pendingExam = null;
+  _stopScreenShare();
   // Stop the media stream since the student cancelled.
   if (activeMediaStream && !takingExam.value) {
     activeMediaStream.getTracks().forEach((t) => t.stop());
@@ -2798,6 +2909,7 @@ function cancelPermissionModal() {
   showPermissionModal.value = false;
   permissionError.value = "";
   pendingExam = null;
+  _stopScreenShare();
   // Stop stream if it was acquired during the modal.
   if (activeMediaStream && !takingExam.value) {
     activeMediaStream.getTracks().forEach(t => t.stop());
@@ -2874,6 +2986,11 @@ function _stopPrecheckFaceCheck() {
 }
 
 async function _doOpenExam(exam) {
+  if (!screenShareReady.value) {
+    permissionError.value = 'Share your entire screen to start the exam.';
+    showPermissionModal.value = true;
+    return;
+  }
   _stopPrecheckFaceCheck();
   takingExam.value = exam;
   takingLoading.value = true;
@@ -2892,6 +3009,7 @@ async function _doOpenExam(exam) {
   proctoringWarning.value = { show: false, type: '', title: '', message: '' };
   examTerminated.value = false;
   _isAway = false;
+  _browserTerminationPending = false;
 
   try {
     const qRes = await getWithRetry(`/api/student/exams/${exam.id}/questions/`);
@@ -2964,9 +3082,7 @@ function _attachProctoringListeners() {
   document.addEventListener('visibilitychange', _visibilityHandler);
 
   _blurHandler = () => {
-    if (Date.now() < _ignoreBlurUntil) return;
     setTimeout(() => {
-      if (Date.now() < _ignoreBlurUntil) return;
       if (!document.hidden && !_isAway) {
         _onLeaveExam('blur');
       }
@@ -2997,12 +3113,6 @@ function _attachProctoringListeners() {
   _keyupHandler = (e) => {
     if (!takingExam.value || examTerminated.value) return;
     if (e.key === 'PrintScreen') {
-      _ignoreBlurUntil = Date.now() + 3000; // Ignore OS-tool blur
-      const examEl = document.querySelector('.fullscreen-modal');
-      if (examEl) {
-        examEl.style.opacity = '0';
-        setTimeout(() => { examEl.style.opacity = '1'; }, 1000);
-      }
       _onCheatAttempt('screenshot');
     }
   };
@@ -3028,6 +3138,7 @@ function closeTakeExam() {
   };
   _stopProctoringCaptureTimer();
   _stopGazeCheckTimer();
+  _stopScreenShare();
   // Remove ALL proctoring listeners
   if (_visibilityHandler) { document.removeEventListener('visibilitychange', _visibilityHandler); _visibilityHandler = null; }
   if (_blurHandler)       { window.removeEventListener('blur',    _blurHandler);    _blurHandler = null; }
@@ -3041,8 +3152,9 @@ function closeTakeExam() {
   if (_resizeHandler)     { window.removeEventListener('resize',  _resizeHandler);  _resizeHandler = null; }
   _isAway = false;
   _splitScreenActive = false;
+  _browserTerminationPending = false;
   proctoringWarning.value = { show: false, type: '', title: '', message: '' };
-  tabSwitchCount.value = 0;
+  if (!examTerminated.value) tabSwitchCount.value = 0;
   if (_examTimer) { clearInterval(_examTimer); _examTimer = null; }
   // Stop the media stream when the exam is closed.
   if (activeMediaStream) {
@@ -3075,14 +3187,23 @@ function dismissTerminatedScreen() {
  * Called when student leaves the exam window (tab switch, alt-tab, etc.)
  * Shows the warning immediately — doesn't wait for return.
  */
-function _onLeaveExam(source) {
-  return; // Temporarily disabled by instructor request
+async function _onLeaveExam(source) {
   if (_isAway) return;
-  if (!takingExam.value || submitting.value || examTerminated.value) return;
+  if (!takingExam.value || submitting.value || examTerminated.value || _browserTerminationPending) return;
   _isAway = true;
   tabSwitchCount.value += 1;
+  const count = tabSwitchCount.value;
+  const examId = takingExam.value.id;
+  const eventPromise = _logProctoringEvent('tab_switch', {
+    message: `Student left exam window (${source})`,
+    source,
+    metadata: { count, screen_capture_requested: screenShareReady.value },
+    severity: count >= TAB_SWITCH_LIMIT ? 'critical' : 'warning',
+  });
+  const evidencePromise = _captureLeaveScreen(examId, eventPromise);
 
-  if (tabSwitchCount.value >= TAB_SWITCH_LIMIT) {
+  if (count >= TAB_SWITCH_LIMIT) {
+    _browserTerminationPending = true;
     // Show terminated overlay immediately
     proctoringWarning.value = {
       show: true,
@@ -3090,14 +3211,9 @@ function _onLeaveExam(source) {
       title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT}`,
       message: 'Your exam has been terminated due to too many tab switches or minimizing the screen.',
     };
-    // Terminate exam immediately, record in background
-    _terminateExam();
-    _logProctoringEvent('tab_switch', {
-      message: `Student left exam window (${source})`,
-      source,
-      metadata: { count: tabSwitchCount.value },
-      severity: 'critical',
-    });
+    // Preserve the linked evidence before final submission closes this attempt.
+    await Promise.all([eventPromise, evidencePromise]);
+    await _terminateExam();
     return;
   }
 
@@ -3110,12 +3226,25 @@ function _onLeaveExam(source) {
   };
 
   // Record in background - fire and forget
-  _logProctoringEvent('tab_switch', {
-    message: `Student left exam window (${source})`,
-    source,
-    metadata: { count: tabSwitchCount.value },
+  void evidencePromise;
+}
+
+async function _onScreenShareEnded() {
+  if (!takingExam.value || examTerminated.value || submitting.value || _browserTerminationPending) return;
+  _browserTerminationPending = true;
+  terminateReason.value = 'screen_share';
+  proctoringWarning.value = {
+    show: true,
+    type: 'alttab',
+    title: 'Screen sharing stopped',
+    message: 'The exam cannot continue without entire-screen sharing.',
+  };
+  await _logProctoringEvent('screen_share_stopped', {
+    message: 'Student stopped entire-screen sharing during exam',
+    source: 'screen_share',
     severity: 'critical',
   });
+  await _terminateExam();
 }
 
 /**
@@ -3131,9 +3260,8 @@ function _onReturnToExam(source) {
 }
 
 /**
- * Block screenshot keys, dev-tools shortcuts, and show a warning.
- * Note: OS-level PrintScreen cannot be fully blocked by browsers.
- * We blank the page content on keydown as a deterrent.
+ * Detect screenshot shortcuts that reach the page and show a warning.
+ * OS-level screenshots cannot be reliably blocked or detected by a web page.
  */
 function _onKeydown(e) {
   if (!takingExam.value || examTerminated.value) return;
@@ -3148,14 +3276,6 @@ function _onKeydown(e) {
   // PrintScreen â€” blank the screen briefly as deterrent, show warning
   if (key === 'PrintScreen' || isSnippingTool) {
     e.preventDefault();
-    _ignoreBlurUntil = Date.now() + 3000; // Ignore OS-tool blur for 3 seconds
-    
-    // Temporarily hide exam content to make screenshot useless
-    const examEl = document.querySelector('.fullscreen-modal');
-    if (examEl) {
-      examEl.style.opacity = '0';
-      setTimeout(() => { examEl.style.opacity = '1'; }, 1000);
-    }
     _onCheatAttempt('screenshot');
     return;
   }
@@ -3185,9 +3305,8 @@ function _onKeydown(e) {
 }
 
 /**
- * Show a non-terminating cheat attempt warning (screenshot / copy).
- * The action is BLOCKED but NOT counted as a proctoring violation strike.
- * We only show a UI warning as a deterrent — no server-side logging.
+ * Show a non-terminating warning. Screenshot shortcuts are logged when the
+ * browser exposes them, but cannot be blocked at the operating-system level.
  */
 function _onCheatAttempt(reason) {
   if (!takingExam.value || examTerminated.value) return;
@@ -3198,7 +3317,7 @@ function _onCheatAttempt(reason) {
     rightclick : 'Right-clicking is disabled during an exam.',
   };
   const titles = {
-    screenshot : 'Screenshot Blocked',
+    screenshot : 'Screenshot attempt detected',
     copy       : 'Action Not Allowed',
     cut        : 'Action Not Allowed',
     rightclick : 'Action Not Allowed',
@@ -3210,10 +3329,18 @@ function _onCheatAttempt(reason) {
     title   : titles[reason] || 'Action Not Allowed',
     message : messages[reason] || 'This action is not allowed during an exam.',
   };
+  if (reason === 'screenshot' && Date.now() - _lastScreenshotAttemptAt > 1000) {
+    _lastScreenshotAttemptAt = Date.now();
+    void _logProctoringEvent('screenshot_attempt', {
+      message: 'Screenshot shortcut pressed during exam',
+      source: 'keyboard',
+      severity: 'warning',
+    });
+  }
 }
 
 function _handleSplitScreen() {
-  if (!takingExam.value || submitting.value) return;
+  if (!takingExam.value || submitting.value || _browserTerminationPending) return;
   const ratio = window.innerWidth / window.screen.width;
   if (ratio <= SPLIT_SCREEN_THRESHOLD) {
     if (!_splitScreenActive) {
@@ -3221,19 +3348,20 @@ function _handleSplitScreen() {
       tabSwitchCount.value += 1;
       
       if (tabSwitchCount.value >= TAB_SWITCH_LIMIT) {
+        _browserTerminationPending = true;
         proctoringWarning.value = {
           show: true,
           type: 'splitscreen',
           title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT}`,
           message: 'Your exam has been terminated due to too many tab switches or minimizing the screen.',
         };
-        _terminateExam();
-        _logProctoringEvent('tab_switch', {
+        const eventPromise = _logProctoringEvent('tab_switch', {
           message: 'Student split the screen or resized window (split_screen)',
           source: 'split_screen',
           metadata: { count: tabSwitchCount.value, ratio },
           severity: 'critical',
         });
+        void eventPromise.then(() => _terminateExam());
         return;
       }
 
@@ -3267,6 +3395,9 @@ async function _terminateExam() {
   const terminatedExam = takingExam.value;
   const reason = terminateReason.value;
   const terminatedExamId = terminatedExam?.id;
+  const finalTabSwitches = tabSwitchCount.value;
+  const finalGazeViolations = gazeViolationCount.value;
+  const finalNoFaceCount = gazeNoFaceCount.value;
   await _captureProctoringSnapshot(`Exam auto-terminated (${reason})`, { examId: terminatedExamId });
   examTerminated.value = true; // show root-level terminated screen immediately
   submitting.value = true;
@@ -3279,9 +3410,9 @@ async function _terminateExam() {
         answer_text: studentAnswers.value[qId]
       })),
       terminated: true,
-      tab_switches: tabSwitchCount.value,
-      gaze_violations: gazeViolationCount.value,
-      gaze_no_face: gazeNoFaceCount.value,
+      tab_switches: finalTabSwitches,
+      gaze_violations: finalGazeViolations,
+      gaze_no_face: finalNoFaceCount,
       termination_reason: reason,
     };
     if (terminatedExam) {
@@ -3455,6 +3586,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopExamUpdates();
+  _stopScreenShare();
   if (activeMediaStream) {
     activeMediaStream.getTracks().forEach(t => t.stop());
     activeMediaStream = null;

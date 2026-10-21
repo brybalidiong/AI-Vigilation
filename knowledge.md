@@ -71,6 +71,10 @@ During an exam, `StudentDashboardView.vue` sends webcam frames through the gaze 
 
 See [gaze documentation](docs/GAZE_PROCTORING.md) and the custom [gaze-proctoring skill](.agents/skills/gaze-proctoring/SKILL.md).
 
+## Browser exam restrictions
+
+Before an exam, students grant camera/microphone access and explicitly share their entire screen. The browser's display chooser must return a monitor capture; sharing just a tab or window cannot show what appears after switching away. Leaving the exam tab or window, including minimizing it, records a tab-switch warning and attempts to store a screen image linked to that event. The fifth warning terminates the attempt. Stopping screen sharing during the exam also terminates it. Screenshot shortcuts that reach the page are logged as attempts. Web browsers cannot read the URL of another tab or reliably prevent or detect operating-system screenshots; a screen image may also be unavailable if the student returns immediately or the capture stream fails. These restrictions do not alter gaze or gadget detection.
+
 ## Configuration facts
 
 - The student dashboard reads `VITE_BACKEND_URL`, defaulting to `http://localhost:8000`.

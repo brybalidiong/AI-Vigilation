@@ -323,6 +323,7 @@ class ExamProctoringEvent(models.Model):
     EVENT_COPY_ATTEMPT = 'copy_attempt'
     EVENT_CUT_ATTEMPT = 'cut_attempt'
     EVENT_SCREENSHOT_ATTEMPT = 'screenshot_attempt'
+    EVENT_SCREEN_SHARE_STOPPED = 'screen_share_stopped'
     EVENT_RIGHT_CLICK = 'right_click'
     EVENT_EXAM_STARTED = 'exam_started'
     EVENT_EXAM_SUBMITTED = 'exam_submitted'
@@ -342,6 +343,7 @@ class ExamProctoringEvent(models.Model):
         (EVENT_COPY_ATTEMPT, 'Copy attempt'),
         (EVENT_CUT_ATTEMPT, 'Cut attempt'),
         (EVENT_SCREENSHOT_ATTEMPT, 'Screenshot attempt'),
+        (EVENT_SCREEN_SHARE_STOPPED, 'Screen sharing stopped'),
         (EVENT_RIGHT_CLICK, 'Right click'),
         (EVENT_EXAM_STARTED, 'Exam started'),
         (EVENT_EXAM_SUBMITTED, 'Exam submitted'),

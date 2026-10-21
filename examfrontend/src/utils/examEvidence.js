@@ -2,7 +2,7 @@ const captionOf = (shot) => String(shot?.caption || '').trim();
 
 const isSnapshot = (shot) => /^(scheduled webcam snapshot|exam session start snapshot)/i.test(captionOf(shot));
 const isTermination = (shot) => /^exam auto-terminated\b/i.test(captionOf(shot));
-const isViolation = (shot) => /^(gadget ai:|gaze ai:|gaze violation:|face not visible)/i.test(captionOf(shot));
+const isViolation = (shot) => /^(gadget ai:|gaze ai:|gaze violation:|face not visible|screen shown after leaving exam window)/i.test(captionOf(shot));
 
 export function groupExamEvidence(records) {
   const all = Array.isArray(records) ? records : [];
@@ -19,6 +19,7 @@ export function groupExamEvidence(records) {
 
 export function evidenceCategory(shot) {
   const caption = captionOf(shot);
+  if (/^screen shown after leaving exam window/i.test(caption)) return 'Tab switch';
   if (/^gadget ai:/i.test(caption)) return 'Gadget';
   if (/^(gaze ai:|gaze violation:)/i.test(caption)) return 'Gaze';
   if (/^face not visible/i.test(caption)) return 'Face';
@@ -30,6 +31,7 @@ export function evidenceCategory(shot) {
 
 export function evidenceDescription(shot) {
   const caption = captionOf(shot);
+  if (/^screen shown after leaving exam window/i.test(caption)) return 'Screen shown after leaving exam';
   if (/^gadget ai:/i.test(caption)) {
     const item = caption.replace(/^gadget ai:\s*/i, '').trim();
     return item ? `${item[0].toUpperCase()}${item.slice(1)} detected` : 'Gadget detected';
