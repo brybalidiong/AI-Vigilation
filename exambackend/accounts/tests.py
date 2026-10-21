@@ -44,8 +44,19 @@ class StudentIdReadingTests(SimpleTestCase):
 
     @patch('accounts.student_id_service._get_face_features')
     @patch('accounts.student_id_service._read_text')
+    def test_plain_ocr_recovers_stylized_header_and_student_label(self, read_text, get_features):
+        read_text.side_effect = [
+            'STATE COLLE G', 'DAVAO DEL NORTE STATE CO LLEG',
+            'STU DENT', 'STUDENT', 'ALEX Q. REYES',
+        ]
+        get_features.return_value = np.array([[0.1, 0.2]], dtype=np.float32)
+        self.assertEqual(len(verify_student_id(self.image, 'Alex', 'Reyes')), 2)
+        self.assertEqual(read_text.call_count, 5)
+
+    @patch('accounts.student_id_service._get_face_features')
+    @patch('accounts.student_id_service._read_text')
     def test_mismatched_name_rejects_before_portrait_is_used(self, read_text, get_features):
-        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. SANTOS']
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. SANTOS', 'ALEX Q. SANTOS']
         with self.assertRaises(StudentIdError):
             verify_student_id(self.image, 'Alex', 'Reyes')
         get_features.assert_not_called()
@@ -57,7 +68,7 @@ class StudentIdReadingTests(SimpleTestCase):
 
     @patch('accounts.student_id_service._read_text')
     def test_missing_student_label_is_rejected(self, read_text):
-        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'FACULTY']
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'FACULTY', 'FACULTY']
         with self.assertRaises(StudentIdError):
             verify_student_id(self.image, 'Alex', 'Reyes')
 

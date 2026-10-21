@@ -19,10 +19,11 @@ def _tokens(value):
     return re.findall(r'[A-Z]+', ascii_text.upper())
 
 
-def _read_text(image, page_mode=6):
+def _read_text(image, page_mode=6, enhance=True):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    if enhance:
+        gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
     ok, encoded = cv2.imencode('.png', gray)
     if not ok:
         raise StudentIdError('Could not read the student ID. Please upload a clearer image.')
@@ -54,6 +55,14 @@ def _name_matches(printed_name, first_name, last_name):
     return False
 
 
+def _school_matches(header_text):
+    words = _tokens(header_text)
+    return 'DNSC' in words or (
+        'DAVAO' in words and 'NORTE' in words
+        and ('STATE' in words or 'COLLEGE' in words)
+    )
+
+
 def verify_student_id(image_bytes, first_name, last_name):
     """Return the ID portrait embedding; fail closed on unreadable or mismatched IDs."""
     if not image_bytes or len(image_bytes) > 5 * 1024 * 1024:
@@ -65,14 +74,22 @@ def verify_student_id(image_bytes, first_name, last_name):
     if width < 500 or height < 750 or height / width < 1.25:
         raise StudentIdError('Upload a clear, upright photo of the entire student ID.')
 
-    header = _tokens(_read_text(image[:int(height * .28), :]))
-    if not (('DAVAO' in header and 'NORTE' in header and 'COLLEGE' in header) or 'DNSC' in header):
+    header_image = image[:int(height * .28), :]
+    header = _read_text(header_image)
+    if not _school_matches(header):
+        header = _read_text(header_image, enhance=False)
+    if not _school_matches(header):
         raise StudentIdError('This does not appear to be a DNSC student ID. Upload the front of your DNSC ID.')
-    role = _tokens(_read_text(image[int(height * .66):int(height * .79), :], 6))
+    role_image = image[int(height * .66):int(height * .79), :]
+    role = _tokens(_read_text(role_image))
+    if 'STUDENT' not in role:
+        role = _tokens(_read_text(role_image, enhance=False))
     if 'STUDENT' not in role:
         raise StudentIdError('The student label could not be read. Retake the photo with the entire ID visible.')
     name_region = image[int(height * .57):int(height * .70), int(width * .10):int(width * .92)]
-    printed_name = _read_text(name_region, 6)
+    printed_name = _read_text(name_region)
+    if not _name_matches(printed_name, first_name, last_name):
+        printed_name = _read_text(name_region, enhance=False)
     if not _name_matches(printed_name, first_name, last_name):
         raise StudentIdError('The name on the ID could not be matched to your account. Retake the photo or contact an administrator to correct your account name.')
 
