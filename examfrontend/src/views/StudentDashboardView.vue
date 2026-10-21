@@ -1016,6 +1016,9 @@ let _isAway = false; // true while student is away â€” prevents double-coun
 let _splitScreenActive = false;
 let _browserTerminationPending = false;
 let _leaveCaptureJob = null;
+let _screenshotShortcutAt = 0;
+const SCREEN_SWITCH_CAPTURE_DELAY_MS = 650;
+const SCREENSHOT_FOCUS_GRACE_MS = 2500;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
@@ -1376,10 +1379,10 @@ async function _captureProctoringSnapshot(caption = 'Periodic webcam capture', {
   }
 }
 
-async function _captureLeaveScreen(examId, eventPromise) {
+async function _captureBrowserScreen(examId, eventPromise, caption, requireAway = true) {
   const video = _screenShareVideo;
   const track = _screenShareStream?.getVideoTracks()[0];
-  if (!examId || !track || track.readyState !== 'live' || !_isAway) return false;
+  if (!examId || !track || track.readyState !== 'live' || (requireAway && !_isAway)) return false;
   try {
     // Read the monitor track directly because a hidden tab may stop painting
     // the preview video while screen sharing remains active.
@@ -1388,12 +1391,13 @@ async function _captureLeaveScreen(examId, eventPromise) {
       video,
       doc: document,
       isAway: () => _isAway,
+      requireAway,
     });
     if (!blob) return false;
     const form = new FormData();
     form.append('image', blob, `screen_switch_${Date.now()}.jpg`);
     form.append('evidence_type', 'screen');
-    form.append('caption', 'Shared display captured after leaving the exam window');
+    form.append('caption', caption);
     const eventId = await eventPromise;
     if (eventId) form.append('event_id', String(eventId));
     await api.post(`/api/student/exams/${examId}/proctoring/evidence/`, form, {
@@ -3041,6 +3045,7 @@ async function _doOpenExam(exam) {
   examTerminated.value = false;
   _isAway = false;
   _browserTerminationPending = false;
+  _screenshotShortcutAt = 0;
   clearTimeout(_leaveCaptureJob?.timer);
   _leaveCaptureJob?.resolve(false);
   _leaveCaptureJob = null;
@@ -3112,7 +3117,7 @@ function _attachProctoringListeners() {
     win: window,
     onLeave: (source) => { void _onLeaveExam(source); },
     onReturn: _onReturnToExam,
-    onHidden: () => { void _startLeaveCapture(_leaveCaptureJob); },
+    onHidden: () => { /* The shared monitor needs time to paint the destination tab. */ },
   });
 
   _keydownHandler = (e) => _onKeydown(e);
@@ -3172,6 +3177,7 @@ function closeTakeExam() {
   _isAway = false;
   _splitScreenActive = false;
   _browserTerminationPending = false;
+  _screenshotShortcutAt = 0;
   clearTimeout(_leaveCaptureJob?.timer);
   _leaveCaptureJob?.resolve(false);
   _leaveCaptureJob = null;
@@ -3222,6 +3228,7 @@ function dismissTerminatedScreen() {
 async function _onLeaveExam(source) {
   if (_isAway) return;
   if (!takingExam.value || submitting.value || examTerminated.value || _browserTerminationPending) return;
+  if (Date.now() - _screenshotShortcutAt < SCREENSHOT_FOCUS_GRACE_MS) return;
   _isAway = true;
   browserWarningCount.value += 1;
   tabSwitchCount.value += 1;
@@ -3243,9 +3250,9 @@ async function _onLeaveExam(source) {
   };
   captureJob.promise = new Promise((resolve) => { captureJob.resolve = resolve; });
   _leaveCaptureJob = captureJob;
-  // A hidden-tab event starts capture immediately. Blur alone uses a short
-  // fallback so the shared monitor can show the destination window first.
-  captureJob.timer = setTimeout(() => { void _startLeaveCapture(captureJob); }, 120);
+  // A grab on visibilitychange still contains the old exam frame. Wait for
+  // the shared monitor to paint the destination before reading its track.
+  captureJob.timer = setTimeout(() => { void _startLeaveCapture(captureJob); }, SCREEN_SWITCH_CAPTURE_DELAY_MS);
 
   if (count >= TAB_SWITCH_LIMIT) {
     _browserTerminationPending = true;
@@ -3276,7 +3283,7 @@ async function _startLeaveCapture(job) {
   job.started = true;
   clearTimeout(job.timer);
   try {
-    job.resolve(await _captureLeaveScreen(job.examId, job.eventPromise));
+    job.resolve(await _captureBrowserScreen(job.examId, job.eventPromise, 'Switched tabs'));
   } catch (err) {
     console.warn('Screen evidence capture failed:', err);
     job.resolve(false);
@@ -3361,12 +3368,12 @@ function _onKeydown(e) {
   }
 }
 
-/**
- * Show a non-terminating warning. Screenshot shortcuts are logged when the
- * browser exposes them, but cannot be blocked at the operating-system level.
- */
+/** Warn and log actions visible to the browser. */
 function _onCheatAttempt(reason) {
-  if (!takingExam.value || examTerminated.value) return;
+  if (!takingExam.value || examTerminated.value || submitting.value || _browserTerminationPending) return;
+  const now = Date.now();
+  if (now - (_lastShortcutLoggedAt.get(reason) || 0) < 1500) return;
+  _lastShortcutLoggedAt.set(reason, now);
   const messages = {
     screenshot : 'Taking screenshots during an exam is not allowed.',
     copy       : 'Copying exam content is not allowed during an exam.',
@@ -3379,7 +3386,35 @@ function _onCheatAttempt(reason) {
     cut        : 'Action Not Allowed',
     rightclick : 'Action Not Allowed',
   };
-  // Show the warning and record the attempted action in the exam log.
+  if (reason === 'screenshot') {
+    _screenshotShortcutAt = now;
+    browserWarningCount.value += 1;
+    const count = browserWarningCount.value;
+    const examId = takingExam.value.id;
+    const eventPromise = _logProctoringEvent('screenshot_attempt', {
+      message: 'Screenshot shortcut attempted',
+      source: 'keyboard',
+      metadata: { count },
+      severity: count >= TAB_SWITCH_LIMIT ? 'critical' : 'warning',
+    });
+    const evidencePromise = _captureBrowserScreen(examId, eventPromise, 'Screenshot attempt', false);
+    if (count >= TAB_SWITCH_LIMIT) {
+      _browserTerminationPending = true;
+      terminateReason.value = 'screenshot';
+      proctoringWarning.value = {
+        show: true, type: 'cheat', title: `Warning ${count} of ${TAB_SWITCH_LIMIT}`,
+        message: 'Your exam has been terminated after five browser warnings.',
+      };
+      void Promise.all([eventPromise, evidencePromise]).then(() => _terminateExam());
+    } else {
+      proctoringWarning.value = {
+        show: true, type: 'cheat', title: `Screenshot attempt — Warning ${count} of ${TAB_SWITCH_LIMIT}`,
+        message: `Screenshot attempts are not allowed. ${TAB_SWITCH_LIMIT - count} browser warnings remaining.`,
+      };
+    }
+    return;
+  }
+  // Show the warning and record other attempted actions in the exam log.
   proctoringWarning.value = {
     show    : true,
     type    : 'cheat',
@@ -3392,8 +3427,7 @@ function _onCheatAttempt(reason) {
     cut: 'cut_attempt',
     rightclick: 'right_click',
   };
-  if (eventTypes[reason] && Date.now() - (_lastShortcutLoggedAt.get(reason) || 0) > 1000) {
-    _lastShortcutLoggedAt.set(reason, Date.now());
+  if (eventTypes[reason]) {
     void _logProctoringEvent(eventTypes[reason], {
       message: messages[reason],
       source: reason === 'rightclick' ? 'contextmenu' : 'keyboard',
@@ -3425,17 +3459,21 @@ function _handleSplitScreen() {
           metadata: { count: browserWarningCount.value, ratio },
           severity: 'critical',
         });
-        void eventPromise.then(() => _terminateExam());
+        void Promise.all([
+          eventPromise,
+          _captureBrowserScreen(takingExam.value.id, eventPromise, 'Split-screen detected', false),
+        ]).then(() => _terminateExam());
         return;
       }
 
       // Keep window resizing separate from leaving the exam tab.
-      void _logProctoringEvent('split_screen', {
+      const eventPromise = _logProctoringEvent('split_screen', {
         message: 'Split screen or non-maximized window detected',
         source: 'split_screen',
         severity: 'warning',
         metadata: { count: browserWarningCount.value, ratio },
       });
+      void _captureBrowserScreen(takingExam.value.id, eventPromise, 'Split-screen detected', false);
       
       // Always show/keep the split-screen warning when in split mode
       browserWarning.value = {

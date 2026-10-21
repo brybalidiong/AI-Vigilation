@@ -40,3 +40,20 @@ test('a frame arriving after the student returns is discarded', async () => {
   assert.equal(await capture, null);
   assert.equal(closed, true);
 });
+
+test('a screenshot or split-screen warning can capture the focused shared monitor', async () => {
+  class ImageCapture {
+    grabFrame() { return Promise.resolve({ width: 800, height: 600, close() {} }); }
+  }
+  const doc = {
+    hidden: false, hasFocus: () => true,
+    createElement: () => ({
+      getContext: () => ({ drawImage() {} }),
+      toBlob: (resolve) => resolve(new Blob(['screen'], { type: 'image/jpeg' })),
+    }),
+  };
+  const blob = await captureSharedDisplayImage({
+    track: { readyState: 'live' }, doc, requireAway: false, ImageCaptureCtor: ImageCapture,
+  });
+  assert.equal(blob?.type, 'image/jpeg');
+});

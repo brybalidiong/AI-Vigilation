@@ -21,6 +21,9 @@
         <p v-else-if="terminateReason === 'split_screen'">
           Split-screen or a resized exam window was detected. Total browser warnings: {{ switchCount }}.
         </p>
+        <p v-else-if="terminateReason === 'screenshot'">
+          A screenshot shortcut was attempted. Total browser warnings: {{ switchCount }}.
+        </p>
         <p v-else>
           You left the exam tab or window. Total browser warnings: {{ switchCount }}.
         </p>

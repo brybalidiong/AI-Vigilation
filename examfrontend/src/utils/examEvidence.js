@@ -2,7 +2,7 @@ const captionOf = (shot) => String(shot?.caption || '').trim();
 
 const isSnapshot = (shot) => /^(scheduled webcam snapshot|exam session start snapshot)/i.test(captionOf(shot));
 const isTermination = (shot) => /^exam auto-terminated\b/i.test(captionOf(shot));
-const isViolation = (shot) => /^(gadget ai:|gaze ai:|gaze violation:|face not visible|screen shown after leaving exam window|shared display captured after leaving the exam window)/i.test(captionOf(shot));
+const isViolation = (shot) => /^(gadget ai:|gaze ai:|gaze violation:|face not visible|switched tabs|screenshot attempt|split-screen detected|screen shown after leaving exam window|shared display captured after leaving the exam window)/i.test(captionOf(shot));
 
 export function groupExamEvidence(records) {
   const all = Array.isArray(records) ? records : [];
@@ -19,22 +19,19 @@ export function groupExamEvidence(records) {
 
 export function evidenceCategory(shot) {
   const caption = captionOf(shot);
-  if (/^(screen shown after leaving exam window|shared display captured after leaving the exam window)/i.test(caption)) return 'Exam window left';
-  if (/^gadget ai:/i.test(caption)) return 'Gadget detection';
-  if (/^(gaze ai:|gaze violation:)/i.test(caption)) return 'Gaze deviation';
-  if (/^face not visible/i.test(caption)) return 'Face visibility';
-  if (/^exam session start snapshot/i.test(caption)) return 'Exam session start';
-  if (/^scheduled webcam snapshot/i.test(caption)) return 'Scheduled webcam capture';
-  if (isTermination(shot)) return 'Exam termination';
-  return shot?.evidence_type === 'screen' ? 'Screen capture' : 'Webcam capture';
+  if (/^(switched tabs|screenshot attempt|split-screen detected|screen shown after leaving exam window|shared display captured after leaving the exam window)/i.test(caption)) return 'SCREEN';
+  return shot?.evidence_type === 'screen' ? 'SCREEN' : 'WEBCAM';
 }
 
 export function evidenceDescription(shot) {
   const caption = captionOf(shot);
-  if (/^(screen shown after leaving exam window|shared display captured after leaving the exam window)/i.test(caption)) return 'Shared display captured after the student left the exam window';
+  if (/^switched tabs/i.test(caption)) return 'Switched tabs';
+  if (/^screenshot attempt/i.test(caption)) return 'Screenshot attempt';
+  if (/^split-screen detected/i.test(caption)) return 'Split-screen detected';
+  if (/^(screen shown after leaving exam window|shared display captured after leaving the exam window)/i.test(caption)) return 'Switched tabs';
   if (/^gadget ai:/i.test(caption)) {
     const item = caption.replace(/^gadget ai:\s*/i, '').trim();
-    return item ? `Prohibited ${item.toLowerCase()} detected during the exam` : 'Prohibited gadget detected during the exam';
+    return item ? `${item.charAt(0).toUpperCase()}${item.slice(1).toLowerCase()} detected` : 'Gadget detected';
   }
   if (/^(gaze ai:|gaze violation:)/i.test(caption)) {
     const direction = caption.replace(/^(gaze ai:|gaze violation:)\s*/i, '')
@@ -42,11 +39,11 @@ export function evidenceDescription(shot) {
       .replace(/^looking /i, '')
       .replace(/ the screen$/i, '')
       .trim().toLowerCase();
-    return direction ? `Student looked ${direction} during the exam` : 'Student looked away from the exam screen';
+    return direction ? `Looked ${direction}` : 'Looked away';
   }
-  if (/^face not visible/i.test(caption)) return "Student's face was not visible to the camera";
-  if (/^exam session start snapshot/i.test(caption)) return 'Webcam capture at the start of the exam';
-  if (/^scheduled webcam snapshot/i.test(caption)) return 'Scheduled webcam capture during the exam';
-  if (isTermination(shot)) return 'Webcam capture at automatic exam termination';
-  return caption || (shot?.evidence_type === 'screen' ? 'Screen capture during the exam' : 'Webcam capture during the exam');
+  if (/^face not visible/i.test(caption)) return 'Face not visible';
+  if (/^exam session start snapshot/i.test(caption)) return 'Exam started';
+  if (/^scheduled webcam snapshot/i.test(caption)) return 'Scheduled capture';
+  if (isTermination(shot)) return 'Exam terminated';
+  return caption || (shot?.evidence_type === 'screen' ? 'Screen captured' : 'Webcam captured');
 }

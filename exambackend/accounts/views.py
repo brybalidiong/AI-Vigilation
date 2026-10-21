@@ -2911,6 +2911,8 @@ def student_submit_answers(request, exam_id):
         end_message = 'Exam auto-terminated because entire-screen sharing stopped.'
     elif terminated and termination_reason == 'split_screen':
         end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings; split-screen or window resizing was detected.'
+    elif terminated and termination_reason == 'screenshot':
+        end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings; a screenshot shortcut was attempted.'
     elif terminated:
         end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings (tab or window departures: {tab_switches}).'
 

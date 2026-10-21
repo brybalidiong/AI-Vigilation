@@ -1,6 +1,6 @@
 /** Capture a shared monitor frame while the exam page is away from focus. */
-export async function captureSharedDisplayImage({ track, video, doc, isAway, ImageCaptureCtor = globalThis.ImageCapture }) {
-  if (!track || track.readyState !== 'live' || !isAway()) return null;
+export async function captureSharedDisplayImage({ track, video, doc, isAway = () => true, requireAway = true, ImageCaptureCtor = globalThis.ImageCapture }) {
+  if (!track || track.readyState !== 'live' || (requireAway && !isAway())) return null;
   let frame = null;
   if (typeof ImageCaptureCtor === 'function') {
     let timedOut = false;
@@ -23,7 +23,7 @@ export async function captureSharedDisplayImage({ track, video, doc, isAway, Ima
     }
   }
   if (!frame && !doc.hidden && video?.videoWidth) frame = video;
-  if (!frame || !isAway() || (!doc.hidden && doc.hasFocus())) {
+  if (!frame || (requireAway && (!isAway() || (!doc.hidden && doc.hasFocus())))) {
     frame?.close?.();
     return null;
   }

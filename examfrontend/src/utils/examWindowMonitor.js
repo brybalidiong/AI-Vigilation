@@ -8,7 +8,7 @@ export function attachExamWindowMonitor({ doc, win, onLeave, onReturn, onHidden 
     onLeave(source);
   };
   const returnToExam = (source) => {
-    if (!away || doc.hidden) return;
+    if (!away || doc.hidden || (typeof doc.hasFocus === 'function' && !doc.hasFocus())) return;
     away = false;
     onReturn(source);
   };
