@@ -28,9 +28,8 @@ YUNET_MODEL_PATH = os.path.join(FACE_MODELS_DIR, 'yunet.onnx')
 SFACE_MODEL_PATH = os.path.join(FACE_MODELS_DIR, 'sface.onnx')
 
 # Thresholds
-# Lower = more permissive. Profile photos vs webcam images need a lenient threshold.
 _DETECT_THRESHOLD = 0.35  # YuNet score threshold (lowered for webcam images)
-_MATCH_THRESHOLD  = 0.10  # SFace cosine similarity threshold (lowered for better matching)
+_MATCH_THRESHOLD = 0.363  # OpenCV SFace cosine reference; reject weak identity matches
 
 # Max dimension for YuNet to prevent huge memory usage, aspect ratio will be preserved
 _YUNET_MAX_SIZE = 640
