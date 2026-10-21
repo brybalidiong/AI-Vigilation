@@ -1582,8 +1582,8 @@
                   </div>
                   <div class="ir-metric-sep"></div>
                   <div class="ir-metric">
-                    <span class="ir-metric-num">{{ integrityReportData.report?.evidence_count ?? 0 }}</span>
-                    <span class="ir-metric-lbl">Captures</span>
+                    <span class="ir-metric-num">{{ evidenceImages.length + snapshotImages.length }}</span>
+                    <span class="ir-metric-lbl">Images shown</span>
                   </div>
                 </div>
 
@@ -1716,15 +1716,16 @@
                   rel="noopener"
                 >
                   <div class="ir-thumb-img-wrap">
-                    <img v-if="shot.image_url" :src="shot.image_url" :alt="shot.caption || 'Evidence'" loading="lazy" @error="onEvidenceImageError" />
+                    <img v-if="shot.image_url" :src="shot.image_url" :alt="evidenceDescription(shot)" loading="lazy" @error="onEvidenceImageError" />
                     <div v-else class="ir-thumb-missing">No image</div>
                     <div class="ir-thumb-overlay">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                     </div>
                   </div>
                   <div class="ir-thumb-cap">
-                    <span class="ir-thumb-badge">{{ evidenceTypeLabel(shot.evidence_type) }}</span>
-                    <span class="ir-thumb-caption">{{ shot.caption || formatReportTime(shot.created_at) }}</span>
+                    <span class="ir-thumb-badge">{{ evidenceCategory(shot) }}</span>
+                    <span class="ir-thumb-caption">{{ evidenceDescription(shot) }}</span>
+                    <time class="ir-thumb-time" :datetime="shot.created_at">{{ formatReportTime(shot.created_at) }}</time>
                   </div>
                 </a>
               </div>
@@ -1746,15 +1747,16 @@
                   rel="noopener"
                 >
                   <div class="ir-thumb-img-wrap">
-                    <img v-if="shot.image_url" :src="shot.image_url" :alt="shot.caption || 'Snapshot'" loading="lazy" @error="onEvidenceImageError" />
+                    <img v-if="shot.image_url" :src="shot.image_url" :alt="evidenceDescription(shot)" loading="lazy" @error="onEvidenceImageError" />
                     <div v-else class="ir-thumb-missing">No image</div>
                     <div class="ir-thumb-overlay">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                     </div>
                   </div>
                   <div class="ir-thumb-cap">
-                    <span class="ir-thumb-badge">{{ evidenceTypeLabel(shot.evidence_type) }}</span>
-                    <span class="ir-thumb-caption">{{ formatReportTime(shot.created_at) }}</span>
+                    <span class="ir-thumb-badge">{{ evidenceCategory(shot) }}</span>
+                    <span class="ir-thumb-caption">{{ evidenceDescription(shot) }}</span>
+                    <time class="ir-thumb-time" :datetime="shot.created_at">{{ formatReportTime(shot.created_at) }}</time>
                   </div>
                 </a>
               </div>
@@ -1794,6 +1796,7 @@ import SkeletonLoader from "@/components/SkeletonLoader.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import NoticeModal from "@/components/NoticeModal.vue";
+import { evidenceCategory, evidenceDescription, groupExamEvidence } from "@/utils/examEvidence.js";
 import {
   compareExamsNewestFirst,
   examTimelineDisplayAt,
@@ -2079,8 +2082,9 @@ const visibleSubjectiveAnswers = computed(() => (
     ? integrityReportData.value.subjective_answers || []
     : pendingSubjectiveAnswers.value
 ));
-const evidenceImages = computed(() => (integrityReportData.value.evidence || []).filter(s => !String(s.caption || '').toLowerCase().includes('scheduled')));
-const snapshotImages = computed(() => (integrityReportData.value.evidence || []).filter(s => String(s.caption || '').toLowerCase().includes('scheduled')));
+const displayedEvidence = computed(() => groupExamEvidence(integrityReportData.value.evidence));
+const evidenceImages = computed(() => displayedEvidence.value.evidence);
+const snapshotImages = computed(() => displayedEvidence.value.snapshots);
 const activeIrTab = ref('log');
 const selectedProgressSetId = ref(null);
 const selectedProgressExamId = ref(null);
@@ -2671,12 +2675,6 @@ function severityClass(severity) {
   if (s === 'warning') return 'ir-sev-warning';
   if (s === 'info') return 'ir-sev-info';
   return 'ir-sev-neutral';
-}
-
-function evidenceTypeLabel(type) {
-  if (type === 'screen') return 'Screen';
-  if (type === 'webcam') return 'Webcam';
-  return type || 'Image';
 }
 
 async function openIntegrityReport(row) {
@@ -4123,6 +4121,7 @@ onMounted(async () => {
   padding: 0.08rem 0.38rem; border-radius: 4px; margin-bottom: 0.2rem;
 }
 .ir-thumb-caption { display: block; font-size: 0.68rem; color: #64748b; line-height: 1.35; }
+.ir-thumb-time { display: block; margin-top: 0.25rem; font-size: 0.62rem; color: #94a3b8; line-height: 1.3; }
 
 /* ---- Empty state ---- */
 .ir-empty {
