@@ -66,6 +66,7 @@ PROCTORING_EVENT_PENALTIES = {
     ExamProctoringEvent.EVENT_TAB_SWITCH: 12,
     ExamProctoringEvent.EVENT_WINDOW_BLUR: 4,
     ExamProctoringEvent.EVENT_SPLIT_SCREEN: 8,
+    ExamProctoringEvent.EVENT_EXTENDED_MONITOR: 10,
     ExamProctoringEvent.EVENT_COPY_ATTEMPT: 5,
     ExamProctoringEvent.EVENT_CUT_ATTEMPT: 5,
     ExamProctoringEvent.EVENT_SCREENSHOT_ATTEMPT: 10,
@@ -539,6 +540,7 @@ def _build_integrity_report(submission):
     critical_count = events.filter(severity=ExamProctoringEvent.SEVERITY_CRITICAL).count()
     tab_switch_count = counts.get(ExamProctoringEvent.EVENT_TAB_SWITCH, submission.tab_switches)
     split_screen_count = counts.get(ExamProctoringEvent.EVENT_SPLIT_SCREEN, 0)
+    extended_monitor_count = counts.get(ExamProctoringEvent.EVENT_EXTENDED_MONITOR, 0)
     gaze_violations = counts.get(ExamProctoringEvent.EVENT_GAZE_VIOLATION, 0)
     gaze_no_face = counts.get(ExamProctoringEvent.EVENT_GAZE_NO_FACE, 0)
     gadget_detections = counts.get(ExamProctoringEvent.EVENT_GADGET_DETECTED, 0)
@@ -549,6 +551,7 @@ def _build_integrity_report(submission):
         f'Warnings: {warning_count}, critical: {critical_count}.',
         f'Tab switches: {tab_switch_count}.',
         f'Split-screen or window-resize warnings: {split_screen_count}.',
+        f'Extended-monitor warnings: {extended_monitor_count}.',
         f'Gaze away from screen: {gaze_violations}.',
         f'Face not visible (gaze): {gaze_no_face}.',
         f'Confirmed prohibited gadgets: {gadget_detections}.',
@@ -562,6 +565,7 @@ def _build_integrity_report(submission):
         'terminated': submission.terminated,
         'tab_switches': submission.tab_switches,
         'split_screen_count': split_screen_count,
+        'extended_monitor_count': extended_monitor_count,
         'gaze_violation_count': gaze_violations,
         'gaze_no_face_count': gaze_no_face,
         'gadget_detection_count': gadget_detections,
@@ -2911,6 +2915,8 @@ def student_submit_answers(request, exam_id):
         end_message = 'Exam auto-terminated because entire-screen sharing stopped.'
     elif terminated and termination_reason == 'split_screen':
         end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings; split-screen or window resizing was detected.'
+    elif terminated and termination_reason == 'extended_monitor':
+        end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings; an additional display was detected.'
     elif terminated and termination_reason == 'screenshot':
         end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings; a screenshot shortcut was attempted.'
     elif terminated:

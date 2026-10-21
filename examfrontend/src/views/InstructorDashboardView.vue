@@ -2650,6 +2650,7 @@ function formatEventType(eventType) {
     gaze_no_face: 'Face not visible',
     tab_switch: 'Tab switch',
     split_screen: 'Split screen',
+    extended_monitor: 'Extended monitor',
     periodic_capture: 'Webcam snapshot',
     exam_terminated: 'Exam terminated',
     exam_submitted: 'Exam submitted',

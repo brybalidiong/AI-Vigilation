@@ -320,6 +320,7 @@ class ExamProctoringEvent(models.Model):
     EVENT_VISIBILITY_HIDDEN = 'visibility_hidden'
     EVENT_VISIBILITY_VISIBLE = 'visibility_visible'
     EVENT_SPLIT_SCREEN = 'split_screen'
+    EVENT_EXTENDED_MONITOR = 'extended_monitor'
     EVENT_COPY_ATTEMPT = 'copy_attempt'
     EVENT_CUT_ATTEMPT = 'cut_attempt'
     EVENT_SCREENSHOT_ATTEMPT = 'screenshot_attempt'
@@ -341,6 +342,7 @@ class ExamProctoringEvent(models.Model):
         (EVENT_VISIBILITY_HIDDEN, 'Tab hidden'),
         (EVENT_VISIBILITY_VISIBLE, 'Tab visible'),
         (EVENT_SPLIT_SCREEN, 'Split screen'),
+        (EVENT_EXTENDED_MONITOR, 'Extended monitor'),
         (EVENT_COPY_ATTEMPT, 'Copy attempt'),
         (EVENT_CUT_ATTEMPT, 'Cut attempt'),
         (EVENT_SCREENSHOT_ATTEMPT, 'Screenshot attempt'),

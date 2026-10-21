@@ -24,7 +24,7 @@
           <span class="strike-count">{{ browserWarningCount }}</span>
           <span class="strike-label">/ {{ TAB_SWITCH_LIMIT }} warnings</span>
         </div>
-        <button type="button" class="proctor-dismiss" @click="dismissBrowserWarning">I Understand — Return to Exam</button>
+        <button type="button" class="proctor-dismiss" :disabled="browserWarning.type === 'extended_monitor' && _extendedDisplayActive" @click="dismissBrowserWarning">{{ browserWarning.type === 'extended_monitor' && _extendedDisplayActive ? 'Disconnect the additional display to continue' : 'I Understand — Return to Exam' }}</button>
       </div>
     </div>
 
@@ -334,7 +334,7 @@
         </div>
 
         <p class="perm-caution">Caution: Sitting too far from the camera may cause "face not detected" violations during the exam.</p>
-        <p class="perm-caution">Choose <strong>Entire Screen</strong> in the browser sharing prompt. The exam records a screen image only when you leave the exam window; other tab URLs are not available to the site.</p>
+        <p class="perm-caution">Choose <strong>Entire Screen</strong> in the browser sharing prompt. Disconnect any additional monitor before continuing. The exam records a screen image only when you leave the exam window; other tab URLs are not available to the site.</p>
         <p v-if="mediaStreamActive" class="perm-face-status" :class="`perm-face-status--${precheckStatus}`" role="status">{{ precheckMessage }}</p>
         <p v-if="screenShareReady" class="perm-face-status perm-face-status--ready" role="status">Entire-screen sharing is active.</p>
         <p v-if="permissionError" class="perm-error">⚠️ {{ permissionError }}</p>
@@ -773,6 +773,7 @@ import EmptyState from "@/components/EmptyState.vue";
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import { nextPrecheckFaceState } from "@/utils/precheckFace.js";
 import { attachExamWindowMonitor } from "@/utils/examWindowMonitor.js";
+import { hasExtendedDisplay, watchExtendedDisplays } from "@/utils/examDisplayMonitor.js";
 import { captureSharedDisplayImage } from "@/utils/examScreenEvidence.js";
 import {
   canRetakeExam,
@@ -1016,6 +1017,9 @@ let _isAway = false; // true while student is away â€” prevents double-coun
 let _splitScreenActive = false;
 let _browserTerminationPending = false;
 let _leaveCaptureJob = null;
+let _screenDetails = null;
+let _stopExtendedDisplayMonitor = null;
+let _extendedDisplayActive = false;
 let _screenshotShortcutAt = 0;
 const SCREEN_SWITCH_CAPTURE_DELAY_MS = 650;
 const SCREENSHOT_FOCUS_GRACE_MS = 2500;
@@ -2718,6 +2722,7 @@ async function openTakeExam(exam) {
   // Recheck face position for every exam, including when the camera is already active.
   _stopScreenShare();
   pendingExam = exam;
+  _screenDetails = null;
   permissionError.value = "";
   precheckFaceVisible.value = false;
   precheckStatus.value = 'checking';
@@ -2829,8 +2834,29 @@ async function requestScreenShare() {
   }
 }
 
+async function _checkSingleDisplay() {
+  if (typeof window.getScreenDetails === 'function') {
+    try {
+      _screenDetails = await window.getScreenDetails();
+    } catch {
+      permissionError.value = 'Allow the browser to check connected displays before starting the exam.';
+      return false;
+    }
+  } else if (typeof window.screen?.isExtended !== 'boolean') {
+    permissionError.value = 'This browser cannot check connected displays. Use a desktop browser that supports display checks.';
+    return false;
+  }
+  if (hasExtendedDisplay(window.screen, _screenDetails)) {
+    permissionError.value = 'An extended monitor is connected. Disconnect it or switch to one display before continuing.';
+    return false;
+  }
+  permissionError.value = '';
+  return true;
+}
+
 async function proceedFromPermissionModal() {
   if (!mediaStreamActive.value || !screenShareReady.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') return;
+  if (!await _checkSingleDisplay()) return;
   showPermissionModal.value = false;
   // Keep checking face position while identity verification runs.
   fvAttemptsLeft.value = FV_MAX_ATTEMPTS - 1;
@@ -2943,6 +2969,7 @@ function cancelPermissionModal() {
   showPermissionModal.value = false;
   permissionError.value = "";
   pendingExam = null;
+  _screenDetails = null;
   _stopScreenShare();
   // Stop stream if it was acquired during the modal.
   if (activeMediaStream && !takingExam.value) {
@@ -3025,6 +3052,14 @@ async function _doOpenExam(exam) {
     showPermissionModal.value = true;
     return;
   }
+  if (hasExtendedDisplay(window.screen, _screenDetails)) {
+    permissionError.value = 'An extended monitor is connected. Disconnect it or switch to one display before continuing.';
+    pendingExam = exam;
+    showPermissionModal.value = true;
+    await nextTick();
+    if (permVideoEl.value && activeMediaStream) permVideoEl.value.srcObject = activeMediaStream;
+    return;
+  }
   _stopPrecheckFaceCheck();
   takingExam.value = exam;
   takingLoading.value = true;
@@ -3045,6 +3080,7 @@ async function _doOpenExam(exam) {
   examTerminated.value = false;
   _isAway = false;
   _browserTerminationPending = false;
+  _extendedDisplayActive = false;
   _screenshotShortcutAt = 0;
   clearTimeout(_leaveCaptureJob?.timer);
   _leaveCaptureJob?.resolve(false);
@@ -3119,6 +3155,11 @@ function _attachProctoringListeners() {
     onReturn: _onReturnToExam,
     onHidden: () => { /* The shared monitor needs time to paint the destination tab. */ },
   });
+  _stopExtendedDisplayMonitor = watchExtendedDisplays({
+    win: window,
+    details: _screenDetails,
+    onChange: _onExtendedDisplayChange,
+  });
 
   _keydownHandler = (e) => _onKeydown(e);
   document.addEventListener('keydown', _keydownHandler);
@@ -3167,6 +3208,8 @@ function closeTakeExam() {
   // Remove ALL proctoring listeners
   _stopExamWindowMonitor?.();
   _stopExamWindowMonitor = null;
+  _stopExtendedDisplayMonitor?.();
+  _stopExtendedDisplayMonitor = null;
   if (_keydownHandler)    { document.removeEventListener('keydown',    _keydownHandler); _keydownHandler = null; }
   if (_keyupHandler)      { document.removeEventListener('keyup',      _keyupHandler);   _keyupHandler = null; }
   if (_beforeUnloadHandler) { window.removeEventListener('beforeunload', _beforeUnloadHandler); _beforeUnloadHandler = null; }
@@ -3177,6 +3220,7 @@ function closeTakeExam() {
   _isAway = false;
   _splitScreenActive = false;
   _browserTerminationPending = false;
+  _extendedDisplayActive = false;
   _screenshotShortcutAt = 0;
   clearTimeout(_leaveCaptureJob?.timer);
   _leaveCaptureJob?.resolve(false);
@@ -3213,6 +3257,7 @@ function dismissProctoringWarning() {
 function dismissBrowserWarning() {
   if (document.hidden || !document.hasFocus()) return;
   if (browserWarning.value.type === 'splitscreen' && isSplitScreen.value) return;
+  if (browserWarning.value.type === 'extended_monitor' && _extendedDisplayActive) return;
   browserWarning.value.show = false;
 }
 
@@ -3434,6 +3479,42 @@ function _onCheatAttempt(reason) {
       severity: 'warning',
     });
   }
+}
+
+function _onExtendedDisplayChange(extended) {
+  if (!takingExam.value || submitting.value || examTerminated.value || _browserTerminationPending) return;
+  if (!extended) {
+    _extendedDisplayActive = false;
+    if (browserWarning.value.type === 'extended_monitor') browserWarning.value.show = false;
+    return;
+  }
+  if (!_extendedDisplayActive) {
+    _extendedDisplayActive = true;
+    browserWarningCount.value += 1;
+    const count = browserWarningCount.value;
+    const eventPromise = _logProctoringEvent('extended_monitor', {
+      message: 'Additional display connected during exam',
+      source: 'display_check',
+      metadata: { count },
+      severity: count >= TAB_SWITCH_LIMIT ? 'critical' : 'warning',
+    });
+    if (count >= TAB_SWITCH_LIMIT) {
+      _browserTerminationPending = true;
+      terminateReason.value = 'extended_monitor';
+      browserWarning.value = {
+        show: true, type: 'extended_monitor', title: `Warning ${count} of ${TAB_SWITCH_LIMIT}`,
+        message: 'Your exam has been terminated after five browser warnings. An additional display was detected.',
+      };
+      void eventPromise.then(() => _terminateExam());
+      return;
+    }
+  }
+  browserWarning.value = {
+    show: true,
+    type: 'extended_monitor',
+    title: `Extended monitor detected — Warning ${browserWarningCount.value} of ${TAB_SWITCH_LIMIT}`,
+    message: 'Additional displays are not allowed during this exam. Disconnect the other display to continue.',
+  };
 }
 
 function _handleSplitScreen() {
@@ -3700,6 +3781,8 @@ onUnmounted(() => {
   // Clean up ALL proctoring listeners
   _stopExamWindowMonitor?.();
   _stopExamWindowMonitor = null;
+  _stopExtendedDisplayMonitor?.();
+  _stopExtendedDisplayMonitor = null;
   if (_resizeHandler) window.removeEventListener('resize', _resizeHandler);
   if (_keydownHandler) document.removeEventListener('keydown', _keydownHandler);
   if (_keyupHandler) document.removeEventListener('keyup', _keyupHandler);

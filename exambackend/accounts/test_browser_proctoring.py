@@ -24,13 +24,14 @@ class BrowserProctoringEventTests(TestCase):
                 {'event_type': 'screenshot_attempt', 'message': 'Screenshot shortcut pressed', 'source': 'keyboard'},
                 {'event_type': 'tab_switch', 'message': 'Student switched tabs', 'source': 'visibilitychange'},
                 {'event_type': 'split_screen', 'message': 'Student resized the exam window', 'source': 'split_screen'},
+                {'event_type': 'extended_monitor', 'message': 'Additional display connected', 'source': 'display_check'},
                 {'event_type': 'warning_shown', 'message': 'Face-not-visible notice displayed', 'source': 'face_absence_notice'},
             ]},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data['logged'], 5)
+        self.assertEqual(response.data['logged'], 6)
         self.assertEqual(
             list(ExamProctoringEvent.objects.values_list('event_type', flat=True)),
-            ['screen_share_stopped', 'screenshot_attempt', 'tab_switch', 'split_screen', 'warning_shown'],
+            ['screen_share_stopped', 'screenshot_attempt', 'tab_switch', 'split_screen', 'extended_monitor', 'warning_shown'],
         )
