@@ -538,6 +538,7 @@ def _build_integrity_report(submission):
     warning_count = events.filter(severity=ExamProctoringEvent.SEVERITY_WARNING).count()
     critical_count = events.filter(severity=ExamProctoringEvent.SEVERITY_CRITICAL).count()
     tab_switch_count = counts.get(ExamProctoringEvent.EVENT_TAB_SWITCH, submission.tab_switches)
+    split_screen_count = counts.get(ExamProctoringEvent.EVENT_SPLIT_SCREEN, 0)
     gaze_violations = counts.get(ExamProctoringEvent.EVENT_GAZE_VIOLATION, 0)
     gaze_no_face = counts.get(ExamProctoringEvent.EVENT_GAZE_NO_FACE, 0)
     gadget_detections = counts.get(ExamProctoringEvent.EVENT_GADGET_DETECTED, 0)
@@ -547,6 +548,7 @@ def _build_integrity_report(submission):
         f'Total logged events: {events.count()}.',
         f'Warnings: {warning_count}, critical: {critical_count}.',
         f'Tab switches: {tab_switch_count}.',
+        f'Split-screen or window-resize warnings: {split_screen_count}.',
         f'Gaze away from screen: {gaze_violations}.',
         f'Face not visible (gaze): {gaze_no_face}.',
         f'Confirmed prohibited gadgets: {gadget_detections}.',
@@ -559,6 +561,7 @@ def _build_integrity_report(submission):
         'event_counts': counts,
         'terminated': submission.terminated,
         'tab_switches': submission.tab_switches,
+        'split_screen_count': split_screen_count,
         'gaze_violation_count': gaze_violations,
         'gaze_no_face_count': gaze_no_face,
         'gadget_detection_count': gadget_detections,
@@ -2810,6 +2813,7 @@ def student_submit_answers(request, exam_id):
     answers_payload = request.data.get('answers')
     terminated = bool(request.data.get('terminated', False))
     tab_switches = int(request.data.get('tab_switches', 0))
+    browser_warning_count = int(request.data.get('browser_warning_count', tab_switches))
     gaze_violations = int(request.data.get('gaze_violations', 0))
     gaze_no_face = int(request.data.get('gaze_no_face', 0))
     termination_reason = (request.data.get('termination_reason') or '').strip()
@@ -2905,8 +2909,10 @@ def student_submit_answers(request, exam_id):
         )
     elif terminated and termination_reason == 'screen_share':
         end_message = 'Exam auto-terminated because entire-screen sharing stopped.'
+    elif terminated and termination_reason == 'split_screen':
+        end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings; split-screen or window resizing was detected.'
     elif terminated:
-        end_message = f'Exam auto-terminated (tab switches: {tab_switches}).'
+        end_message = f'Exam auto-terminated after {browser_warning_count} browser warnings (tab or window departures: {tab_switches}).'
 
     _log_proctoring_event(
         submission,
@@ -2916,6 +2922,7 @@ def student_submit_answers(request, exam_id):
         source='submit',
         metadata={
             'tab_switches': tab_switches,
+            'browser_warning_count': browser_warning_count,
             'gaze_violations': gaze_violations,
             'gaze_no_face': gaze_no_face,
             'termination_reason': termination_reason,

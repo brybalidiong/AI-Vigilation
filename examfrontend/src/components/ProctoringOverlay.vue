@@ -18,8 +18,11 @@
         <p v-else-if="terminateReason === 'screen_share'">
           Entire-screen sharing stopped during the exam.
         </p>
+        <p v-else-if="terminateReason === 'split_screen'">
+          Split-screen or a resized exam window was detected. Total browser warnings: {{ switchCount }}.
+        </p>
         <p v-else>
-          You minimized the screen or switched tabs {{ switchCount }} time{{ switchCount !== 1 ? 's' : '' }}.
+          You left the exam tab or window. Total browser warnings: {{ switchCount }}.
         </p>
       </div>
 

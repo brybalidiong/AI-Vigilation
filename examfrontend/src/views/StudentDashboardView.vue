@@ -4,7 +4,7 @@
     <!-- â”€â”€â”€ ROOT-LEVEL TERMINATED SCREEN (survives after exam closes) â”€â”€â”€ -->
     <ProctoringOverlay 
       :terminated="examTerminated" 
-      :switchCount="tabSwitchCount"
+      :switchCount="browserWarningCount"
       :terminateReason="terminateReason"
       :gazeViolationCount="gazeViolationCount"
       :gazeNoFaceCount="gazeNoFaceCount"
@@ -21,7 +21,7 @@
         <h2 id="browser-warning-title">{{ browserWarning.title }}</h2>
         <p>{{ browserWarning.message }}</p>
         <div class="proctor-counter">
-          <span class="strike-count">{{ tabSwitchCount }}</span>
+          <span class="strike-count">{{ browserWarningCount }}</span>
           <span class="strike-label">/ {{ TAB_SWITCH_LIMIT }} warnings</span>
         </div>
         <button type="button" class="proctor-dismiss" @click="dismissBrowserWarning">I Understand — Return to Exam</button>
@@ -435,7 +435,7 @@
           <h2>{{ proctoringWarning.title }}</h2>
           <p>{{ proctoringWarning.message }}</p>
           <div v-if="proctoringWarning.type === 'alttab' || proctoringWarning.type === 'gadget'" class="proctor-counter">
-            <span class="strike-count">{{ proctoringWarning.type === 'gadget' ? gadgetWarningCount : tabSwitchCount }}</span>
+            <span class="strike-count">{{ proctoringWarning.type === 'gadget' ? gadgetWarningCount : browserWarningCount }}</span>
             <span class="strike-label">/ {{ proctoringWarning.type === 'gadget' ? GADGET_WARNING_LIMIT : 5 }} warnings</span>
           </div>
           <button
@@ -464,12 +464,12 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
           <div style="display: flex; align-items: center; gap: 0.75rem;">
             <!-- Alt-tab strike indicator -->
-            <div class="strike-indicator" :class="tabSwitchCount >= 4 ? 'danger' : tabSwitchCount >= 2 ? 'warning' : ''">
+            <div class="strike-indicator" :class="browserWarningCount >= 4 ? 'danger' : browserWarningCount >= 2 ? 'warning' : ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                 <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
               </svg>
-              Warnings: {{ tabSwitchCount }}/5
+              Warnings: {{ browserWarningCount }}/5
             </div>
           </div>
         </div>
@@ -772,6 +772,8 @@ import EmptyState from "@/components/EmptyState.vue";
 
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
 import { nextPrecheckFaceState } from "@/utils/precheckFace.js";
+import { attachExamWindowMonitor } from "@/utils/examWindowMonitor.js";
+import { captureSharedDisplayImage } from "@/utils/examScreenEvidence.js";
 import {
   canRetakeExam,
   compareExamsNewestFirst,
@@ -942,6 +944,7 @@ const GAZE_VIOLATION_LIMIT = 8;
 const GAZE_NO_FACE_LIMIT = 5;
 const GADGET_WARNING_LIMIT = 3;
 const SPLIT_SCREEN_THRESHOLD = 0.98; // flag if window is not completely maximized
+const browserWarningCount = ref(0);
 const tabSwitchCount = ref(0);
 const gazeViolationCount = ref(0);
 const gazeNoFaceCount = ref(0);
@@ -995,9 +998,7 @@ const formattedTimeRemaining = computed(() => {
   return `${m}:${s}`;
 });
 // Listener refs
-let _visibilityHandler = null;
-let _blurHandler = null;
-let _focusHandler = null;
+let _stopExamWindowMonitor = null;
 let _resizeHandler = null;
 let _keydownHandler = null;
 let _keyupHandler = null;
@@ -1014,6 +1015,7 @@ const screenShareLoading = ref(false);
 let _isAway = false; // true while student is away â€” prevents double-counting
 let _splitScreenActive = false;
 let _browserTerminationPending = false;
+let _leaveCaptureJob = null;
 const PROCTORING_CAPTURE_INTERVAL_MS = 60000;
 const GAZE_CHECK_INTERVAL_MS = 1000;       // no-face + HTTP fallback logging when WS is down
 const GAZE_HTTP_FALLBACK_INTERVAL_MS = 1000;
@@ -1376,17 +1378,17 @@ async function _captureProctoringSnapshot(caption = 'Periodic webcam capture', {
 
 async function _captureLeaveScreen(examId, eventPromise) {
   const video = _screenShareVideo;
-  if (!examId || !video || !_screenShareStream?.active) return false;
+  const track = _screenShareStream?.getVideoTracks()[0];
+  if (!examId || !track || track.readyState !== 'live' || !_isAway) return false;
   try {
-    // Give the shared monitor a moment to show the newly selected tab/window.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    if (!video.videoWidth || !_screenShareStream?.active || !_isAway) return false;
-    const canvas = document.createElement('canvas');
-    const width = Math.min(1280, video.videoWidth);
-    canvas.width = width;
-    canvas.height = Math.round(video.videoHeight * width / video.videoWidth);
-    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+    // Read the monitor track directly because a hidden tab may stop painting
+    // the preview video while screen sharing remains active.
+    const blob = await captureSharedDisplayImage({
+      track,
+      video,
+      doc: document,
+      isAway: () => _isAway,
+    });
     if (!blob) return false;
     const form = new FormData();
     form.append('image', blob, `screen_switch_${Date.now()}.jpg`);
@@ -3027,6 +3029,7 @@ async function _doOpenExam(exam) {
   examResult.value = null;
   submitError.value = "";
   currentQuestionIndex.value = 0;
+  browserWarningCount.value = 0;
   tabSwitchCount.value = 0;
   gazeViolationCount.value = 0;
   gazeNoFaceCount.value = 0;
@@ -3038,6 +3041,9 @@ async function _doOpenExam(exam) {
   examTerminated.value = false;
   _isAway = false;
   _browserTerminationPending = false;
+  clearTimeout(_leaveCaptureJob?.timer);
+  _leaveCaptureJob?.resolve(false);
+  _leaveCaptureJob = null;
   _lastShortcutLoggedAt.clear();
   browserWarning.value = { show: false, title: '', message: '' };
 
@@ -3101,29 +3107,13 @@ async function _doOpenExam(exam) {
 
 function _attachProctoringListeners() {
   _isAway = false;
-
-  _visibilityHandler = () => {
-    if (document.hidden) {
-      _onLeaveExam('visibilitychange');
-    } else {
-      _onReturnToExam('visibilitychange');
-    }
-  };
-  document.addEventListener('visibilitychange', _visibilityHandler);
-
-  _blurHandler = () => {
-    setTimeout(() => {
-      if (!document.hidden && !_isAway) {
-        _onLeaveExam('blur');
-      }
-    }, 150);
-  };
-  window.addEventListener('blur', _blurHandler);
-
-  _focusHandler = () => {
-    if (_isAway) _onReturnToExam('focus');
-  };
-  window.addEventListener('focus', _focusHandler);
+  _stopExamWindowMonitor = attachExamWindowMonitor({
+    doc: document,
+    win: window,
+    onLeave: (source) => { void _onLeaveExam(source); },
+    onReturn: _onReturnToExam,
+    onHidden: () => { void _startLeaveCapture(_leaveCaptureJob); },
+  });
 
   _keydownHandler = (e) => _onKeydown(e);
   document.addEventListener('keydown', _keydownHandler);
@@ -3170,9 +3160,8 @@ function closeTakeExam() {
   _stopGazeCheckTimer();
   _stopScreenShare();
   // Remove ALL proctoring listeners
-  if (_visibilityHandler) { document.removeEventListener('visibilitychange', _visibilityHandler); _visibilityHandler = null; }
-  if (_blurHandler)       { window.removeEventListener('blur',    _blurHandler);    _blurHandler = null; }
-  if (_focusHandler)      { window.removeEventListener('focus',   _focusHandler);   _focusHandler = null; }
+  _stopExamWindowMonitor?.();
+  _stopExamWindowMonitor = null;
   if (_keydownHandler)    { document.removeEventListener('keydown',    _keydownHandler); _keydownHandler = null; }
   if (_keyupHandler)      { document.removeEventListener('keyup',      _keyupHandler);   _keyupHandler = null; }
   if (_beforeUnloadHandler) { window.removeEventListener('beforeunload', _beforeUnloadHandler); _beforeUnloadHandler = null; }
@@ -3183,9 +3172,15 @@ function closeTakeExam() {
   _isAway = false;
   _splitScreenActive = false;
   _browserTerminationPending = false;
+  clearTimeout(_leaveCaptureJob?.timer);
+  _leaveCaptureJob?.resolve(false);
+  _leaveCaptureJob = null;
   browserWarning.value = { show: false, title: '', message: '' };
   proctoringWarning.value = { show: false, type: '', title: '', message: '' };
-  if (!examTerminated.value) tabSwitchCount.value = 0;
+  if (!examTerminated.value) {
+    browserWarningCount.value = 0;
+    tabSwitchCount.value = 0;
+  }
   if (_examTimer) { clearInterval(_examTimer); _examTimer = null; }
   // Stop the media stream when the exam is closed.
   if (activeMediaStream) {
@@ -3228,26 +3223,40 @@ async function _onLeaveExam(source) {
   if (_isAway) return;
   if (!takingExam.value || submitting.value || examTerminated.value || _browserTerminationPending) return;
   _isAway = true;
+  browserWarningCount.value += 1;
   tabSwitchCount.value += 1;
-  const count = tabSwitchCount.value;
+  const count = browserWarningCount.value;
   const examId = takingExam.value.id;
   const eventPromise = _logProctoringEvent('tab_switch', {
-    message: `Student left exam window (${source})`,
+    message: 'Student switched away from the exam tab or window',
     source,
-    metadata: { count, screen_capture_requested: screenShareReady.value },
+    metadata: { count, tab_switch_count: tabSwitchCount.value, screen_capture_requested: screenShareReady.value },
     severity: count >= TAB_SWITCH_LIMIT ? 'critical' : 'warning',
   });
-  const evidencePromise = _captureLeaveScreen(examId, eventPromise);
+  const captureJob = {
+    examId,
+    eventPromise,
+    started: false,
+    timer: null,
+    resolve: null,
+    promise: null,
+  };
+  captureJob.promise = new Promise((resolve) => { captureJob.resolve = resolve; });
+  _leaveCaptureJob = captureJob;
+  // A hidden-tab event starts capture immediately. Blur alone uses a short
+  // fallback so the shared monitor can show the destination window first.
+  captureJob.timer = setTimeout(() => { void _startLeaveCapture(captureJob); }, 120);
 
   if (count >= TAB_SWITCH_LIMIT) {
     _browserTerminationPending = true;
     browserWarning.value = {
       show: true,
-      title: `Warning ${count} of ${TAB_SWITCH_LIMIT}`,
+      type: 'tab_change',
+      title: `Tab change or minimize detected — Warning ${count} of ${TAB_SWITCH_LIMIT}`,
       message: 'Your exam has been terminated due to too many tab switches or minimizing the screen.',
     };
     // Preserve the linked evidence before final submission closes this attempt.
-    await Promise.all([eventPromise, evidencePromise]);
+    await Promise.all([eventPromise, captureJob.promise]);
     await _terminateExam();
     return;
   }
@@ -3255,12 +3264,25 @@ async function _onLeaveExam(source) {
   // Show warning immediately when they leave
   browserWarning.value = {
     show: true,
-    title: `Warning ${count} of ${TAB_SWITCH_LIMIT}`,
+    type: 'tab_change',
+    title: `Tab change or minimize detected — Warning ${count} of ${TAB_SWITCH_LIMIT}`,
     message: `You minimized the screen or switched tabs. This is not allowed. You have ${TAB_SWITCH_LIMIT - count} warning${TAB_SWITCH_LIMIT - count === 1 ? '' : 's'} remaining before your exam is automatically terminated.`,
   };
 
-  // Record in background - fire and forget
-  void evidencePromise;
+}
+
+async function _startLeaveCapture(job) {
+  if (!job || job.started) return job?.promise;
+  job.started = true;
+  clearTimeout(job.timer);
+  try {
+    job.resolve(await _captureLeaveScreen(job.examId, job.eventPromise));
+  } catch (err) {
+    console.warn('Screen evidence capture failed:', err);
+    job.resolve(false);
+  }
+  if (_leaveCaptureJob === job) _leaveCaptureJob = null;
+  return job.promise;
 }
 
 async function _onScreenShareEnded() {
@@ -3386,40 +3408,41 @@ function _handleSplitScreen() {
   if (ratio <= SPLIT_SCREEN_THRESHOLD) {
     if (!_splitScreenActive) {
       _splitScreenActive = true;
-      tabSwitchCount.value += 1;
+      browserWarningCount.value += 1;
       
-      if (tabSwitchCount.value >= TAB_SWITCH_LIMIT) {
+      if (browserWarningCount.value >= TAB_SWITCH_LIMIT) {
         _browserTerminationPending = true;
+        terminateReason.value = 'split_screen';
         browserWarning.value = {
           show: true,
           type: 'splitscreen',
-          title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT}`,
-          message: 'Your exam has been terminated due to too many tab switches or minimizing the screen.',
+          title: `Warning ${browserWarningCount.value} of ${TAB_SWITCH_LIMIT}`,
+          message: 'Your exam has been terminated after too many browser-window violations.',
         };
-        const eventPromise = _logProctoringEvent('tab_switch', {
-          message: 'Student split the screen or resized window (split_screen)',
+        const eventPromise = _logProctoringEvent('split_screen', {
+          message: 'Student used split-screen or resized the exam window',
           source: 'split_screen',
-          metadata: { count: tabSwitchCount.value, ratio },
+          metadata: { count: browserWarningCount.value, ratio },
           severity: 'critical',
         });
         void eventPromise.then(() => _terminateExam());
         return;
       }
 
-      // Record in background - fire and forget (still recording as tab_switch to unify them)
-      void _logProctoringEvent('tab_switch', {
+      // Keep window resizing separate from leaving the exam tab.
+      void _logProctoringEvent('split_screen', {
         message: 'Split screen or non-maximized window detected',
         source: 'split_screen',
         severity: 'warning',
-        metadata: { count: tabSwitchCount.value, ratio },
+        metadata: { count: browserWarningCount.value, ratio },
       });
       
       // Always show/keep the split-screen warning when in split mode
       browserWarning.value = {
         show: true,
         type: 'splitscreen',
-        title: `Warning ${tabSwitchCount.value} of ${TAB_SWITCH_LIMIT} (Split Screen Detected)`,
-        message: `Split screen is not allowed. You have ${TAB_SWITCH_LIMIT - tabSwitchCount.value} warning${TAB_SWITCH_LIMIT - tabSwitchCount.value === 1 ? '' : 's'} remaining. Please maximize your browser window to continue.`,
+        title: `Warning ${browserWarningCount.value} of ${TAB_SWITCH_LIMIT} (Split Screen Detected)`,
+        message: `Split screen is not allowed. You have ${TAB_SWITCH_LIMIT - browserWarningCount.value} warning${TAB_SWITCH_LIMIT - browserWarningCount.value === 1 ? '' : 's'} remaining. Please maximize your browser window to continue.`,
       };
     }
   } else {
@@ -3437,6 +3460,7 @@ async function _terminateExam() {
   const reason = terminateReason.value;
   const terminatedExamId = terminatedExam?.id;
   const finalTabSwitches = tabSwitchCount.value;
+  const finalBrowserWarnings = browserWarningCount.value;
   const finalGazeViolations = gazeViolationCount.value;
   const finalNoFaceCount = gazeNoFaceCount.value;
   await _captureProctoringSnapshot(`Exam auto-terminated (${reason})`, { examId: terminatedExamId });
@@ -3452,6 +3476,7 @@ async function _terminateExam() {
       })),
       terminated: true,
       tab_switches: finalTabSwitches,
+      browser_warning_count: finalBrowserWarnings,
       gaze_violations: finalGazeViolations,
       gaze_no_face: finalNoFaceCount,
       termination_reason: reason,
@@ -3500,6 +3525,7 @@ async function submitExam() {
     })),
     terminated: false,
     tab_switches: tabSwitchCount.value,
+    browser_warning_count: browserWarningCount.value,
   };
   _stopGazeCheckTimer();
   try {
@@ -3634,9 +3660,8 @@ onUnmounted(() => {
   }
   _clearAbsenceAlert();
   // Clean up ALL proctoring listeners
-  if (_visibilityHandler) document.removeEventListener('visibilitychange', _visibilityHandler);
-  if (_blurHandler) window.removeEventListener('blur', _blurHandler);
-  if (_focusHandler) window.removeEventListener('focus', _focusHandler);
+  _stopExamWindowMonitor?.();
+  _stopExamWindowMonitor = null;
   if (_resizeHandler) window.removeEventListener('resize', _resizeHandler);
   if (_keydownHandler) document.removeEventListener('keydown', _keydownHandler);
   if (_keyupHandler) document.removeEventListener('keyup', _keyupHandler);
