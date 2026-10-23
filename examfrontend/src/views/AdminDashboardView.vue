@@ -252,10 +252,7 @@
                           <option v-for="category in courseCategories" :key="category.code" :value="category.code">{{ category.code === 'MINOR' ? 'Minor courses' : category.code }}</option>
                         </select>
                       </label>
-                      <fieldset class="admin-course-instructors" :disabled="course._saving || !course._category"><legend>Assigned instructors</legend>
-                        <label v-for="instructor in assignableInstructors(course._category)" :key="instructor.id" class="admin-course-instructor-option"><input v-model="course._instructor_ids" type="checkbox" :value="instructor.id" />{{ instructor.full_name || instructor.email }}</label>
-                        <span v-if="!assignableInstructors(course._category).length" class="admin-course-hint">No instructors available</span>
-                      </fieldset>
+                      <InstructorAssignmentPicker v-model="course._instructor_ids" :instructors="courseInstructorOptions(course)" :disabled="course._saving || !course._category" :label="course.name" />
                       <button type="button" class="row-action admin-course-save" :disabled="course._saving || !course._instructor_ids.length || !course._category || (course._category === course.category && sameInstructorIds(course._instructor_ids, course.instructor_ids))" @click="saveCourseAssignment(course)">{{ course._saving ? 'Saving…' : 'Save' }}</button>
                     </div>
                   </article>
@@ -277,10 +274,7 @@
                 </select>
               </label>
             </div>
-            <fieldset class="admin-course-instructors admin-course-instructors--create" :disabled="!newCourse.category"><legend>Assigned instructors</legend>
-              <label v-for="instructor in assignableInstructors(newCourse.category)" :key="instructor.id" class="admin-course-instructor-option"><input v-model="newCourse.instructor_ids" type="checkbox" :value="instructor.id" />{{ instructor.full_name || instructor.email }} <span>{{ instructor.institute }}</span></label>
-              <span v-if="!newCourse.category" class="admin-course-hint">Choose a course group first.</span>
-            </fieldset>
+            <div class="admin-course-create-picker"><InstructorAssignmentPicker v-model="newCourse.instructor_ids" :instructors="assignableInstructors(newCourse.category)" :disabled="!newCourse.category" label="new course" /></div>
             <p v-if="newCourse.category && !assignableInstructors(newCourse.category).length" class="admin-course-hint">There are no active instructors available for this group. Register or restore an instructor first.</p>
             <div class="entry-actions"><button type="button" class="ghost-btn shrink-btn" @click="closeCourseForm">Cancel</button><button type="submit" class="primary-btn shrink-btn" :disabled="courseSaving || !newCourse.instructor_ids.length">{{ courseSaving ? 'Creating…' : 'Create course' }}</button></div>
             <p v-if="courseFormError" class="form-error" role="alert">{{ courseFormError }}</p>
@@ -563,6 +557,7 @@ import { useRouter } from "vue-router";
 import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
 import NoticeModal from "@/components/NoticeModal.vue";
+import InstructorAssignmentPicker from "@/components/InstructorAssignmentPicker.vue";
 import SkeletonLoader from "@/components/SkeletonLoader.vue";
 
 const router = useRouter();
@@ -647,6 +642,11 @@ const courseGroups = computed(() => {
 function assignableInstructors(category) {
   return instructors.value.filter((instructor) => instructor.is_active &&
     (category === 'MINOR' || instructor.institute === category));
+}
+function courseInstructorOptions(course) {
+  return instructors.value.filter((instructor) =>
+    (instructor.is_active && (course._category === 'MINOR' || instructor.institute === course._category))
+    || course._instructor_ids.includes(instructor.id));
 }
 function sameInstructorIds(a, b) {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -1315,12 +1315,7 @@ onMounted(() => {
 .admin-course-row__assignment { display: grid; grid-template-columns: minmax(115px, .75fr) minmax(175px, 1.3fr) auto; align-items: end; gap: .55rem; }
 .admin-course-row__assignment label { display: grid; gap: .25rem; min-width: 0; color: #6a788d; font-size: .68rem; font-weight: 700; }
 .admin-course-row__assignment .admin-filter { width: 100%; min-width: 0; font-size: .75rem; }
-.admin-course-instructors { min-width: 0; max-height: 8.5rem; overflow-y: auto; margin: 0; padding: .45rem .6rem; border: 1px solid #d8e1ee; border-radius: 9px; background: #fff; }
-.admin-course-instructors legend { padding: 0 .2rem; color: #6a788d; font-size: .68rem; font-weight: 700; }
-.admin-course-row__assignment .admin-course-instructor-option, .admin-course-instructor-option { display: flex; align-items: center; gap: .45rem; min-height: 1.7rem; color: #203553; font-size: .73rem; font-weight: 600; cursor: pointer; }
-.admin-course-instructor-option input { flex: none; accent-color: #1d3461; }
-.admin-course-instructor-option span { margin-left: auto; color: #8190a3; font-size: .68rem; }
-.admin-course-instructors--create { max-height: 11rem; margin-top: .85rem; padding: .6rem .8rem; }
+.admin-course-create-picker { max-width: 28rem; margin-top: .85rem; }
 .admin-course-save { min-height: 41px; padding: .55rem .8rem; color: #1d3461; }
 .admin-course-save:disabled { opacity: .48; cursor: default; }
 .admin-course-empty { margin: 0; padding: 1rem .25rem .35rem; color: #8390a2; font-size: .8rem; }
