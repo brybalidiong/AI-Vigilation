@@ -3230,6 +3230,7 @@
   font-weight: 900;
   letter-spacing: -0.03em;
 }
+.sidebar-brand-mark img { display: block; width: 33px; height: 33px; object-fit: contain; }
 .dashboard-role--instructor .sidebar-brand-mark { background: #ffffff; }
 .sidebar-brand-lockup { display: grid; gap: 0.08rem; min-width: 0; }
 .dashboard-role .sidebar-brand-name {

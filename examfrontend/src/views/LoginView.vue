@@ -3,6 +3,7 @@
     <!-- Top Bar -->
     <header class="login-header-bar">
       <div class="brand-logo">
+        <img src="/branding/ai-vigilation-mark.png" alt="" class="brand-logo__mark" />
         <span class="brand-name">AI-Vigilation</span>
       </div>
       <div class="header-right">
@@ -34,7 +35,7 @@
           <!-- Front Card (Student / Instructor) -->
           <div v-if="!showAdminLogin" class="login-card login-front">
             <div class="login-card-header">
-              <div class="login-card-brand"><span class="login-card-brand__mark">AI</span><span>AI-Vigilation</span></div>
+              <div class="login-card-brand"><span class="login-card-brand__mark"><img src="/branding/ai-vigilation-mark.png" alt="" /></span><span>AI-Vigilation</span></div>
               <h2>Welcome back</h2>
               <p>Sign in with your DNSC account.</p>
             </div>
@@ -71,7 +72,7 @@
           <!-- Back Card (Admin) -->
           <div v-else class="login-card login-back">
             <div class="login-card-header">
-              <div class="login-card-brand"><span class="login-card-brand__mark">AI</span><span>AI-Vigilation</span></div>
+              <div class="login-card-brand"><span class="login-card-brand__mark"><img src="/branding/ai-vigilation-mark.png" alt="" /></span><span>AI-Vigilation</span></div>
               <h2>Admin account</h2>
               <p>Sign in with your administrator credentials.</p>
             </div>
@@ -274,6 +275,7 @@ async function loginAdmin() {
   align-items: center;
   gap: 0.75rem;
 }
+.brand-logo__mark { display: block; width: 38px; height: 38px; object-fit: contain; }
 .brand-name {
   font-family: 'Poppins', sans-serif;
   color: #1D3461;
@@ -468,11 +470,11 @@ async function loginAdmin() {
   width: 36px;
   height: 36px;
   border-radius: 9px;
-  background: #1D3461;
-  color: #fff;
+  background: rgba(255, 255, 255, .9);
   font-size: 0.78rem;
   letter-spacing: -0.04em;
 }
+.login-card-brand__mark img { display: block; width: 32px; height: 32px; object-fit: contain; }
 
 .login-card-header {
   padding: 2rem 2.35rem 0.65rem;

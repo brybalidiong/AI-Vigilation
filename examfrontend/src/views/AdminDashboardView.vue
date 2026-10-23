@@ -4,7 +4,7 @@
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <span class="sidebar-brand-mark" aria-hidden="true">AI</span>
+          <span class="sidebar-brand-mark" aria-hidden="true"><img src="/branding/ai-vigilation-mark.png" alt="" /></span>
           <span class="sidebar-brand-lockup">
             <span class="sidebar-brand-name">AI-Vigilation</span>
             <span class="sidebar-brand-context">Admin workspace</span>
