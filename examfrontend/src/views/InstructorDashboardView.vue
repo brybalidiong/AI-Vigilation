@@ -433,7 +433,7 @@
                   </div>
                   <div>
                     <h3 class="create-panel__title">Upload New Exam</h3>
-                    <p class="create-panel__sub">Upload Aiken multiple-choice questions or essay prompts, then configure the exam settings. Question order is automatically shuffled for each student and attempt.</p>
+                    <p class="create-panel__sub">Upload Aiken multiple-choice questions or essay prompts, then configure the exam settings. Published exams shuffle question and multiple-choice option order for each student and attempt.</p>
                   </div>
                 </div>
                 <form @submit.prevent="createExamSet">

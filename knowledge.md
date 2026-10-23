@@ -46,6 +46,8 @@ The grading helper is `exambackend/accounts/grading.py`.
 | Enumeration | Partial credit based on matched expected items. Supports case-sensitive matching. |
 | Essay | Requires manual grading. |
 
+Published exams shuffle question order and multiple-choice options for each student and attempt. The order stays the same if a student refreshes an active attempt; answers are still graded against their choice text.
+
 For grading changes, use the custom [exam-grading skill](.agents/skills/exam-grading/SKILL.md).
 
 ## Gaze proctoring

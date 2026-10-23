@@ -578,12 +578,22 @@ class ExamQuestionOrderTests(TestCase):
         originals = {q.pk: q for q in self.questions}
         for question in first:
             self.assertNotIn('correct_answer', question)
-            self.assertEqual(question['choices'], originals[question['id']].choices)
+            self.assertCountEqual(question['choices'], originals[question['id']].choices)
             self.assertEqual(question['question_text'], originals[question['id']].question_text)
+        self.assertTrue(any(
+            question['choices'] != originals[question['id']].choices
+            for question in first
+        ))
         self.client.force_authenticate(self.students[1])
-        second_ids = [q['id'] for q in self.fetch_questions()]
+        second = self.fetch_questions()
+        second_ids = [q['id'] for q in second]
         self.assertCountEqual(second_ids, ids)
         self.assertNotEqual(second_ids, ids)
+        second_choices = {q['id']: q['choices'] for q in second}
+        self.assertTrue(any(
+            question['choices'] != second_choices[question['id']]
+            for question in first
+        ))
 
     def test_new_attempt_reshuffles_and_answers_grade_by_question_id(self):
         first = self.fetch_questions()
@@ -594,7 +604,10 @@ class ExamQuestionOrderTests(TestCase):
             f'/api/student/exams/{self.exam.pk}/submit/',
             {'answers': [
                 {'question_id': q['id'], 'answer_text': (
-                    'incorrect' if q['id'] == wrong_id else correct_answers[q['id']]
+                    'incorrect' if q['id'] == wrong_id else next(
+                        choice for choice in q['choices']
+                        if choice == correct_answers[q['id']]
+                    )
                 )}
                 for q in first
             ]},
@@ -612,6 +625,11 @@ class ExamQuestionOrderTests(TestCase):
         self.assertNotEqual([q['id'] for q in first], [q['id'] for q in second])
         self.assertCountEqual([q['id'] for q in first], [q['id'] for q in second])
         self.assertEqual(second, self.fetch_questions())
+        second_choices = {q['id']: q['choices'] for q in second}
+        self.assertTrue(any(
+            q['choices'] != second_choices[q['id']]
+            for q in first
+        ))
         submission = ExamSubmission.objects.get(exam_set=self.exam)
         self.assertEqual(submission.attempt_count, 2)
         self.assertFalse(submission.is_done)

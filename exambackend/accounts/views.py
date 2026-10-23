@@ -2676,6 +2676,21 @@ def _student_can_access_exam(student_email, exam_set):
     ).exists()
 
 
+def _student_question_choices(question, submission):
+    """Keep each attempt's choice order stable without changing stored answers."""
+    choices = question.choices or []
+    if question.question_type != ExamQuestion.TYPE_MULTIPLE_CHOICE:
+        return choices
+    return [choice for _, choice in sorted(
+        enumerate(choices),
+        key=lambda indexed_choice: salted_hmac(
+            'student-exam-choice-order',
+            f'{submission.pk}:{submission.attempt_count}:{question.pk}:{indexed_choice[0]}',
+            algorithm='sha256',
+        ).digest(),
+    )]
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def student_exam_questions(request, exam_id):
@@ -2756,7 +2771,11 @@ def student_exam_questions(request, exam_id):
         ),
     )
     questions = [
-        {**_serialize_question(q, include_answer=False), 'order': position}
+        {
+            **_serialize_question(q, include_answer=False),
+            'order': position,
+            'choices': _student_question_choices(q, submission),
+        }
         for position, q in enumerate(qs, start=1)
     ]
     if _exam_requires_all_restrictions(exam_set):
