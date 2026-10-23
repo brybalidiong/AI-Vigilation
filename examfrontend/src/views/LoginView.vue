@@ -256,7 +256,7 @@ async function loginAdmin() {
   overflow-x: clip;
   display: flex;
   flex-direction: column;
-  background: #f4f7f9;
+  background: linear-gradient(125deg, #f4f7fb 0%, #edf3fa 64%, #f7f1e9 100%);
   font-family: 'Poppins', -apple-system, sans-serif;
 }
 
@@ -400,21 +400,51 @@ async function loginAdmin() {
 
 /* Sign-in card */
 .login-form-panel {
+  position: relative;
+  isolation: isolate;
   flex: 1;
   display: flex;
   justify-content: flex-end;
 }
+.login-form-panel::before,
+.login-form-panel::after {
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
+  content: '';
+}
+.login-form-panel::before {
+  top: -2rem;
+  right: -2rem;
+  width: 19rem;
+  height: 19rem;
+  background: rgba(84, 124, 183, 0.17);
+  filter: blur(18px);
+}
+.login-form-panel::after {
+  bottom: -3rem;
+  left: 1rem;
+  width: 13rem;
+  height: 13rem;
+  background: rgba(233, 177, 80, 0.18);
+  filter: blur(22px);
+}
 
 .login-card-wrapper {
+  position: relative;
   width: 100%;
   max-width: 460px;
 }
 
 .login-front, .login-back {
-  background: #ffffff;
-  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.64));
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  backdrop-filter: blur(22px) saturate(1.25);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 24px;
   padding: 0;
-  box-shadow: 0 24px 55px rgba(22, 44, 81, 0.13), 0 3px 12px rgba(22, 44, 81, 0.045);
+  box-shadow: 0 28px 65px rgba(32, 55, 91, 0.14), 0 5px 15px rgba(32, 55, 91, 0.055);
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -426,7 +456,7 @@ async function loginAdmin() {
   justify-content: flex-start;
   gap: 0.6rem;
   margin-bottom: 1.2rem;
-  color: #c8d6ed;
+  color: #355579;
   font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -435,32 +465,32 @@ async function loginAdmin() {
 .login-card-brand__mark {
   display: inline-grid;
   place-items: center;
-  width: 33px;
-  height: 33px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
-  background: #fff;
-  color: #1D3461;
+  background: #1D3461;
+  color: #fff;
   font-size: 0.78rem;
   letter-spacing: -0.04em;
 }
 
 .login-card-header {
-  padding: 1.85rem 2.35rem 1.9rem;
-  background: #1D3461;
+  padding: 2rem 2.35rem 0.65rem;
+  background: transparent;
   text-align: left;
 }
 .login-card-header h2 {
   font-family: 'Poppins', sans-serif;
   font-size: 1.75rem;
   font-weight: 800;
-  color: #fff;
+  color: #1D3461;
   margin: 0 0 0.35rem;
   letter-spacing: -0.02em;
 }
 .login-card-header p {
   margin: 0;
   font-size: 0.9rem;
-  color: #d0dbed;
+  color: #64748b;
 }
 
 .domain-notice {
@@ -482,10 +512,10 @@ async function loginAdmin() {
   gap: 0.8rem;
   width: auto;
   min-height: 54px;
-  margin: 1.65rem 2.35rem 0;
+  margin: 1.2rem 2.35rem 0;
   padding: 0.8rem 1.25rem;
-  background: #fff;
-  border: 1px solid #d5deea;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(188, 201, 220, 0.85);
   border-radius: 10px;
   font-family: inherit;
   font-size: 0.96rem;
@@ -495,7 +525,7 @@ async function loginAdmin() {
   transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 .btn-google:hover:not(:disabled) {
-  background: #f7f9fc;
+  background: #fff;
   border-color: #aebdd3;
   box-shadow: 0 5px 14px rgba(29, 52, 97, 0.08);
 }
@@ -515,7 +545,7 @@ async function loginAdmin() {
   content: '';
   flex: 1;
   height: 1px;
-  background: #e2e8f0;
+  background: rgba(133, 153, 180, 0.32);
 }
 
 .login-text-action {
@@ -591,7 +621,7 @@ async function loginAdmin() {
 }
 
 /* Admin Form Styles */
-.login-form { display: flex; flex-direction: column; gap: 1rem; margin: 1.6rem 2.35rem 0; }
+.login-form { display: flex; flex-direction: column; gap: 1rem; margin: 1.35rem 2.35rem 0; }
 .field-group { display: flex; flex-direction: column; gap: 0.45rem; }
 .field-group label { font-family: 'Poppins', sans-serif; font-size: 0.82rem; font-weight: 700; color: #334663; }
 
@@ -607,7 +637,7 @@ async function loginAdmin() {
   font-family: inherit;
   font-size: 0.95rem;
   color: #1e293b;
-  background: #fbfcfe;
+  background: rgba(255, 255, 255, 0.7);
   outline: none;
   transition: all 0.2s;
   box-sizing: border-box;
