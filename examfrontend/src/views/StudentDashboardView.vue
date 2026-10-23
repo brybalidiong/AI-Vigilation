@@ -160,7 +160,7 @@
                 <article v-for="exam in selectedCalendarExams" :key="`${exam.subject_id}-${exam.id}`" class="exam-calendar-event">
                   <div class="exam-calendar-event__top">
                     <span class="exam-calendar-event__time">{{ calendarExamTimeLabel(exam) }}</span>
-                    <span class="timeline-status" :class="statusClass(exam)">{{ getExamStatus(exam) }}</span>
+                    <span class="exam-calendar-status" :class="statusClass(exam)">{{ getExamStatus(exam) }}</span>
                   </div>
                   <h4>{{ formatDisplayTitle(exam.title) }}</h4>
                   <p>{{ formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`) }}</p>

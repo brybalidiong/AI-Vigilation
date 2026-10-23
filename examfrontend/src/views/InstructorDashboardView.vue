@@ -148,7 +148,7 @@
                   <article v-for="exam in selectedCalendarExams" :key="`upcoming-${exam.subject_id}-${exam.id}`" class="exam-calendar-event">
                     <div class="exam-calendar-event__top">
                       <span class="exam-calendar-event__time">{{ calendarExamTimeLabel(exam) }}</span>
-                      <span class="timeline-status" :class="exam.is_final ? 'badge-active' : 'badge-upcoming'">{{ exam.is_final ? 'Published' : 'Draft' }}</span>
+                      <span class="exam-calendar-status" :class="exam.is_final ? 'badge-active' : 'badge-upcoming'">{{ exam.is_final ? 'Published' : 'Draft' }}</span>
                     </div>
                     <h4>{{ formatDisplayTitle(exam.title) }}</h4>
                     <p>{{ formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`) }}</p>

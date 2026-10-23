@@ -3765,62 +3765,88 @@
 .dashboard-role .exam-calendar-detail {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #dce6f4;
-  border-radius: 16px;
-  background: #f6f9fd;
-  box-shadow: 0 8px 24px rgba(28, 55, 97, 0.045);
+  align-self: start;
+  border: 1px solid #e3e8ef;
+  border-radius: 14px;
+  background: #fff;
 }
 .dashboard-role .exam-calendar-detail__heading {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5rem;
-  padding: 1rem 1.1rem;
-  background: #203d6c;
+  padding: 1rem 1.1rem 0.85rem;
+  border-bottom: 1px solid #edf0f4;
 }
 .dashboard-role .exam-calendar-detail__eyebrow {
-  color: #b7cbed;
+  color: #7a8798;
   font-size: 0.65rem;
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.dashboard-role .exam-calendar-detail h3 { margin: 0.12rem 0 0; color: #fff; font-size: 1.08rem; letter-spacing: -0.02em; }
+.dashboard-role .exam-calendar-detail h3 { margin: 0.12rem 0 0; color: #1e314c; font-size: 1.08rem; letter-spacing: -0.02em; }
 .dashboard-role .exam-calendar-detail__total {
   flex: 0 0 auto;
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
-  background: #385989;
-  color: #fff;
+  background: #f0f3f7;
+  color: #596b83;
   font-size: 0.68rem;
   font-weight: 700;
 }
 .dashboard-role .exam-calendar-detail__list {
   display: grid;
   align-content: start;
-  gap: 0.65rem;
+  gap: 0;
   max-height: 315px;
   overflow-y: auto;
-  padding: 0.85rem;
 }
 .dashboard-role .exam-calendar-event {
-  padding: 0.85rem 0.9rem;
-  border: 1px solid #dfe8f5;
-  border-left: 3px solid #4c7fd1;
-  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  border: 0;
+  border-bottom: 1px solid #edf0f4;
+  border-radius: 0;
   background: #fff;
-  box-shadow: 0 3px 10px rgba(28, 55, 97, 0.035);
 }
+.dashboard-role .exam-calendar-event:last-child { border-bottom: 0; }
 .dashboard-role .exam-calendar-event__top,
 .dashboard-role .exam-calendar-event__actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .dashboard-role .exam-calendar-event__top { justify-content: space-between; }
-.dashboard-role .exam-calendar-event__time { color: #527094; font-size: 0.72rem; font-weight: 700; }
-.dashboard-role .exam-calendar-event h4 { margin: 0.45rem 0 0.1rem; color: #1e3a5f; font-size: 0.84rem; line-height: 1.35; }
+.dashboard-role .exam-calendar-event__time { color: #687b95; font-size: 0.72rem; font-weight: 650; }
+.dashboard-role .exam-calendar-event h4 { margin: 0.55rem 0 0.1rem; color: #1e314c; font-size: 0.9rem; line-height: 1.35; }
 .dashboard-role .exam-calendar-event p { margin: 0; color: #687b95; font-size: 0.73rem; }
-.dashboard-role .exam-calendar-event__actions { margin-top: 0.6rem; }
+.dashboard-role .exam-calendar-event__actions { margin-top: 0.8rem; }
 .dashboard-role .exam-calendar-event__actions .moodle-btn-ghost { padding: 0.32rem 0.65rem; border-radius: 8px; font-size: 0.7rem; }
+.dashboard-role .exam-calendar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.32rem 0.65rem;
+  border: 0;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.dashboard-role .exam-calendar-status::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+.dashboard-role .exam-calendar-status.badge-active { background: #e7f4eb; color: #237044; }
+.dashboard-role .exam-calendar-status.badge-upcoming,
+.dashboard-role .exam-calendar-status.badge-pending { background: #f7f0df; color: #895f13; }
+.dashboard-role .exam-calendar-status.badge-done { background: #e8f3eb; color: #276844; }
+.dashboard-role .exam-calendar-status.badge-not-taken,
+.dashboard-role .exam-calendar-status.badge-terminated,
+.dashboard-role .exam-calendar-status.badge-overdue { background: #faebeb; color: #a43838; }
+.dashboard-role .exam-calendar-status.badge-neutral { background: #edf0f4; color: #5b6b7e; }
 .dashboard-role .exam-calendar-detail__empty { padding: 2rem 0.8rem; color: #71829b; font-size: 0.82rem; text-align: center; }
-.dashboard-role .exam-calendar-detail__empty::before { display: block; width: 35px; height: 35px; margin: 0 auto 0.9rem; border: 1px solid #d5e3f6; border-radius: 11px; background: #eaf2ff; box-shadow: inset 0 0 0 9px #f6f9fd; content: ''; }
 .dashboard-role .exam-calendar-detail__empty p { margin: 0 0 0.8rem; }
 .dashboard-role .exam-calendar-detail__empty button { padding: 0.45rem 0.75rem; border-radius: 9px; font-size: 0.75rem; font-weight: 700; }
 @media (max-width: 900px) {
