@@ -3425,7 +3425,7 @@
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  min-height: clamp(600px, 68vh, 780px);
+  min-height: 0;
   margin-top: 1rem;
   overflow: hidden;
 }
@@ -3613,6 +3613,187 @@
   background: #162d4a;
   border-color: #162d4a;
 }
+
+.dashboard-role .exam-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+.dashboard-role .exam-calendar-toolbar .agenda-search-wrap {
+  position: relative;
+  width: min(100%, 320px);
+}
+.dashboard-role .exam-calendar-toolbar .agenda-search {
+  width: 100%;
+  min-height: 40px;
+  padding-left: 2.35rem;
+  border: 1px solid #dde3ec;
+  border-radius: 12px;
+}
+.dashboard-role .exam-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #1e3a5f;
+}
+.dashboard-role .exam-calendar-nav strong {
+  min-width: 9.5rem;
+  text-align: center;
+  font-size: 0.92rem;
+}
+.dashboard-role .exam-calendar-nav button,
+.dashboard-role .exam-calendar-detail__empty button {
+  border: 1px solid #dde3ec;
+  background: #fff;
+  color: #1e3a5f;
+  cursor: pointer;
+  font: inherit;
+}
+.dashboard-role .exam-calendar-nav__arrow {
+  width: 35px;
+  height: 35px;
+  border-radius: 10px;
+  font-size: 1.45rem !important;
+  line-height: 1;
+}
+.dashboard-role .exam-calendar-nav__today {
+  min-height: 35px;
+  padding: 0 0.75rem;
+  border-radius: 10px;
+  font-size: 0.76rem !important;
+  font-weight: 650 !important;
+}
+.dashboard-role .exam-calendar-nav button:hover,
+.dashboard-role .exam-calendar-detail__empty button:hover {
+  background: #edf3ff;
+  border-color: #b9c9e4;
+}
+.dashboard-role .exam-calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(285px, 0.8fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+.dashboard-role .exam-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+  align-content: start;
+}
+.dashboard-role .exam-calendar-weekday {
+  padding: 0.2rem 0 0.4rem;
+  color: #71829b;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-align: center;
+  text-transform: uppercase;
+}
+.dashboard-role .exam-calendar-day,
+.dashboard-role .exam-calendar-blank {
+  min-height: 54px;
+}
+.dashboard-role .exam-calendar-day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #e4eaf2;
+  border-radius: 11px;
+  background: #f8fafd;
+  color: #304664;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.dashboard-role .exam-calendar-day:hover { border-color: #a8bde4; background: #f0f5ff; }
+.dashboard-role .exam-calendar-day.is-today { border-color: #8faee2; }
+.dashboard-role .exam-calendar-day.is-selected { background: #1f3a64; border-color: #1f3a64; color: #fff; }
+.dashboard-role .exam-calendar-day__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #dbe9ff;
+  color: #2357a1;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+.dashboard-role .exam-calendar-day.is-selected .exam-calendar-day__count { background: #fff; color: #1f3a64; }
+.dashboard-role .exam-calendar-detail {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #e2e9f3;
+  border-radius: 14px;
+  background: #f8fafd;
+}
+.dashboard-role .exam-calendar-detail__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+.dashboard-role .exam-calendar-detail__eyebrow {
+  color: #6c7e98;
+  font-size: 0.65rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dashboard-role .exam-calendar-detail h3 { margin: 0.12rem 0 0; color: #1e3a5f; font-size: 1rem; }
+.dashboard-role .exam-calendar-detail__total {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: #e6eefb;
+  color: #36577e;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.dashboard-role .exam-calendar-detail__list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 285px;
+  overflow-y: auto;
+}
+.dashboard-role .exam-calendar-event {
+  padding: 0.75rem;
+  border: 1px solid #e0e7f1;
+  border-radius: 11px;
+  background: #fff;
+}
+.dashboard-role .exam-calendar-event__top,
+.dashboard-role .exam-calendar-event__actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.dashboard-role .exam-calendar-event__top { justify-content: space-between; }
+.dashboard-role .exam-calendar-event__time { color: #527094; font-size: 0.72rem; font-weight: 700; }
+.dashboard-role .exam-calendar-event h4 { margin: 0.45rem 0 0.1rem; color: #1e3a5f; font-size: 0.84rem; line-height: 1.35; }
+.dashboard-role .exam-calendar-event p { margin: 0; color: #687b95; font-size: 0.73rem; }
+.dashboard-role .exam-calendar-event__actions { margin-top: 0.6rem; }
+.dashboard-role .exam-calendar-event__actions .moodle-btn-ghost { padding: 0.32rem 0.65rem; border-radius: 8px; font-size: 0.7rem; }
+.dashboard-role .exam-calendar-detail__empty { padding: 1.5rem 0.4rem; color: #71829b; font-size: 0.82rem; text-align: center; }
+.dashboard-role .exam-calendar-detail__empty p { margin: 0 0 0.8rem; }
+.dashboard-role .exam-calendar-detail__empty button { padding: 0.45rem 0.75rem; border-radius: 9px; font-size: 0.75rem; font-weight: 700; }
+@media (max-width: 900px) {
+  .dashboard-role .exam-calendar-layout { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-role .exam-calendar-detail__list { max-height: 230px; }
+}
+@media (max-width: 540px) {
+  .dashboard-role .exam-calendar-toolbar .agenda-search-wrap { width: 100%; }
+  .dashboard-role .exam-calendar-nav { width: 100%; justify-content: space-between; }
+  .dashboard-role .exam-calendar-nav strong { min-width: 0; }
+  .dashboard-role .exam-calendar-grid { gap: 0.2rem; }
+  .dashboard-role .exam-calendar-day, .dashboard-role .exam-calendar-blank { min-height: 46px; }
+  .dashboard-role .exam-calendar-day { padding: 0.35rem; border-radius: 8px; }
+}
 @media (max-width: 820px) {
   .dashboard-role .dashboard-agenda .agenda-header {
     flex-direction: column;
@@ -3788,8 +3969,7 @@
   .dashboard-welcome__action { width: 100%; }
   .dashboard-role .moodle-filters { align-items: stretch !important; }
   .dashboard-role .moodle-search { min-width: 100%; }
-  .dashboard-role .dashboard-agenda { min-height: max(560px, 72dvh); }
-  .dashboard-role .dashboard-agenda .dashboard-timeline-scroll { min-height: 360px; }
+  .dashboard-role .dashboard-agenda { min-height: 0; }
 }
 @media (max-width: 460px) {
   .dashboard-role .nav-item { flex-direction: column; font-size: 0.61rem; line-height: 1; }

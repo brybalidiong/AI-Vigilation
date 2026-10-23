@@ -101,8 +101,8 @@
         <div class="moodle-card dashboard-agenda">
           <div class="agenda-header">
             <div class="agenda-header__copy">
-              <h2 class="moodle-section-title">Exam timeline</h2>
-              <p class="agenda-header__subtitle">Your upcoming schedules and important dates.</p>
+              <h2 class="moodle-section-title">Exam calendar</h2>
+              <p class="agenda-header__subtitle">Select a date to see its exams.</p>
             </div>
             <button type="button" class="agenda-view-all" @click="goStudentCourses">
               View all
@@ -110,53 +110,72 @@
             </button>
           </div>
 
-          <div class="moodle-filters agenda-filters">
-            <div class="select-wrapper agenda-filter-select">
-              <select v-model="timelineWindowDays" class="moodle-select">
-                <option value="7">Next 7 days</option>
-                <option value="14">Next 14 days</option>
-                <option value="30">Next 30 days</option>
-                <option value="90">Next 90 days</option>
-                <option value="3650">All upcoming</option>
-              </select>
-            </div>
+          <div class="exam-calendar-toolbar">
             <div class="agenda-search-wrap">
               <svg class="agenda-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
               </svg>
-              <input v-model.trim="timelineSearch" type="text" class="moodle-search agenda-search" placeholder="Search exams, subjects..." />
+              <input v-model.trim="timelineSearch" type="search" class="moodle-search agenda-search" aria-label="Search upcoming exams" placeholder="Search upcoming exams" />
             </div>
-            <span class="agenda-order-label">Newest added first</span>
+            <div class="exam-calendar-nav" aria-label="Calendar navigation">
+              <button type="button" class="exam-calendar-nav__arrow" aria-label="Previous month" @click="moveCalendarMonth(-1)">‹</button>
+              <strong>{{ calendarMonthLabel }}</strong>
+              <button type="button" class="exam-calendar-nav__arrow" aria-label="Next month" @click="moveCalendarMonth(1)">›</button>
+              <button type="button" class="exam-calendar-nav__today" @click="selectCalendarToday">Today</button>
+            </div>
           </div>
 
-          <div class="moodle-timeline-list dashboard-timeline-scroll agenda-timeline">
-            <template v-if="examsLoading">
-              <SkeletonLoader type="row" v-for="i in 3" :key="i" />
-            </template>
-            <EmptyState 
-              v-else-if="filteredDueExamTimeline.length === 0" 
-              title="No upcoming exams" 
-              description="You have no open or upcoming exams at the moment. Past due exams appear under Courses." 
-              icon='<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>'
-            />
-            <template v-else>
-              <ExamRow
-                v-for="exam in filteredDueExamTimeline"
-                :key="`${exam.subject_id}-${exam.id}`"
-                :dateIso="examTimelineDisplayAt(exam)"
-                :timeText="formatExamTimelineTime(exam)"
-                :title="formatDisplayTitle(exam.title)"
-                :subtitle="formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`)"
-                :status="getExamStatus(exam)"
-                :statusClass="statusClass(exam)"
-              >
-                <template #actions>
-                  <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
-                  <button v-if="canRetakeExam(exam)" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Retake exam</button>
-                  <button v-if="!exam.is_done" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
-                </template>
-              </ExamRow>
-            </template>
+          <div class="exam-calendar-layout">
+            <div class="exam-calendar-grid" aria-label="Exam dates">
+              <span v-for="weekday in calendarWeekdays" :key="weekday" class="exam-calendar-weekday">{{ weekday }}</span>
+              <template v-for="day in calendarDays" :key="day.key">
+                <span v-if="day.blank" class="exam-calendar-blank" aria-hidden="true"></span>
+                <button
+                  v-else
+                  type="button"
+                  class="exam-calendar-day"
+                  :class="{ 'is-selected': selectedCalendarDay === day.key, 'is-today': todayCalendarKey === day.key, 'has-exams': day.count > 0 }"
+                  :aria-pressed="selectedCalendarDay === day.key"
+                  :aria-label="`${day.date.toLocaleDateString(undefined, { dateStyle: 'full' })}, ${day.count} exam${day.count === 1 ? '' : 's'}`"
+                  @click="selectedCalendarDay = day.key"
+                >
+                  <span>{{ day.day }}</span>
+                  <span v-if="day.count" class="exam-calendar-day__count">{{ day.count }}</span>
+                </button>
+              </template>
+            </div>
+
+            <section class="exam-calendar-detail" aria-live="polite">
+              <div class="exam-calendar-detail__heading">
+                <div>
+                  <span class="exam-calendar-detail__eyebrow">Selected day</span>
+                  <h3>{{ selectedCalendarLabel }}</h3>
+                </div>
+                <span class="exam-calendar-detail__total">{{ selectedCalendarExams.length }} exam{{ selectedCalendarExams.length === 1 ? '' : 's' }}</span>
+              </div>
+              <div v-if="examsLoading" class="exam-calendar-detail__list">
+                <SkeletonLoader type="row" v-for="i in 2" :key="i" />
+              </div>
+              <div v-else-if="selectedCalendarExams.length" class="exam-calendar-detail__list">
+                <article v-for="exam in selectedCalendarExams" :key="`${exam.subject_id}-${exam.id}`" class="exam-calendar-event">
+                  <div class="exam-calendar-event__top">
+                    <span class="exam-calendar-event__time">{{ calendarExamTimeLabel(exam) }}</span>
+                    <span class="timeline-status" :class="statusClass(exam)">{{ getExamStatus(exam) }}</span>
+                  </div>
+                  <h4>{{ formatDisplayTitle(exam.title) }}</h4>
+                  <p>{{ formatDisplayTitle(`${exam.subject_code} ${exam.subject_name}`) }}</p>
+                  <div class="exam-calendar-event__actions">
+                    <button v-if="exam.is_done" type="button" class="moodle-btn-ghost" @click="openResultsModal(exam)">Results</button>
+                    <button v-if="canRetakeExam(exam)" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Retake exam</button>
+                    <button v-if="!exam.is_done" type="button" class="moodle-btn-ghost timeline-btn-primary" @click="openTakeExam(exam)">Take Exam</button>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="exam-calendar-detail__empty">
+                <p>{{ filteredDueExamTimeline.length ? 'No exams on this date.' : 'No upcoming exams found.' }}</p>
+                <button v-if="filteredDueExamTimeline.length" type="button" @click="selectNextCalendarExam">Show next exam</button>
+              </div>
+            </section>
           </div>
         </div>
         </template>
@@ -775,9 +794,11 @@ import { nextPrecheckFaceState } from "@/utils/precheckFace.js";
 import { attachExamWindowMonitor } from "@/utils/examWindowMonitor.js";
 import { hasExtendedDisplay, watchExtendedDisplays } from "@/utils/examDisplayMonitor.js";
 import { captureSharedDisplayImage } from "@/utils/examScreenEvidence.js";
+import { calendarDayKey, calendarMonthDays } from "@/utils/examCalendar.js";
 import {
   canRetakeExam,
   compareExamsNewestFirst,
+  examAnchorTimestamp,
   examTimelineDisplayAt,
   formatExamTimelineTime,
   studentExamOnDashboard,
@@ -2363,8 +2384,11 @@ const fvStep        = ref('verifying'); // 'verifying' | 'success' | 'failed' | 
 const fvAttemptsLeft = ref(2);
 const fvErrorMsg    = ref('');
 const FV_MAX_ATTEMPTS = 3;
-const timelineWindowDays = ref("3650");
 const timelineSearch = ref("");
+const calendarWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const calendarMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+const selectedCalendarDay = ref(calendarDayKey(new Date()));
+const todayCalendarKey = ref(calendarDayKey(new Date()));
 const courseFilter = ref("all");
 const courseSearch = ref("");
 const courseSort = ref("name_asc");
@@ -2392,6 +2416,7 @@ let timeInterval = null;
 
 const updateTime = () => {
   const now = new Date();
+  todayCalendarKey.value = calendarDayKey(now);
   currentTime.value = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   currentDate.value = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 };
@@ -2667,10 +2692,9 @@ function formatDuration(startStr, endStr) {
 
 const filteredDueExamTimeline = computed(() => {
   const now = Date.now();
-  const withinDays = Number(timelineWindowDays.value || 3650);
   const query = timelineSearch.value.toLowerCase();
   let rows = (exams.value || []).filter((exam) => {
-    if (!studentExamOnDashboard(exam, { now, withinDays })) return false;
+    if (!studentExamOnDashboard(exam, { now, withinDays: 3650 })) return false;
     if (!query) return true;
     return (
       String(exam?.title || "").toLowerCase().includes(query) ||
@@ -2679,7 +2703,57 @@ const filteredDueExamTimeline = computed(() => {
     );
   });
 
-  return rows.sort(compareExamsNewestFirst);
+  return rows.sort((a, b) => examAnchorTimestamp(a) - examAnchorTimestamp(b));
+});
+
+const calendarMonthLabel = computed(() => calendarMonth.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }));
+const calendarDays = computed(() => calendarMonthDays(calendarMonth.value, filteredDueExamTimeline.value));
+const selectedCalendarLabel = computed(() => {
+  const date = new Date(`${selectedCalendarDay.value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? 'Select a day' : date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+});
+const selectedCalendarExams = computed(() => filteredDueExamTimeline.value.filter(
+  (exam) => calendarDayKey(examTimelineDisplayAt(exam)) === selectedCalendarDay.value,
+));
+
+function selectCalendarDate(date) {
+  calendarMonth.value = new Date(date.getFullYear(), date.getMonth(), 1);
+  selectedCalendarDay.value = calendarDayKey(date);
+}
+
+function moveCalendarMonth(offset) {
+  const next = new Date(calendarMonth.value.getFullYear(), calendarMonth.value.getMonth() + offset, 1);
+  calendarMonth.value = next;
+  const firstExam = filteredDueExamTimeline.value.find((exam) => {
+    const date = new Date(examTimelineDisplayAt(exam));
+    return date.getFullYear() === next.getFullYear() && date.getMonth() === next.getMonth();
+  });
+  selectedCalendarDay.value = firstExam ? calendarDayKey(examTimelineDisplayAt(firstExam)) : calendarDayKey(next);
+}
+
+function selectCalendarToday() {
+  selectCalendarDate(new Date());
+}
+
+function selectNextCalendarExam() {
+  const selectedAt = new Date(`${selectedCalendarDay.value}T00:00:00`).getTime();
+  const next = filteredDueExamTimeline.value.find((exam) => examAnchorTimestamp(exam) >= selectedAt)
+    || filteredDueExamTimeline.value[0];
+  if (next) selectCalendarDate(new Date(examTimelineDisplayAt(next)));
+}
+
+function calendarExamTimeLabel(exam) {
+  const prefix = getExamStatus(exam) === 'Pending' ? 'Opens' : exam.due_at ? 'Due' : 'Available';
+  return `${prefix} ${formatExamTimelineTime(exam)}`;
+}
+
+let calendarInitiallyFocused = false;
+watch([filteredDueExamTimeline, examsLoading], ([rows, loading]) => {
+  if (calendarInitiallyFocused || loading || !rows.length) return;
+  const nextDate = new Date(examTimelineDisplayAt(rows[0]));
+  if (Number.isNaN(nextDate.getTime())) return;
+  selectCalendarDate(nextDate);
+  calendarInitiallyFocused = true;
 });
 
 function getExamStatus(exam) {
