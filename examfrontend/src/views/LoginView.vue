@@ -39,13 +39,7 @@
               <p>Sign in with your DNSC account.</p>
             </div>
 
-            <div class="domain-notice">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-              </svg>
-              <span>Restricted to <strong>@{{ schoolDomain }}</strong> accounts</span>
-            </div>
+            <p class="domain-notice">Restricted to <strong>@{{ schoolDomain }}</strong> accounts</p>
 
             <button class="btn-google" @click="loginWithGoogle" :disabled="loading" id="google-login-btn">
               <svg class="google-icon" viewBox="0 0 24 24">
@@ -72,9 +66,6 @@
               {{ error }}
             </p>
             
-            <div class="login-footer-links">
-              <span class="login-note">Students & Instructors use Google Sign-In</span>
-            </div>
           </div>
 
           <!-- Back Card (Admin) -->
@@ -416,65 +407,67 @@ async function loginAdmin() {
 
 .login-card-wrapper {
   width: 100%;
-  max-width: 440px;
+  max-width: 460px;
 }
 
 .login-front, .login-back {
   background: #ffffff;
-  border-radius: 24px;
-  padding: 2.5rem 3rem;
-  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.05);
+  border-radius: 20px;
+  padding: 0;
+  box-shadow: 0 24px 55px rgba(22, 44, 81, 0.13), 0 3px 12px rgba(22, 44, 81, 0.045);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  border: 1px solid #f1f5f9;
+  gap: 0;
+  overflow: hidden;
 }
 .login-card-brand {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.65rem;
-  margin-bottom: 1.25rem;
-  color: #1D3461;
-  font-size: 1rem;
-  font-weight: 800;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 1.2rem;
+  color: #c8d6ed;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .login-card-brand__mark {
   display: inline-grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: #1D3461;
-  color: #fff;
-  font-size: 0.82rem;
+  width: 33px;
+  height: 33px;
+  border-radius: 9px;
+  background: #fff;
+  color: #1D3461;
+  font-size: 0.78rem;
   letter-spacing: -0.04em;
 }
 
-.login-card-header { text-align: center; }
+.login-card-header {
+  padding: 1.85rem 2.35rem 1.9rem;
+  background: #1D3461;
+  text-align: left;
+}
 .login-card-header h2 {
   font-family: 'Poppins', sans-serif;
-  font-size: 1.7rem;
+  font-size: 1.75rem;
   font-weight: 800;
-  color: #1D3461;
-  margin-bottom: 0.4rem;
+  color: #fff;
+  margin: 0 0 0.35rem;
   letter-spacing: -0.02em;
 }
 .login-card-header p {
-  font-size: 0.95rem;
-  color: #64748b;
+  margin: 0;
+  font-size: 0.9rem;
+  color: #d0dbed;
 }
 
 .domain-notice {
-  display: flex;
-  justify-content: center;
-  border: 0;
-  padding: 0;
-  background: transparent;
+  margin: 0.65rem 2.35rem 0;
   font-size: 0.78rem;
   color: #64748b;
 }
-.domain-notice svg { display: none; }
 .domain-notice strong { font-weight: 600; color: #475569; }
 .login-front .btn-google { order: 1; }
 .login-front .domain-notice { order: 2; }
@@ -486,23 +479,25 @@ async function loginAdmin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
-  width: 100%;
-  padding: 1rem 1.5rem;
+  gap: 0.8rem;
+  width: auto;
+  min-height: 54px;
+  margin: 1.65rem 2.35rem 0;
+  padding: 0.8rem 1.25rem;
   background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
+  border: 1px solid #d5deea;
+  border-radius: 10px;
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.96rem;
   font-weight: 600;
-  color: #1e293b;
+  color: #1D3461;
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 .btn-google:hover:not(:disabled) {
-  background: #f8fafc;
-  border-color: #94a3b8;
+  background: #f7f9fc;
+  border-color: #aebdd3;
+  box-shadow: 0 5px 14px rgba(29, 52, 97, 0.08);
 }
 .btn-google:disabled { opacity: 0.6; cursor: not-allowed; }
 .google-icon { width: 22px; height: 22px; flex-shrink: 0; }
@@ -510,9 +505,10 @@ async function loginAdmin() {
 .divider {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  color: #94a3b8;
-  font-size: 0.85rem;
+  gap: 0.8rem;
+  margin: 1.35rem 2.35rem 0;
+  color: #8b9ab0;
+  font-size: 0.78rem;
   font-weight: 500;
 }
 .divider::before, .divider::after {
@@ -522,31 +518,15 @@ async function loginAdmin() {
   background: #e2e8f0;
 }
 
-.btn-admin {
-  width: 100%;
-  padding: 1rem 1.5rem;
-  background: #1D3461;
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-admin:hover {
-  background: #162a4f;
-  transform: translateY(-1px);
-}
 .login-text-action {
   align-self: center;
-  padding: 0.35rem 0.5rem;
+  margin: 0.8rem auto 1.7rem;
+  padding: 0.45rem 0.7rem;
   border: 0;
   background: transparent;
   color: #1D3461;
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -564,14 +544,7 @@ async function loginAdmin() {
   font-size: 0.9rem;
   font-weight: 500;
   color: #dc2626;
-}
-
-.login-footer-links {
-  display: none;
-}
-.login-note {
-  font-size: 0.85rem;
-  color: #94a3b8;
+  margin: 0 2.35rem 1.5rem;
 }
 
 /* Footer Features Bar */
@@ -618,22 +591,23 @@ async function loginAdmin() {
 }
 
 /* Admin Form Styles */
-.login-form { display: flex; flex-direction: column; gap: 1.25rem; }
-.field-group { display: flex; flex-direction: column; gap: 0.5rem; }
-.field-group label { font-family: 'Poppins', sans-serif; font-size: 0.85rem; font-weight: 700; color: #1e293b; }
+.login-form { display: flex; flex-direction: column; gap: 1rem; margin: 1.6rem 2.35rem 0; }
+.field-group { display: flex; flex-direction: column; gap: 0.45rem; }
+.field-group label { font-family: 'Poppins', sans-serif; font-size: 0.82rem; font-weight: 700; color: #334663; }
 
 .input-wrap { position: relative; }
 .input-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; }
 
 .input-wrap input {
   width: 100%;
-  padding: 0.9rem 1.25rem 0.9rem 2.8rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
+  min-height: 49px;
+  padding: 0.8rem 4rem 0.8rem 2.8rem;
+  border: 1px solid #d5deea;
+  border-radius: 10px;
   font-family: inherit;
   font-size: 0.95rem;
   color: #1e293b;
-  background: #f8fafc;
+  background: #fbfcfe;
   outline: none;
   transition: all 0.2s;
   box-sizing: border-box;
@@ -646,24 +620,32 @@ async function loginAdmin() {
 }
 
 .toggle-btn {
-  position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
-  background: #f1f5f9; border: 1px solid #e2e8f0; color: #64748b;
-  font-weight: 600; border-radius: 8px; padding: 0.3rem 0.75rem;
+  position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%);
+  background: transparent; border: 0; color: #526784;
+  font-weight: 700; border-radius: 6px; padding: 0.4rem 0.65rem;
   font-size: 0.75rem; cursor: pointer; transition: all 0.2s; font-family: inherit;
 }
-.toggle-btn:hover { background: #e2e8f0; color: #1e293b; }
+.toggle-btn:hover { background: #edf2f8; color: #1D3461; }
 
 .btn-primary {
-  width: 100%; padding: 1rem;
+  width: 100%; min-height: 50px; padding: 0.85rem 1rem;
   background: #1D3461; color: #fff;
-  border: none; border-radius: 12px;
+  border: none; border-radius: 10px;
   font-family: inherit; font-size: 0.95rem; font-weight: 600;
-  cursor: pointer; transition: all 0.2s; margin-top: 0.5rem;
+  cursor: pointer; transition: background 0.2s, box-shadow 0.2s; margin-top: 0.45rem;
 }
 .btn-primary:hover:not(:disabled) {
   background: #162a4f;
-  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(29, 52, 97, 0.16);
 }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+@media (max-width: 540px) {
+  .login-card-header { padding: 1.5rem 1.4rem; }
+  .btn-google { margin: 1.4rem 1.4rem 0; }
+  .domain-notice { margin-left: 1.4rem; margin-right: 1.4rem; }
+  .divider { margin-left: 1.4rem; margin-right: 1.4rem; }
+  .login-form { margin-left: 1.4rem; margin-right: 1.4rem; }
+  .error-msg { margin-left: 1.4rem; margin-right: 1.4rem; }
+}
 </style>
 
