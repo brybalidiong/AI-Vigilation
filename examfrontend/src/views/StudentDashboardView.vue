@@ -139,7 +139,7 @@
                   :aria-label="`${day.date.toLocaleDateString(undefined, { dateStyle: 'full' })}, ${day.count} exam${day.count === 1 ? '' : 's'}`"
                   @click="selectedCalendarDay = day.key"
                 >
-                  <span>{{ day.day }}</span>
+                  <span class="exam-calendar-day__number">{{ day.day }}</span>
                   <span v-if="day.count" class="exam-calendar-day__count">{{ day.count }}</span>
                 </button>
               </template>
