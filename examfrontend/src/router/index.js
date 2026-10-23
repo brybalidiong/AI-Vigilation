@@ -4,13 +4,12 @@ import { auth } from "@/firebase";
 
 const LoginView = () => import("@/views/LoginView.vue");
 const StudentDashboardView = () => import("@/views/StudentDashboardView.vue");
-const AdminLoginView = () => import("@/views/AdminLoginView.vue");
 const AdminDashboardView = () => import("@/views/AdminDashboardView.vue");
 const InstructorDashboardView = () => import("@/views/InstructorDashboardView.vue");
 
 const routes = [
   { path: "/", component: LoginView },
-  { path: "/admin/login", component: AdminLoginView },
+  { path: "/admin/login", redirect: "/?login=admin" },
   {
     path: "/admin/dashboard",
     component: AdminDashboardView,

@@ -28,14 +28,15 @@
       </div>
 
       <!-- Right side: Login Card -->
-      <div class="login-form-panel perspective-container">
-        <div class="login-card-wrapper" :class="{ 'is-flipped': showAdminLogin }">
+      <div class="login-form-panel">
+        <div class="login-card-wrapper">
           
           <!-- Front Card (Student / Instructor) -->
-          <div class="login-card login-front">
+          <div v-if="!showAdminLogin" class="login-card login-front">
             <div class="login-card-header">
-              <h2>Welcome Back!</h2>
-              <p>Sign in to continue your learning journey.</p>
+              <div class="login-card-brand"><span class="login-card-brand__mark">AI</span><span>AI-Vigilation</span></div>
+              <h2>Welcome back</h2>
+              <p>Sign in with your DNSC account.</p>
             </div>
 
             <div class="domain-notice">
@@ -53,15 +54,15 @@
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-              <span>{{ loading ? 'Signing in...' : 'Continue with Google' }}</span>
+              <span>{{ loading ? 'Signing in...' : 'Continue with DNSC Google' }}</span>
             </button>
 
             <div class="divider">
               <span>or</span>
             </div>
 
-            <button class="btn-admin" @click="showAdminLogin = true" id="admin-login-btn">
-              Admin Login &rarr;
+            <button type="button" class="login-text-action" @click="openAdminLogin" id="admin-login-btn">
+              Admin account
             </button>
 
             <p v-if="error" class="error-msg">
@@ -77,10 +78,11 @@
           </div>
 
           <!-- Back Card (Admin) -->
-          <div class="login-card login-back">
+          <div v-else class="login-card login-back">
             <div class="login-card-header">
-              <h2>Admin Sign In</h2>
-              <p>Restricted to system administrators only</p>
+              <div class="login-card-brand"><span class="login-card-brand__mark">AI</span><span>AI-Vigilation</span></div>
+              <h2>Admin account</h2>
+              <p>Sign in with your administrator credentials.</p>
             </div>
 
             <form class="login-form" @submit.prevent="loginAdmin" id="admin-login-form">
@@ -115,7 +117,7 @@
               </div>
 
               <button type="submit" class="btn-primary" :disabled="adminLoading" id="admin-submit-btn">
-                {{ adminLoading ? 'Signing in...' : 'Sign in' }}
+                {{ adminLoading ? 'Signing in...' : 'Log in' }}
               </button>
             </form>
 
@@ -126,10 +128,8 @@
               {{ adminError }}
             </p>
 
-            <div class="divider"><span>or</span></div>
-
-            <button type="button" class="btn-google" @click="showAdminLogin = false" id="back-to-login-btn">
-              &larr; Return to Main Login
+            <button type="button" class="login-text-action" @click="returnToSchoolLogin" id="back-to-login-btn">
+              Back to DNSC account sign in
             </button>
           </div>
         </div>
@@ -167,14 +167,15 @@
 import { ref } from "vue";
 import { signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "@/firebase";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import axios from "axios";
 
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const error = ref("");
 
-const showAdminLogin = ref(false);
+const showAdminLogin = ref(route.query.login === "admin");
 const adminUsername = ref("");
 const adminPassword = ref("");
 const showAdminPassword = ref(false);
@@ -183,6 +184,19 @@ const adminError = ref("");
 
 const schoolDomain = import.meta.env.VITE_SCHOOL_DOMAIN || "dnsc.edu.ph";
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+function openAdminLogin() {
+  error.value = "";
+  showAdminLogin.value = true;
+  router.replace({ path: "/", query: { login: "admin" } });
+}
+
+function returnToSchoolLogin() {
+  adminError.value = "";
+  adminPassword.value = "";
+  showAdminLogin.value = false;
+  router.replace({ path: "/" });
+}
 
 async function loginWithGoogle() {
   loading.value = true;
@@ -393,44 +407,51 @@ async function loginAdmin() {
   max-width: 95%;
 }
 
-/* Right side Card */
-/* Perspective wrapper for flip animation */
-.perspective-container {
+/* Sign-in card */
+.login-form-panel {
   flex: 1;
   display: flex;
   justify-content: flex-end;
-  perspective: 1200px;
 }
 
 .login-card-wrapper {
-  position: relative;
   width: 100%;
   max-width: 440px;
-  transform-style: preserve-3d;
-  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  display: grid;
-  grid-template-columns: 1fr;
-}
-.login-card-wrapper.is-flipped {
-  transform: rotateY(180deg);
 }
 
 .login-front, .login-back {
-  grid-area: 1 / 1;
-  backface-visibility: hidden;
   background: #ffffff;
   border-radius: 24px;
   padding: 2.5rem 3rem;
   box-shadow: 0 15px 35px rgba(15, 23, 42, 0.05);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
   border: 1px solid #f1f5f9;
 }
-.login-back {
-  transform: rotateY(180deg);
+.login-card-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+  color: #1D3461;
+  font-size: 1rem;
+  font-weight: 800;
+}
+.login-card-brand__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #1D3461;
+  color: #fff;
+  font-size: 0.82rem;
+  letter-spacing: -0.04em;
 }
 
+.login-card-header { text-align: center; }
 .login-card-header h2 {
   font-family: 'Poppins', sans-serif;
   font-size: 1.7rem;
@@ -446,16 +467,20 @@ async function loginAdmin() {
 
 .domain-notice {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  border-radius: 12px;
-  padding: 0.85rem 1.25rem;
-  font-size: 0.9rem;
-  color: #065f46;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 0.78rem;
+  color: #64748b;
 }
-.domain-notice strong { font-weight: 600; color: #064e3b; }
+.domain-notice svg { display: none; }
+.domain-notice strong { font-weight: 600; color: #475569; }
+.login-front .btn-google { order: 1; }
+.login-front .domain-notice { order: 2; }
+.login-front .divider { order: 3; }
+.login-front .login-text-action { order: 4; }
+.login-front .error-msg { order: 5; }
 
 .btn-google {
   display: flex;
@@ -514,6 +539,19 @@ async function loginAdmin() {
   background: #162a4f;
   transform: translateY(-1px);
 }
+.login-text-action {
+  align-self: center;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: #1D3461;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.login-text-action:hover { text-decoration: underline; }
+.login-text-action:focus-visible { outline: 2px solid #1D3461; outline-offset: 3px; border-radius: 4px; }
 
 .error-msg {
   display: flex;
@@ -529,8 +567,7 @@ async function loginAdmin() {
 }
 
 .login-footer-links {
-  text-align: center;
-  margin-top: 0.5rem;
+  display: none;
 }
 .login-note {
   font-size: 0.85rem;
