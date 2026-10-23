@@ -54,7 +54,7 @@
             <h1 v-if="activeTab === 'overview'">Dashboard</h1>
             <h1 v-if="activeTab === 'instructors'">Instructors</h1>
             <h1 v-if="activeTab === 'students'">Students</h1>
-            <p class="header-sub" v-if="activeTab === 'overview'">Your campus administration at a glance.</p>
+            <p class="header-sub" v-if="activeTab === 'overview'">Exam integrity and campus activity at a glance.</p>
             <p class="header-sub" v-if="activeTab === 'instructors'">Register instructors and manage access without losing their course records.</p>
             <p class="header-sub" v-if="activeTab === 'students'">Manage enrollment and review exam identity photos.</p>
           </div>
@@ -72,8 +72,8 @@
           <div class="dashboard-welcome">
             <div class="dashboard-welcome__copy">
               <span class="dashboard-welcome__eyebrow">Administration overview</span>
-              <h2>Keep your campus ready for every exam.</h2>
-              <p>Manage instructor and student access, assign institutes, and track student ID verification in one place.</p>
+              <h2>See how exams are going across campus.</h2>
+              <p>Review recorded violations, prohibited devices, and integrity by institute alongside your student and instructor roster.</p>
             </div>
             <button type="button" class="dashboard-welcome__action" @click="pendingFaceCount ? openPendingReviews() : selectAdminSection('students')">
               {{ pendingFaceCount ? `View ${pendingFaceCount} unverified student${pendingFaceCount === 1 ? '' : 's'}` : 'Manage students' }}
@@ -125,6 +125,60 @@
               </div>
             </div>
           </div>
+
+          <section class="analytics-section" aria-labelledby="analytics-heading">
+            <div class="analytics-heading">
+              <div>
+                <span class="admin-section-kicker">Exam oversight</span>
+                <h2 id="analytics-heading">Integrity analytics</h2>
+                <p>All recorded exam attempts. Institute averages use completed attempts with integrity reports.</p>
+              </div>
+              <button type="button" class="analytics-refresh" :disabled="loadingAnalytics" @click="fetchAnalytics">{{ loadingAnalytics ? 'Refreshing…' : 'Refresh data' }}</button>
+            </div>
+            <div v-if="analyticsError" class="admin-inline-error" role="alert">
+              <span>{{ analyticsError }}</span>
+              <button type="button" @click="fetchAnalytics">Retry</button>
+            </div>
+            <div v-if="loadingAnalytics && !analytics" class="analytics-loading" role="status">Loading exam analytics…</div>
+            <template v-else-if="analytics">
+              <div class="analytics-metrics">
+                <div class="analytics-metric"><span>Completed attempts</span><strong>{{ analytics.summary.completed_attempts }}</strong><small>Integrity reports generated</small></div>
+                <div class="analytics-metric"><span>Average integrity</span><strong>{{ formatIntegrity(analytics.summary.average_integrity) }}</strong><small>Across completed attempts</small></div>
+                <div class="analytics-metric"><span>Flagged attempts</span><strong>{{ analytics.summary.flagged_attempts }}</strong><small>Integrity below 100%</small></div>
+                <div class="analytics-metric"><span>Auto-terminated</span><strong>{{ analytics.summary.terminated_attempts }}</strong><small>Recorded in integrity reports</small></div>
+              </div>
+              <div class="analytics-grid">
+                <article class="analytics-panel analytics-panel--violations">
+                  <div class="analytics-panel__heading"><div><h3>Most recorded violations</h3><p>{{ analytics.summary.recorded_violations }} classified events</p></div><span class="analytics-panel__index">01</span></div>
+                  <div v-if="topViolations.length" class="analytics-bars">
+                    <div v-for="(item, index) in topViolations" :key="item.key" class="analytics-bar-row">
+                      <span class="analytics-bar-rank">{{ String(index + 1).padStart(2, '0') }}</span>
+                      <div class="analytics-bar-main"><div class="analytics-bar-title"><span>{{ item.label }}</span><strong>{{ item.count }}</strong></div><div class="analytics-bar-track"><span :style="{ width: barWidth(item.count, topViolations[0].count) }"></span></div></div>
+                    </div>
+                  </div>
+                  <p v-else class="analytics-empty">No violations have been recorded yet.</p>
+                </article>
+                <article class="analytics-panel">
+                  <div class="analytics-panel__heading"><div><h3>Prohibited devices</h3><p>Confirmed gadget detections by type</p></div><span class="analytics-panel__index">02</span></div>
+                  <div v-if="analytics.devices.length" class="device-list">
+                    <div v-for="device in analytics.devices" :key="device.label" class="device-row"><span class="device-mark" aria-hidden="true">▣</span><span>{{ device.label }}</span><strong>{{ device.count }}</strong></div>
+                  </div>
+                  <p v-else class="analytics-empty">No prohibited devices have been recorded yet.</p>
+                </article>
+              </div>
+              <article class="analytics-panel institute-panel">
+                <div class="analytics-panel__heading"><div><h3>Integrity by institute</h3><p>Average score per completed attempt</p></div><span class="analytics-panel__index">03</span></div>
+                <div v-if="analytics.lowest_institute" class="institute-insight"><span>Lowest average</span><strong>{{ analytics.lowest_institute.code }} · {{ formatIntegrity(analytics.lowest_institute.average_integrity) }}</strong><small>{{ analytics.lowest_institute.attempts }} {{ analytics.lowest_institute.attempts === 1 ? 'attempt' : 'attempts' }}</small></div>
+                <div class="institute-list">
+                  <div v-for="item in analytics.institutes" :key="item.code" class="institute-row">
+                    <div class="institute-identity"><strong>{{ item.code }}</strong><span>{{ item.name }}</span></div>
+                    <div class="institute-measure"><div class="analytics-bar-track"><span :style="{ width: barWidth(item.average_integrity || 0, 100) }"></span></div><small>{{ item.attempts }} {{ item.attempts === 1 ? 'attempt' : 'attempts' }}</small></div>
+                    <strong class="institute-score">{{ formatIntegrity(item.average_integrity) }}</strong>
+                  </div>
+                </div>
+              </article>
+            </template>
+          </section>
 
           <div class="overview-actions">
             <div class="overview-actions-heading">
@@ -494,6 +548,12 @@ const actionSuccess = ref("");
 const actionSuccessTitle = ref("");
 const actionError = ref("");
 const loadError = ref("");
+const analytics = ref(null);
+const loadingAnalytics = ref(false);
+const analyticsError = ref('');
+const topViolations = computed(() => (analytics.value?.violations || []).filter((item) => item.count > 0).slice(0, 6));
+const formatIntegrity = (value) => value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
+const barWidth = (value, maximum) => `${maximum ? Math.max(0, Math.min(100, value / maximum * 100)) : 0}%`;
 const reviewStudent = ref(null);
 const studentStatusFilter = ref('all');
 const studentInstituteFilter = ref('all');
@@ -630,6 +690,19 @@ async function fetchStudents() {
     loadError.value = e?.response?.data?.error || 'Could not load students.';
   } finally {
     loadingStudents.value = false;
+  }
+}
+
+async function fetchAnalytics() {
+  loadingAnalytics.value = true;
+  analyticsError.value = '';
+  try {
+    const { data } = await axios.get(`${backendBaseUrl}/api/admin/analytics/`, { headers: getHeaders() });
+    analytics.value = data;
+  } catch (e) {
+    analyticsError.value = e?.response?.data?.error || 'Could not load exam analytics.';
+  } finally {
+    loadingAnalytics.value = false;
   }
 }
 
@@ -878,6 +951,7 @@ function logout() {
 onMounted(() => {
   fetchInstructors();
   fetchStudents();
+  fetchAnalytics();
 });
 </script>
 
@@ -900,6 +974,52 @@ onMounted(() => {
   margin-right: auto;
 }
 .admin-overview { display: grid; gap: 1.1rem; }
+.analytics-section { display: grid; gap: 1rem; }
+.analytics-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding: .4rem .1rem 0; }
+.analytics-heading h2 { margin: .15rem 0; color: #172b4a; font: 750 1.45rem 'Poppins', sans-serif; letter-spacing: -.035em; }
+.analytics-heading p { margin: 0; color: #68778d; font-size: .84rem; }
+.analytics-refresh { flex: none; border: 1px solid #cbd7e6; border-radius: 9px; background: #fff; color: #1d3461; padding: .65rem .9rem; font: 700 .78rem 'Poppins', sans-serif; cursor: pointer; }
+.analytics-refresh:hover:not(:disabled) { background: #f4f7fb; }
+.analytics-refresh:disabled { opacity: .55; cursor: wait; }
+.analytics-refresh:focus-visible { outline: 3px solid #9db4d8; outline-offset: 2px; }
+.analytics-loading { padding: 3rem; border-radius: 16px; background: #fff; color: #63738b; text-align: center; }
+.analytics-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem; }
+.analytics-metric { display: grid; gap: .2rem; padding: 1.05rem 1.2rem; border: 1px solid #dfe6ef; border-radius: 15px; background: #fff; box-shadow: 0 7px 22px rgba(15, 23, 42, .04); }
+.analytics-metric span { color: #617187; font-size: .75rem; font-weight: 700; }
+.analytics-metric strong { color: #1b3157; font: 750 1.7rem 'Poppins', sans-serif; letter-spacing: -.045em; line-height: 1.2; }
+.analytics-metric small { color: #8a98aa; font-size: .69rem; }
+.analytics-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 1rem; }
+.analytics-panel { min-width: 0; padding: 1.35rem 1.5rem; border: 1px solid #dfe6ef; border-radius: 18px; background: #fff; box-shadow: 0 10px 30px rgba(15, 23, 42, .045); }
+.analytics-panel__heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.35rem; }
+.analytics-panel__heading h3 { margin: 0 0 .15rem; color: #192b48; font: 750 1rem 'Poppins', sans-serif; }
+.analytics-panel__heading p { margin: 0; color: #77869a; font-size: .76rem; }
+.analytics-panel__index { color: #a3afbf; font: 700 .72rem 'Poppins', sans-serif; }
+.analytics-bars { display: grid; gap: 1rem; }
+.analytics-bar-row { display: flex; align-items: center; gap: .85rem; }
+.analytics-bar-rank { flex: none; color: #9aa9bb; font-size: .74rem; font-weight: 750; }
+.analytics-bar-main { flex: 1; min-width: 0; }
+.analytics-bar-title { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .42rem; color: #32445e; font-size: .78rem; }
+.analytics-bar-title strong { color: #1d3461; }
+.analytics-bar-track { width: 100%; height: 7px; overflow: hidden; border-radius: 999px; background: #edf1f6; }
+.analytics-bar-track span { display: block; height: 100%; border-radius: inherit; background: #6f88ac; }
+.analytics-empty { margin: 0; padding: 2rem .5rem; color: #8492a6; font-size: .84rem; text-align: center; }
+.device-list { display: grid; }
+.device-row { display: flex; align-items: center; gap: .75rem; padding: .85rem 0; border-top: 1px solid #edf0f5; color: #374a64; font-size: .84rem; }
+.device-row:first-child { border-top: 0; padding-top: 0; }
+.device-row strong { margin-left: auto; color: #1d3461; font-size: .94rem; }
+.device-mark { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; background: #edf2f8; color: #45678f; font-size: .95rem; }
+.institute-panel { display: grid; gap: .2rem; }
+.institute-insight { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .7rem; padding: .85rem 1rem; margin-bottom: .65rem; border-radius: 10px; background: #f3f6fa; color: #62738c; font-size: .76rem; }
+.institute-insight strong { color: #1d3461; font-size: .85rem; }
+.institute-insight small { margin-left: auto; font-size: .72rem; }
+.institute-list { display: grid; }
+.institute-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(90px, 1fr) 4.4rem; align-items: center; gap: 1rem; padding: .75rem 0; border-top: 1px solid #edf0f5; }
+.institute-identity { display: flex; align-items: baseline; gap: .65rem; min-width: 0; }
+.institute-identity strong { flex: none; color: #1b3157; font-size: .8rem; }
+.institute-identity span { overflow: hidden; color: #75849a; font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
+.institute-measure { display: grid; gap: .25rem; }
+.institute-measure small { color: #8b98a9; font-size: .67rem; }
+.institute-score { color: #1d3461; font-size: .85rem; text-align: right; }
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -924,9 +1044,10 @@ onMounted(() => {
 .stat-card--link:focus-visible { outline: 3px solid rgba(29, 52, 97, .3); outline-offset: 2px; }
 .stat-card--attention { border-color: #f4c56d; background: #fffbf2; }
 .domain-val {
-  font-size: clamp(.95rem, 1.5vw, 1.2rem);
+  max-width: 100%;
+  font-size: clamp(.85rem, 1.2vw, 1.05rem);
   letter-spacing: -.035em;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 #stat-domain { flex-direction: column; align-items: flex-start; gap: .65rem; }
 #stat-domain .stat-icon { width: 40px; height: 40px; }
@@ -1014,10 +1135,19 @@ onMounted(() => {
 .admin-clear-filters:hover { text-decoration: underline; }
 @media (max-width: 1100px) {
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analytics-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analytics-grid { grid-template-columns: 1fr; }
   .action-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
   .stats-grid { grid-template-columns: 1fr; }
+  .analytics-heading { align-items: start; flex-direction: column; }
+  .analytics-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analytics-panel { padding: 1.1rem; }
+  .institute-row { grid-template-columns: minmax(0, 1fr) 4rem; gap: .5rem; }
+  .institute-measure { grid-column: 1 / -1; grid-row: 2; }
+  .institute-score { grid-column: 2; grid-row: 1; }
+  .institute-identity span { display: none; }
   .overview-actions { padding: 1.2rem; }
 }
 .admin-inline-error { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: .85rem; }

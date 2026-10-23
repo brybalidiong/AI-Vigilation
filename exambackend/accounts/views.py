@@ -672,6 +672,100 @@ def _valid_institute(value):
     return isinstance(value, str) and value in dict(UserProfile.INSTITUTE_CHOICES)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_analytics(request):
+    """Campus-wide exam analytics from recorded attempts and proctoring events."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    institute_names = dict(UserProfile.INSTITUTE_CHOICES)
+    institute_by_email = {
+        email.lower(): institute
+        for email, institute in UserProfile.objects.filter(role='student').values_list('user__email', 'institute')
+        if email
+    }
+    reports = ExamIntegrityReport.objects.select_related('submission').all()
+    institute_scores = {code: [] for code in institute_names}
+    score_total = Decimal('0')
+    flagged_attempts = 0
+    terminated_attempts = 0
+    report_count = 0
+    for report in reports.iterator():
+        report_count += 1
+        score_total += report.integrity_score
+        if report.integrity_score < 100:
+            flagged_attempts += 1
+        if (report.summary or {}).get('terminated'):
+            terminated_attempts += 1
+        institute = institute_by_email.get(report.submission.student_email.lower())
+        if institute in institute_scores:
+            institute_scores[institute].append(report.integrity_score)
+
+    institute_rows = [
+        {
+            'code': code,
+            'name': name,
+            'average_integrity': round(float(sum(institute_scores[code]) / len(institute_scores[code])), 1)
+                if institute_scores[code] else None,
+            'attempts': len(institute_scores[code]),
+        }
+        for code, name in institute_names.items()
+    ]
+    scored_institutes = [row for row in institute_rows if row['attempts']]
+    lowest_institute = min(scored_institutes, key=lambda row: row['average_integrity']) if scored_institutes else None
+
+    violation_types = {
+        key: label for key, label in ExamProctoringEvent.EVENT_TYPES
+        if key in PROCTORING_EVENT_PENALTIES and key not in {
+            ExamProctoringEvent.EVENT_WINDOW_BLUR,
+            ExamProctoringEvent.EVENT_EXAM_TERMINATED,
+        }
+    }
+    violation_counts = dict(
+        ExamProctoringEvent.objects.filter(event_type__in=violation_types)
+        .values('event_type').annotate(total=Count('id'))
+        .values_list('event_type', 'total')
+    )
+    violations = sorted(
+        ({'key': key, 'label': label, 'count': violation_counts.get(key, 0)}
+         for key, label in violation_types.items()),
+        key=lambda row: (-row['count'], row['label']),
+    )
+
+    device_counts = {}
+    gadget_events = ExamProctoringEvent.objects.filter(
+        event_type=ExamProctoringEvent.EVENT_GADGET_DETECTED,
+    ).values_list('metadata', flat=True)
+    for metadata in gadget_events.iterator():
+        detections = metadata.get('detections', []) if isinstance(metadata, dict) else []
+        labels = {
+            item['label'].strip().lower()
+            for item in detections
+            if isinstance(item, dict) and isinstance(item.get('label'), str) and item['label'].strip()
+        } if isinstance(detections, list) else set()
+        for label in labels or {'Unspecified device'}:
+            device_counts[label] = device_counts.get(label, 0) + 1
+    devices = [
+        {'label': label.capitalize(), 'count': count}
+        for label, count in sorted(device_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+    return Response({
+        'summary': {
+            'completed_attempts': report_count,
+            'average_integrity': round(float(score_total / report_count), 1) if report_count else None,
+            'flagged_attempts': flagged_attempts,
+            'terminated_attempts': terminated_attempts,
+            'recorded_violations': sum(violation_counts.values()),
+        },
+        'violations': violations,
+        'devices': devices,
+        'institutes': institute_rows,
+        'lowest_institute': lowest_institute,
+    })
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def admin_instructors(request):
