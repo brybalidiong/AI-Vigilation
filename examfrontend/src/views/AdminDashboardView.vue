@@ -106,22 +106,20 @@
                 <h2 v-else class="stat-value">{{ enrolledStudentCount }}</h2>
               </div>
             </button>
-            <button type="button" class="stat-card stat-card--link" :class="{ 'stat-card--attention': pendingFaceCount > 0 }" id="stat-review" :aria-label="`View ${pendingFaceCount} unverified student IDs`" @click="openPendingReviews">
-              <div class="stat-icon review-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6 19c.8-2.8 3-4 6-4s5.2 1.2 6 4"/></svg>
+            <div class="stat-card" id="stat-attempts">
+              <div class="stat-icon exam-icon">
+                <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
               </div>
-              <div class="stat-body"><p class="stat-label">Student IDs Needed</p><SkeletonLoader v-if="loadingStudents" type="text" width="4rem" height="2rem" /><h2 v-else class="stat-value">{{ pendingFaceCount }}</h2></div>
-            </button>
-            <div class="stat-card" id="stat-domain">
-              <div class="stat-icon domain-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"/>
-                </svg>
+              <div class="stat-body"><p class="stat-label">Completed attempts</p><SkeletonLoader v-if="loadingAnalytics && !analytics" type="text" width="4rem" height="2rem" /><h2 v-else class="stat-value">{{ analytics?.summary?.completed_attempts ?? '—' }}</h2></div>
+            </div>
+            <div class="stat-card" id="stat-integrity">
+              <div class="stat-icon integrity-icon">
+                <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 3 7v5c0 5 3.7 8.4 9 9 5.3-.6 9-4 9-9V7l-9-4Z"/><path d="m8.5 12 2.3 2.3 4.7-4.7"/></svg>
               </div>
               <div class="stat-body">
-                <p class="stat-label">Allowed Domain</p>
-                <h2 class="stat-value domain-val">@{{ schoolDomain }}</h2>
+                <p class="stat-label">Average integrity</p>
+                <SkeletonLoader v-if="loadingAnalytics && !analytics" type="text" width="4rem" height="2rem" />
+                <h2 v-else class="stat-value">{{ formatIntegrity(analytics?.summary?.average_integrity) }}</h2>
               </div>
             </div>
           </div>
@@ -142,8 +140,8 @@
             <div v-if="loadingAnalytics && !analytics" class="analytics-loading" role="status">Loading exam analytics…</div>
             <template v-else-if="analytics">
               <div class="analytics-metrics">
-                <div class="analytics-metric"><span>Completed attempts</span><strong>{{ analytics.summary.completed_attempts }}</strong><small>Integrity reports generated</small></div>
-                <div class="analytics-metric"><span>Average integrity</span><strong>{{ formatIntegrity(analytics.summary.average_integrity) }}</strong><small>Across completed attempts</small></div>
+                <div class="analytics-metric"><span>Recorded violations</span><strong>{{ analytics.summary.recorded_violations }}</strong><small>Classified proctoring events</small></div>
+                <div class="analytics-metric"><span>Gadget alerts</span><strong>{{ gadgetAlertCount }}</strong><small>Confirmed detection events</small></div>
                 <div class="analytics-metric"><span>Flagged attempts</span><strong>{{ analytics.summary.flagged_attempts }}</strong><small>Integrity below 100%</small></div>
                 <div class="analytics-metric"><span>Auto-terminated</span><strong>{{ analytics.summary.terminated_attempts }}</strong><small>Recorded in integrity reports</small></div>
               </div>
@@ -552,6 +550,7 @@ const analytics = ref(null);
 const loadingAnalytics = ref(false);
 const analyticsError = ref('');
 const topViolations = computed(() => (analytics.value?.violations || []).filter((item) => item.count > 0).slice(0, 6));
+const gadgetAlertCount = computed(() => analytics.value?.violations?.find((item) => item.key === 'gadget_detected')?.count ?? 0);
 const formatIntegrity = (value) => value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
 const barWidth = (value, maximum) => `${maximum ? Math.max(0, Math.min(100, value / maximum * 100)) : 0}%`;
 const reviewStudent = ref(null);
@@ -1042,15 +1041,6 @@ onMounted(() => {
 .stat-card--link { cursor: pointer; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
 .stat-card--link:hover { border-color: #adbfdb; transform: translateY(-2px); box-shadow: 0 14px 32px rgba(15, 23, 42, .09); }
 .stat-card--link:focus-visible { outline: 3px solid rgba(29, 52, 97, .3); outline-offset: 2px; }
-.stat-card--attention { border-color: #f4c56d; background: #fffbf2; }
-.domain-val {
-  max-width: 100%;
-  font-size: clamp(.85rem, 1.2vw, 1.05rem);
-  letter-spacing: -.035em;
-  overflow-wrap: anywhere;
-}
-#stat-domain { flex-direction: column; align-items: flex-start; gap: .65rem; }
-#stat-domain .stat-icon { width: 40px; height: 40px; }
 .stat-icon {
   width: 50px;
   height: 50px;
@@ -1062,8 +1052,8 @@ onMounted(() => {
 }
 .instructor-icon { background: #e8f1ff; color: #2458d6; }
 .student-icon { background: #e8f5ee; color: #15803d; }
-.domain-icon { background: #fff8d9; color: #a16207; }
-.review-icon { background: #fff0df; color: #c2410c; }
+.exam-icon { background: #eef0fa; color: #465b9e; }
+.integrity-icon { background: #eaf4f1; color: #187967; }
 .stat-label {
   font-size: 0.75rem; color: var(--text-secondary); margin: 0 0 0.25rem;
   font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
