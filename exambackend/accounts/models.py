@@ -105,12 +105,20 @@ class EnrolledStudent(models.Model):
 
 
 class Subject(models.Model):
+    CATEGORY_MINOR = 'MINOR'
+    CATEGORY_CHOICES = UserProfile.INSTITUTE_CHOICES + [
+        (CATEGORY_MINOR, 'Minor courses'),
+    ]
     name = models.CharField(max_length=200)
     code = models.CharField(max_length=50)
+    category = models.CharField(max_length=5, choices=CATEGORY_CHOICES, blank=True, default='')
     instructor = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='subjects',
+    )
+    additional_instructors = models.ManyToManyField(
+        User, blank=True, related_name='additional_subjects',
     )
     announcements = models.TextField(blank=True, default="")
     display_photo = models.ImageField(upload_to='course_photos/', null=True, blank=True)

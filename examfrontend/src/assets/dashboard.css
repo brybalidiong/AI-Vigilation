@@ -2900,6 +2900,9 @@
   cursor: pointer;
 }
 .cw-actions-menu__popup button:hover, .cw-actions-menu__popup button:focus-visible { background: #fef2f2; }
+.cw-actions-menu__popup button:first-child:not(:last-child) { color: #1d3461; }
+.cw-actions-menu__popup button:first-child:not(:last-child):hover,
+.cw-actions-menu__popup button:first-child:not(:last-child):focus-visible { background: #f1f5f9; }
 .cw-hero__code {
   font-size: 0.72rem;
   font-weight: 800;

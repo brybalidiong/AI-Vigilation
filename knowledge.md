@@ -10,7 +10,7 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 | --- | --- |
 | Student | Access assigned exams, verify identity, answer questions, and view results. |
 | Instructor | Manage courses and exams, grade responses, and review integrity reports. |
-| Admin | Manage users and oversee the platform. |
+| Admin | Manage users and courses, assign instructors, and oversee the platform. |
 
 ## Architecture
 
@@ -22,6 +22,17 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 - **Proctoring:** Gaze tracking uses MediaPipe and TensorFlow Lite; gadget detection lives in `exambackend/accounts/gadget_service.py`.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.
+
+Admins create courses and assign one or more active instructors to each course.
+A course belongs to one institute (IC, ITED, IASS, or ILEGG) or the separate
+Minor courses group. Institute courses can be assigned only to instructors in
+that institute; minor courses can be assigned to instructors from any institute.
+The original instructor field remains the lead instructor for legacy data and
+student-facing labels; additional instructors share access to exams and rosters.
+Existing courses inherit the lead instructor's institute during migration when
+it is known. Admin reassignment preserves the course, exams, and student sets.
+Instructors cannot create courses; they can change an assigned course banner
+and retain the course deletion action.
 
 Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
 students enrolled in the course; their open dashboards refetch the authorized exam

@@ -4,6 +4,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 # pyrefly: ignore [missing-import]
 from .views import (
     admin_login,
+    admin_courses,
+    admin_course_detail,
     admin_analytics,
     admin_instructors,
     admin_instructor_detail,
@@ -56,6 +58,8 @@ urlpatterns = [
     path('auth/admin/login/', admin_login),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # Admin management
+    path('admin/courses/', admin_courses),
+    path('admin/courses/<int:subject_id>/', admin_course_detail),
     path('admin/analytics/', admin_analytics),
     path('admin/instructors/', admin_instructors),
     path('admin/instructors/<int:instructor_id>/', admin_instructor_detail),

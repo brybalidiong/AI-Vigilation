@@ -52,9 +52,11 @@
           <div class="header-titles">
             <span class="dashboard-eyebrow">{{ currentDate }}</span>
             <h1 v-if="activeTab === 'overview'">Dashboard</h1>
+            <h1 v-if="activeTab === 'courses'">Courses</h1>
             <h1 v-if="activeTab === 'instructors'">Instructors</h1>
             <h1 v-if="activeTab === 'students'">Students</h1>
             <p class="header-sub" v-if="activeTab === 'overview'">Exam integrity and campus activity at a glance.</p>
+            <p class="header-sub" v-if="activeTab === 'courses'">Create courses, organize them by institute, and assign instructors.</p>
             <p class="header-sub" v-if="activeTab === 'instructors'">Register instructors and manage access without losing their course records.</p>
             <p class="header-sub" v-if="activeTab === 'students'">Manage enrollment and review exam identity photos.</p>
           </div>
@@ -209,6 +211,80 @@
               </button>
             </div>
           </div>
+        </section>
+
+        <!-- Courses Tab -->
+        <section v-if="activeTab === 'courses'" class="admin-people-page">
+          <div class="admin-section-heading">
+            <div>
+              <span class="admin-section-kicker">Academic catalog</span>
+              <h2>Course management</h2>
+              <p>Institute courses stay in their own sections. Minor courses are listed separately.</p>
+            </div>
+          </div>
+          <div class="course-tabstrip admin-page-tabs" role="tablist" aria-label="Course management">
+            <button type="button" id="course-list-tab" class="course-tab" :class="{ active: !showCreateCourse }" role="tab" :aria-selected="!showCreateCourse" aria-controls="course-list-panel" @click="closeCourseForm">Course catalog <span class="course-tab__count">{{ courses.length }}</span></button>
+            <button type="button" id="course-create-tab" class="course-tab" :class="{ active: showCreateCourse }" role="tab" :aria-selected="showCreateCourse" aria-controls="course-create-panel" @click="openCourseForm">Create course</button>
+          </div>
+
+          <div v-if="!showCreateCourse" id="course-list-panel" role="tabpanel" aria-labelledby="course-list-tab">
+            <div class="admin-filters">
+              <label class="admin-filter-field" for="course-search">Search courses
+                <input v-model.trim="courseSearch" id="course-search" type="search" class="moodle-search" placeholder="Course name, code, or instructor" />
+              </label>
+            </div>
+            <div v-if="courseLoadError" class="admin-inline-error" role="alert"><span>{{ courseLoadError }}</span><button type="button" @click="fetchCourses">Retry</button></div>
+            <div v-if="loadingCourses" class="admin-course-loading" role="status">Loading courses…</div>
+            <template v-else>
+              <p class="admin-results-count" role="status">Showing {{ filteredCourseCount }} of {{ courses.length }} courses</p>
+              <div v-for="group in courseGroups" :key="group.code || 'unclassified'" class="admin-course-group">
+                <div class="admin-course-group__heading">
+                  <div><span class="admin-section-kicker">{{ group.code === 'MINOR' ? 'Shared curriculum' : group.code || 'Review needed' }}</span><h3>{{ group.name }}</h3></div>
+                  <span class="admin-course-group__count">{{ group.courses.length }} {{ group.courses.length === 1 ? 'course' : 'courses' }}</span>
+                </div>
+                <div v-if="group.courses.length" class="admin-course-list">
+                  <article v-for="course in group.courses" :key="course.id" class="admin-course-row">
+                    <div class="admin-course-row__identity"><span class="admin-course-code">{{ course.code }}</span><div><h4>{{ course.name }}</h4><p>{{ course.exam_count }} {{ course.exam_count === 1 ? 'exam' : 'exams' }} · {{ course.student_count }} {{ course.student_count === 1 ? 'student' : 'students' }}</p></div></div>
+                    <div class="admin-course-row__assignment">
+                      <label>Group
+                        <select v-model="course._category" class="admin-filter" :disabled="course._saving" :aria-label="`Group for ${course.name}`" @change="onCourseCategoryChange(course)">
+                          <option value="" disabled>Choose group</option>
+                          <option v-for="category in courseCategories" :key="category.code" :value="category.code">{{ category.code === 'MINOR' ? 'Minor courses' : category.code }}</option>
+                        </select>
+                      </label>
+                      <fieldset class="admin-course-instructors" :disabled="course._saving || !course._category"><legend>Assigned instructors</legend>
+                        <label v-for="instructor in assignableInstructors(course._category)" :key="instructor.id" class="admin-course-instructor-option"><input v-model="course._instructor_ids" type="checkbox" :value="instructor.id" />{{ instructor.full_name || instructor.email }}</label>
+                        <span v-if="!assignableInstructors(course._category).length" class="admin-course-hint">No instructors available</span>
+                      </fieldset>
+                      <button type="button" class="row-action admin-course-save" :disabled="course._saving || !course._instructor_ids.length || !course._category || (course._category === course.category && sameInstructorIds(course._instructor_ids, course.instructor_ids))" @click="saveCourseAssignment(course)">{{ course._saving ? 'Saving…' : 'Save' }}</button>
+                    </div>
+                  </article>
+                </div>
+                <p v-else class="admin-course-empty">{{ courseSearch ? 'No matching courses in this group.' : 'No courses in this group yet.' }}</p>
+              </div>
+            </template>
+          </div>
+
+          <form v-else id="course-create-panel" class="create-form-wrapper admin-entry-form" role="tabpanel" aria-labelledby="course-create-tab" @submit.prevent="createCourse">
+            <div class="entry-heading"><div><h3 class="form-title">Create a course</h3><p>Choose its institute or Minor courses, then assign one or more active instructors.</p></div></div>
+            <div class="inline-form">
+              <label class="entry-field" for="course-name">Course name<input id="course-name" v-model.trim="newCourse.name" type="text" maxlength="200" placeholder="e.g. Introduction to Programming" required /></label>
+              <label class="entry-field" for="course-code">Course code<input id="course-code" v-model.trim="newCourse.code" type="text" maxlength="50" placeholder="e.g. CS101" required /></label>
+              <label class="entry-field" for="course-category">Course group
+                <select id="course-category" v-model="newCourse.category" required @change="newCourse.instructor_ids = []">
+                  <option value="" disabled>Select institute or minor courses</option>
+                  <option v-for="category in courseCategories" :key="category.code" :value="category.code">{{ category.name }}</option>
+                </select>
+              </label>
+            </div>
+            <fieldset class="admin-course-instructors admin-course-instructors--create" :disabled="!newCourse.category"><legend>Assigned instructors</legend>
+              <label v-for="instructor in assignableInstructors(newCourse.category)" :key="instructor.id" class="admin-course-instructor-option"><input v-model="newCourse.instructor_ids" type="checkbox" :value="instructor.id" />{{ instructor.full_name || instructor.email }} <span>{{ instructor.institute }}</span></label>
+              <span v-if="!newCourse.category" class="admin-course-hint">Choose a course group first.</span>
+            </fieldset>
+            <p v-if="newCourse.category && !assignableInstructors(newCourse.category).length" class="admin-course-hint">There are no active instructors available for this group. Register or restore an instructor first.</p>
+            <div class="entry-actions"><button type="button" class="ghost-btn shrink-btn" @click="closeCourseForm">Cancel</button><button type="submit" class="primary-btn shrink-btn" :disabled="courseSaving || !newCourse.instructor_ids.length">{{ courseSaving ? 'Creating…' : 'Create course' }}</button></div>
+            <p v-if="courseFormError" class="form-error" role="alert">{{ courseFormError }}</p>
+          </form>
         </section>
 
         <!-- Instructors Tab -->
@@ -498,6 +574,7 @@ const institutes = [
   { code: 'IASS', name: 'Institute of Acquatic and Applied Sciences' },
   { code: 'ILEGG', name: 'Institute of Leadership, Entrepreneurship and Good Governance' },
 ];
+const courseCategories = [...institutes, { code: 'MINOR', name: 'Minor courses' }];
 
 const activeTab = ref("overview");
 const currentDate = new Intl.DateTimeFormat('en-PH', {
@@ -509,6 +586,12 @@ const tabs = computed(() => [
     key: "overview",
     label: "Dashboard",
     icon: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+  },
+  {
+    key: "courses",
+    label: "Courses",
+    count: courses.value.length,
+    icon: '<path d="M4 5.5C6.5 4 9 4 12 5.5c3-1.5 5.5-1.5 8 0V19c-2.5-1.5-5-1.5-8 0-3-1.5-5.5-1.5-8 0z"/><path d="M12 5.5V19"/>',
   },
   {
     key: "instructors",
@@ -535,6 +618,39 @@ const instructorStatusFilter = ref('all');
 const instructorInstituteFilter = ref('all');
 const hasInstructorFilters = computed(() => Boolean(instructorSearch.value) || instructorStatusFilter.value !== 'all' || instructorInstituteFilter.value !== 'all');
 const newInstructor = ref({ email: "", first_name: "", last_name: "", institute: "" });
+
+// Courses
+const courses = ref([]);
+const loadingCourses = ref(true);
+const courseLoadError = ref('');
+const courseSearch = ref('');
+const showCreateCourse = ref(false);
+const courseSaving = ref(false);
+const courseFormError = ref('');
+const newCourse = ref({ name: '', code: '', category: '', instructor_ids: [] });
+const filteredCourses = computed(() => {
+  const query = courseSearch.value.trim().toLowerCase();
+  return courses.value.filter((course) => !query || [
+    course.name, course.code, ...(course.instructor_names || []),
+  ].some((value) => String(value || '').toLowerCase().includes(query)));
+});
+const filteredCourseCount = computed(() => filteredCourses.value.length);
+const courseGroups = computed(() => {
+  const groups = courseCategories.map((category) => ({
+    ...category,
+    courses: filteredCourses.value.filter((course) => course.category === category.code),
+  }));
+  const unclassified = filteredCourses.value.filter((course) => !course.category);
+  if (unclassified.length) groups.push({ code: '', name: 'Needs institute assignment', courses: unclassified });
+  return groups;
+});
+function assignableInstructors(category) {
+  return instructors.value.filter((instructor) => instructor.is_active &&
+    (category === 'MINOR' || instructor.institute === category));
+}
+function sameInstructorIds(a, b) {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
 
 // Students
 const students = ref([]);
@@ -574,8 +690,27 @@ const newStudent = ref({ email: "", first_name: "", last_name: "", institute: ""
 
 function selectAdminSection(section) {
   activeTab.value = section;
+  if (section === 'courses') closeCourseForm();
   if (section === 'instructors') closeInstructorForm();
   if (section === 'students') closeStudentForm();
+}
+
+function openCourseForm() {
+  activeTab.value = 'courses';
+  showCreateCourse.value = true;
+  courseFormError.value = '';
+  nextTick(() => document.getElementById('course-name')?.focus());
+}
+
+function closeCourseForm() {
+  showCreateCourse.value = false;
+  newCourse.value = { name: '', code: '', category: '', instructor_ids: [] };
+  courseFormError.value = '';
+}
+
+function onCourseCategoryChange(course) {
+  const allowed = new Set(assignableInstructors(course._category).map((instructor) => instructor.id));
+  course._instructor_ids = course._instructor_ids.filter((id) => allowed.has(id));
 }
 
 function openInstructorForm() {
@@ -689,6 +824,53 @@ async function fetchStudents() {
     loadError.value = e?.response?.data?.error || 'Could not load students.';
   } finally {
     loadingStudents.value = false;
+  }
+}
+
+async function fetchCourses() {
+  loadingCourses.value = true;
+  courseLoadError.value = '';
+  try {
+    const { data } = await axios.get(`${backendBaseUrl}/api/admin/courses/`, { headers: getHeaders() });
+    courses.value = (data.courses || []).map((course) => ({
+        ...course, _category: course.category, _instructor_ids: [...course.instructor_ids],
+    }));
+  } catch (e) {
+    courseLoadError.value = e?.response?.data?.error || 'Could not load courses.';
+  } finally {
+    loadingCourses.value = false;
+  }
+}
+
+async function createCourse() {
+  courseFormError.value = '';
+  courseSaving.value = true;
+  try {
+    const { data } = await axios.post(`${backendBaseUrl}/api/admin/courses/`, {
+      ...newCourse.value, code: newCourse.value.code.trim().toUpperCase(),
+    }, { headers: getHeaders() });
+    courses.value.push({ ...data, _category: data.category, _instructor_ids: [...data.instructor_ids] });
+    closeCourseForm();
+    showActionSuccess('Course created', `${data.code} was assigned to ${data.instructor_names.join(', ')}.`);
+  } catch (e) {
+    courseFormError.value = e?.response?.data?.error || 'Could not create course.';
+  } finally {
+    courseSaving.value = false;
+  }
+}
+
+async function saveCourseAssignment(course) {
+  course._saving = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/courses/${course.id}/`, {
+      category: course._category, instructor_ids: course._instructor_ids,
+    }, { headers: getHeaders() });
+    Object.assign(course, data, { _category: data.category, _instructor_ids: [...data.instructor_ids] });
+    showActionSuccess('Course assignment saved', `${data.code} is assigned to ${data.instructor_names.join(', ')}.`);
+  } catch (e) {
+    showActionError(e?.response?.data?.error || 'Could not update the course assignment.');
+  } finally {
+    course._saving = false;
   }
 }
 
@@ -950,6 +1132,7 @@ function logout() {
 onMounted(() => {
   fetchInstructors();
   fetchStudents();
+  fetchCourses();
   fetchAnalytics();
 });
 </script>
@@ -1118,6 +1301,30 @@ onMounted(() => {
 .admin-page-tabs { margin-bottom: 1.25rem; overflow: hidden; border: 1px solid #e1e8f1; border-radius: 14px; }
 .admin-page-tabs .course-tab { min-height: 52px; }
 .admin-results-count { margin: .25rem 0 .65rem; color: #68778d; font-size: .78rem; font-weight: 650; }
+.admin-course-loading { padding: 2rem; border: 1px solid #dfe6ef; border-radius: 15px; background: #fff; color: #68778d; text-align: center; }
+.admin-course-group { margin: 1rem 0 1.35rem; padding: 1.2rem; border: 1px solid #dfe6ef; border-radius: 17px; background: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+.admin-course-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 .15rem 1rem; }
+.admin-course-group__heading h3 { margin: .18rem 0 0; color: #172b4a; font: 750 1.05rem 'Poppins', sans-serif; }
+.admin-course-group__count { color: #64748b; font-size: .77rem; font-weight: 700; white-space: nowrap; }
+.admin-course-list { display: grid; gap: .65rem; }
+.admin-course-row { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(380px, 1.6fr); align-items: center; gap: 1.25rem; padding: .95rem 1rem; border: 1px solid #e5eaf2; border-radius: 12px; background: #f9fafc; }
+.admin-course-row__identity { display: flex; align-items: center; gap: .85rem; min-width: 0; }
+.admin-course-code { flex: none; padding: .38rem .55rem; border-radius: 7px; background: #e9eff7; color: #1d3461; font-size: .7rem; font-weight: 800; letter-spacing: .03em; }
+.admin-course-row__identity h4 { overflow: hidden; margin: 0; color: #203553; font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
+.admin-course-row__identity p { margin: .15rem 0 0; color: #7b899d; font-size: .72rem; }
+.admin-course-row__assignment { display: grid; grid-template-columns: minmax(115px, .75fr) minmax(175px, 1.3fr) auto; align-items: end; gap: .55rem; }
+.admin-course-row__assignment label { display: grid; gap: .25rem; min-width: 0; color: #6a788d; font-size: .68rem; font-weight: 700; }
+.admin-course-row__assignment .admin-filter { width: 100%; min-width: 0; font-size: .75rem; }
+.admin-course-instructors { min-width: 0; max-height: 8.5rem; overflow-y: auto; margin: 0; padding: .45rem .6rem; border: 1px solid #d8e1ee; border-radius: 9px; background: #fff; }
+.admin-course-instructors legend { padding: 0 .2rem; color: #6a788d; font-size: .68rem; font-weight: 700; }
+.admin-course-row__assignment .admin-course-instructor-option, .admin-course-instructor-option { display: flex; align-items: center; gap: .45rem; min-height: 1.7rem; color: #203553; font-size: .73rem; font-weight: 600; cursor: pointer; }
+.admin-course-instructor-option input { flex: none; accent-color: #1d3461; }
+.admin-course-instructor-option span { margin-left: auto; color: #8190a3; font-size: .68rem; }
+.admin-course-instructors--create { max-height: 11rem; margin-top: .85rem; padding: .6rem .8rem; }
+.admin-course-save { min-height: 41px; padding: .55rem .8rem; color: #1d3461; }
+.admin-course-save:disabled { opacity: .48; cursor: default; }
+.admin-course-empty { margin: 0; padding: 1rem .25rem .35rem; color: #8390a2; font-size: .8rem; }
+.admin-course-hint { margin: 1rem 0 0; color: #916524; font-size: .78rem; }
 .admin-empty-state { display: grid; justify-items: center; gap: .55rem; padding: 3.5rem 1.25rem; text-align: center; }
 .admin-empty-state h3 { margin: 0; color: #1d3461; font-family: 'Poppins', sans-serif; font-size: 1.05rem; }
 .admin-empty-state p { max-width: 30rem; margin: 0 0 .6rem; color: #68778d; font-size: .85rem; }
@@ -1301,6 +1508,7 @@ onMounted(() => {
 .face-toggle-label { font-size: 0.76rem; font-weight: 600; color: #475569; white-space: nowrap; }
 
 @media (max-width: 760px) {
+  .admin-course-row { grid-template-columns: 1fr; }
   .dashboard-role--admin .sidebar-nav { flex: 1 1 auto; justify-content: space-around; }
   .dashboard-role--admin .sidebar-footer-nav { flex: 0 0 auto; }
   .dashboard-role--admin .nav-count { display: none; }
@@ -1309,6 +1517,8 @@ onMounted(() => {
   .admin-filters .admin-filter, .admin-filter-field { width: 100%; }
 }
 @media (max-width: 620px) {
+  .admin-course-row__assignment { grid-template-columns: 1fr; }
+  .admin-course-save { width: 100%; }
   .admin-entry-form .inline-form { grid-template-columns: 1fr; }
   .entry-actions > button { flex: 1 1 0; }
 }

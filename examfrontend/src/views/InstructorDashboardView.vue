@@ -215,60 +215,8 @@
                     <option value="name_desc">Z → A</option>
                   </select>
                 </label>
-                <button
-                  type="button"
-                  class="new-course-btn"
-                  :class="{ 'new-course-btn--active': showCreateCoursePanel }"
-                  @click="showCreateCoursePanel = !showCreateCoursePanel"
-                  id="toggle-create-course"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  {{ showCreateCoursePanel ? 'Close' : 'New course' }}
-                </button>
               </div>
             </div>
-
-            <!-- Collapsible Create Course Panel -->
-            <transition name="slide-down">
-              <div v-if="showCreateCoursePanel" class="create-panel create-panel--prominent" id="create-course-panel">
-                <div class="create-panel__header">
-                  <div class="create-panel__icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                  </div>
-                  <div>
-                    <h3 class="create-panel__title">Create a new course</h3>
-                    <p class="create-panel__sub">Name and code first. Exams and students come after you open the course.</p>
-                  </div>
-                </div>
-                <form class="create-panel__form" @submit.prevent="createSubject(); showCreateCoursePanel = false">
-                  <div class="create-panel__fields">
-                    <div class="create-panel__field">
-                      <label class="create-panel__label">Course name</label>
-                      <input v-model="newSubjectName" type="text" class="create-panel__input" placeholder="e.g. Introduction to Programming" required />
-                    </div>
-                    <div class="create-panel__field create-panel__field--short">
-                      <label class="create-panel__label">Course code</label>
-                      <input v-model="newSubjectCode" type="text" class="create-panel__input" placeholder="e.g. CS101" required />
-                    </div>
-                    <div class="create-panel__field">
-                      <label class="create-panel__label">Cover photo <span class="create-panel__optional">(optional)</span></label>
-                      <label class="file-pick-label" style="width:100%;">
-                        <input type="file" @change="onSubjectPhotoChange" accept="image/*" class="file-pick-input" />
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
-                        <span class="file-pick-text">{{ newSubjectPhoto ? newSubjectPhoto.name : 'Choose image…' }}</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div class="create-panel__actions">
-                    <button type="button" class="ghost-btn" @click="showCreateCoursePanel = false">Cancel</button>
-                    <button type="submit" class="primary-btn" :disabled="subjectsLoading">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      {{ subjectsLoading ? 'Creating…' : 'Create course' }}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </transition>
 
             <!-- Course grid -->
             <TransitionGroup name="list" tag="div" class="courses-grid">
@@ -279,7 +227,7 @@
                 v-else-if="displayedCourses.length === 0 && courseSearch"
                 style="grid-column: 1 / -1;"
                 title="No matching courses"
-                description="Try another name or code, or create the course if it is new."
+                description="Try another name or code. Your administrator assigns courses to instructors."
                 icon='<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>'
               >
                 <template #actions>
@@ -290,13 +238,9 @@
                 v-else-if="displayedCourses.length === 0"
                 style="grid-column: 1 / -1;"
                 title="No courses yet"
-                description="Start with a name and code. You can upload exams and enroll students next."
+                description="Your administrator will create a course and assign it to you."
                 icon='<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line>'
-              >
-                <template #actions>
-                  <button type="button" class="primary-btn" @click="showCreateCoursePanel = true">Create a course</button>
-                </template>
-              </EmptyState>
+              />
               <template v-else>
                 <CourseCard
                   v-for="(s, index) in displayedCourses"
@@ -331,12 +275,17 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
                   </summary>
                   <div class="cw-actions-menu__popup">
+                    <button type="button" id="change-course-banner-btn" :disabled="bannerUploading" @click="openCourseBannerPicker">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                      {{ bannerUploading ? 'Uploading…' : 'Change banner' }}
+                    </button>
                     <button type="button" id="delete-course-btn" @click="requestDeleteSubject">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
                       Delete course
                     </button>
                   </div>
                 </details>
+                <input ref="courseBannerInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose course banner" @change="uploadCourseBanner" />
               </div>
               <div class="cw-hero__main">
                 <div>
@@ -2060,15 +2009,13 @@ apiClient.interceptors.response.use(
 );
 
 const activeCourseTab = ref("uploaded-exams");
-const showCreateCoursePanel = ref(false);
 const showUploadExamPanel = ref(false);
 const subjects = ref([]);
 const subjectsLoading = ref(false);
 const selectedSubjectId = ref(null);
 const selectedSubjectSetId = ref("");
-const newSubjectName = ref("");
-const newSubjectCode = ref("");
-const newSubjectPhoto = ref(null);
+const courseBannerInput = ref(null);
+const bannerUploading = ref(false);
 const newSubjectSetName = ref("");
 const subjectSets = ref([]);
 const subjectSetsLoading = ref(false);
@@ -2856,9 +2803,31 @@ function onExamFileChange(event) {
   newExamFile.value = file || null;
 }
 
-function onSubjectPhotoChange(event) {
+function openCourseBannerPicker() {
+  closeCourseActionsMenu();
+  courseBannerInput.value?.click();
+}
+
+async function uploadCourseBanner(event) {
   const file = event?.target?.files?.[0];
-  newSubjectPhoto.value = file || null;
+  if (!file || !selectedSubjectId.value) return;
+  event.target.value = '';
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    error.value = 'Use a JPG, PNG, or WebP image no larger than 5 MB.';
+    return;
+  }
+  bannerUploading.value = true;
+  try {
+    const payload = new FormData();
+    payload.append('display_photo', file);
+    const { data } = await apiClient.patch(`/api/instructor/subjects/${selectedSubjectId.value}/`, payload);
+    if (selectedCourse.value) selectedCourse.value.display_photo = data.display_photo;
+    showSuccess('Banner updated', 'Your course banner has been changed.');
+  } catch (err) {
+    error.value = err?.response?.data?.error || 'Could not update the course banner.';
+  } finally {
+    bannerUploading.value = false;
+  }
 }
 
 async function fetchUpcomingExams() {
@@ -2885,31 +2854,6 @@ async function fetchUpcomingExams() {
     upcomingExamRows.value = [];
   } finally {
     upcomingLoading.value = false;
-  }
-}
-
-async function createSubject() {
-  message.value = "";
-  error.value = "";
-  try {
-    const fd = new FormData();
-    fd.append("name", newSubjectName.value.trim());
-    fd.append("code", newSubjectCode.value.trim());
-    if (newSubjectPhoto.value) {
-      fd.append("display_photo", newSubjectPhoto.value);
-    }
-    await apiClient.post("/api/instructor/subjects/", fd, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
-    showSuccess('Course created', 'The new course is ready to manage.');
-    newSubjectName.value = "";
-    newSubjectCode.value = "";
-    newSubjectPhoto.value = null;
-    const fileInput = document.querySelector('.subject-photo-input');
-    if (fileInput) fileInput.value = "";
-    await fetchSubjects();
-  } catch (err) {
-    error.value = err?.response?.data?.error || "Could not create course.";
   }
 }
 

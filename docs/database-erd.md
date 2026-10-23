@@ -22,6 +22,8 @@ npx @mermaid-js/mermaid-cli -i docs/database-erd.mmd -o docs/database-erd.pdf
 erDiagram
     auth_user ||--o| accounts_userprofile : "has"
     auth_user ||--o{ accounts_subject : "teaches"
+    auth_user ||--o{ accounts_subject_additional_instructors : "shares courses"
+    accounts_subject ||--o{ accounts_subject_additional_instructors : "has instructors"
     auth_user ||--o{ accounts_studentset : "creates"
 
     accounts_subject ||--o{ accounts_studentset : "has rosters"
@@ -56,6 +58,13 @@ erDiagram
         int instructor_id FK
         varchar name
         varchar code
+        varchar category
+    }
+
+    accounts_subject_additional_instructors {
+        bigint id PK
+        bigint subject_id FK
+        int user_id FK
     }
 
     accounts_studentset {

@@ -24,6 +24,7 @@ from zipfile import BadZipFile
 
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+from PIL import Image, UnidentifiedImageError
 
 import accounts.firebase_admin  # noqa: F401
 from decimal import Decimal, InvalidOperation
@@ -672,6 +673,119 @@ def _valid_institute(value):
     return isinstance(value, str) and value in dict(UserProfile.INSTITUTE_CHOICES)
 
 
+def _course_instructors(instructor_ids, category):
+    if not isinstance(instructor_ids, list) or not instructor_ids or any(
+        isinstance(value, bool) or not str(value).isdigit() for value in instructor_ids
+    ):
+        return None
+    ids = [int(value) for value in instructor_ids]
+    if len(set(ids)) != len(ids):
+        return None
+    by_id = {
+        user.id: user for user in User.objects.filter(
+            id__in=ids, is_active=True, is_staff=True, is_superuser=False,
+            profile__role='instructor',
+        ).select_related('profile')
+    }
+    instructors = [by_id.get(user_id) for user_id in ids]
+    if any(user is None or (category != Subject.CATEGORY_MINOR and user.profile.institute != category)
+           for user in instructors):
+        return None
+    return instructors
+
+
+def _serialize_admin_course(subject):
+    instructors = [subject.instructor, *subject.additional_instructors.all()]
+    return {
+        'id': subject.id,
+        'name': subject.name,
+        'code': subject.code,
+        'category': subject.category,
+        'instructor_id': subject.instructor_id,
+        'instructor_name': subject.instructor.get_full_name() or subject.instructor.email,
+        'instructor_email': subject.instructor.email,
+        'instructor_ids': [instructor.id for instructor in instructors],
+        'instructor_names': [instructor.get_full_name() or instructor.email for instructor in instructors],
+        'student_count': getattr(subject, 'student_count', 0),
+        'exam_count': getattr(subject, 'exam_count', 0),
+    }
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def admin_courses(request):
+    """Admin: browse institute and minor courses, or create one for an instructor."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET':
+        courses = Subject.objects.select_related('instructor').prefetch_related('additional_instructors').annotate(
+            student_count=Count('student_sets__students__email', distinct=True),
+            exam_count=Count('exam_sets', distinct=True),
+        ).order_by('category', 'name', 'code')
+        return Response({'courses': [_serialize_admin_course(course) for course in courses]})
+
+    name = request.data.get('name')
+    code = request.data.get('code')
+    category = request.data.get('category')
+    if not isinstance(name, str) or not isinstance(code, str) or not name.strip() or not code.strip():
+        return Response({'error': 'Course name and code are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(name.strip()) > 200 or len(code.strip()) > 50:
+        return Response({'error': 'Course name or code is too long.'}, status=status.HTTP_400_BAD_REQUEST)
+    if category not in dict(Subject.CATEGORY_CHOICES):
+        return Response({'error': 'Choose an institute or Minor courses.'}, status=status.HTTP_400_BAD_REQUEST)
+    instructors = _course_instructors(request.data.get('instructor_ids'), category)
+    if instructors is None:
+        return Response({'error': 'Choose one or more active instructors in this institute. Minor courses may use instructors from any institute.'}, status=status.HTTP_400_BAD_REQUEST)
+    code = code.strip().upper()
+    if Subject.objects.filter(code__iexact=code).filter(
+        Q(instructor__in=instructors) | Q(additional_instructors__in=instructors)
+    ).exists():
+        return Response({'error': 'An assigned instructor already has a course with that code.'}, status=status.HTTP_409_CONFLICT)
+    with transaction.atomic():
+        subject = Subject.objects.create(
+            instructor=instructors[0], name=name.strip(), code=code, category=category,
+        )
+        subject.additional_instructors.set(instructors[1:])
+    return Response(_serialize_admin_course(subject), status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_course_detail(request, subject_id):
+    """Admin: reclassify or reassign a course while preserving its exams and rosters."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    subject = Subject.objects.select_related('instructor').prefetch_related('additional_instructors').annotate(
+        student_count=Count('student_sets__students__email', distinct=True),
+        exam_count=Count('exam_sets', distinct=True),
+    ).filter(pk=subject_id).first()
+    if subject is None:
+        return Response({'error': 'Course not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if 'category' not in request.data and 'instructor_ids' not in request.data:
+        return Response({'error': 'Choose a category or instructors to update.'}, status=status.HTTP_400_BAD_REQUEST)
+    category = request.data.get('category', subject.category)
+    if category not in dict(Subject.CATEGORY_CHOICES):
+        return Response({'error': 'Choose an institute or Minor courses.'}, status=status.HTTP_400_BAD_REQUEST)
+    current_ids = [subject.instructor_id, *subject.additional_instructors.values_list('id', flat=True)]
+    instructors = _course_instructors(request.data.get('instructor_ids', current_ids), category)
+    if instructors is None:
+        return Response({'error': 'Choose one or more active instructors in this institute. Minor courses may use instructors from any institute.'}, status=status.HTTP_400_BAD_REQUEST)
+    if Subject.objects.filter(code__iexact=subject.code).exclude(pk=subject.pk).filter(
+        Q(instructor__in=instructors) | Q(additional_instructors__in=instructors)
+    ).exists():
+        return Response({'error': 'An assigned instructor already has a course with that code.'}, status=status.HTTP_409_CONFLICT)
+    previous_instructor_id = subject.instructor_id
+    with transaction.atomic():
+        subject.category = category
+        subject.instructor = instructors[0]
+        subject.save(update_fields=['category', 'instructor'])
+        subject.additional_instructors.set(instructors[1:])
+        if previous_instructor_id != instructors[0].id:
+            subject.student_sets.update(created_by=instructors[0])
+    return Response(_serialize_admin_course(subject))
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_analytics(request):
@@ -861,6 +975,11 @@ def admin_instructor_detail(request, instructor_id):
         institute = request.data.get('institute')
         if not _valid_institute(institute):
             return Response({'error': 'Choose a valid institute.'}, status=status.HTTP_400_BAD_REQUEST)
+        if Subject.objects.filter(Q(instructor=instructor) | Q(additional_instructors=instructor)).exclude(category__in=['', Subject.CATEGORY_MINOR, institute]).exists():
+            return Response(
+                {'error': 'Reassign this instructor’s institute courses before changing their institute.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         profile, _ = UserProfile.objects.get_or_create(
             user=instructor, defaults={'role': 'instructor', 'is_enrolled': False},
         )
@@ -1085,12 +1204,16 @@ def enrolled_students(request):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
-        qs = EnrolledStudent.objects.filter(student_set__created_by=request.user).select_related(
+        qs = EnrolledStudent.objects.filter(
+            Q(student_set__created_by=request.user, student_set__subject__isnull=True)
+            | Q(student_set__subject__instructor=request.user)
+            | Q(student_set__subject__additional_instructors=request.user)
+        ).distinct().select_related(
             'student_set'
         ).order_by('student_set_id', 'email')
         student_set_id = request.query_params.get('student_set_id')
         if student_set_id:
-            qs = qs.filter(student_set_id=student_set_id, student_set__created_by=request.user)
+            qs = qs.filter(student_set_id=student_set_id)
         students = [
             {
                 'id': r.id,
@@ -1119,7 +1242,12 @@ def enrolled_students(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    roster = StudentSet.objects.filter(id=student_set_id, created_by=request.user).first()
+    roster = StudentSet.objects.filter(
+        Q(created_by=request.user, subject__isnull=True)
+        | Q(subject__instructor=request.user)
+        | Q(subject__additional_instructors=request.user),
+        id=student_set_id,
+    ).distinct().first()
     if not roster:
         return Response(
             {'error': 'Student set not found or you do not have access to it.'},
@@ -1160,7 +1288,12 @@ def bulk_enroll_students(request, set_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    roster = StudentSet.objects.filter(id=set_id, created_by=request.user).first()
+    roster = StudentSet.objects.filter(
+        Q(created_by=request.user, subject__isnull=True)
+        | Q(subject__instructor=request.user)
+        | Q(subject__additional_instructors=request.user),
+        id=set_id,
+    ).distinct().first()
     if not roster:
         return Response(
             {'error': 'Student set not found or you do not have access to it.'},
@@ -1353,7 +1486,7 @@ def instructor_subjects(request):
 
     if request.method == 'GET':
         qs = (
-            Subject.objects.filter(instructor=request.user)
+            Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user)).distinct()
             .annotate(student_count=Count('student_sets__students__email', distinct=True))
             .order_by('name')
         )
@@ -1362,6 +1495,7 @@ def instructor_subjects(request):
                 'id': s.id,
                 'name': s.name,
                 'code': s.code,
+                'category': s.category,
                 'created_at': s.created_at,
                 'student_count': s.student_count,
                 'announcements': s.announcements,
@@ -1371,49 +1505,44 @@ def instructor_subjects(request):
         ]
         return Response({'subjects': rows}, status=status.HTTP_200_OK)
 
-    name = (request.data.get('name') or '').strip()
-    code = (request.data.get('code') or '').strip().upper()
-    display_photo = request.FILES.get('display_photo')
-    if not name or not code:
-        return Response({'error': 'Subject name and code are required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    if Subject.objects.filter(instructor=request.user, code__iexact=code).exists():
-        return Response(
-            {'error': 'A subject with this code already exists.'},
-            status=status.HTTP_409_CONFLICT,
-        )
-
-    subject = Subject.objects.create(instructor=request.user, name=name, code=code, display_photo=display_photo)
-    return Response(
-        {
-            'id': subject.id,
-            'name': subject.name,
-            'code': subject.code,
-            'created_at': subject.created_at,
-            'student_count': 0,
-            'announcements': subject.announcements,
-            'display_photo': subject.display_photo.url if subject.display_photo else None,
-        },
-        status=status.HTTP_201_CREATED,
-    )
+    return Response({'error': 'Courses are created and assigned by an administrator.'}, status=status.HTTP_403_FORBIDDEN)
 
 
-@api_view(['DELETE', 'PUT'])
+@api_view(['DELETE', 'PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def instructor_subject_detail(request, subject_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'PUT':
         announcements = request.data.get('announcements')
-        if announcements is not None:
-            subject.announcements = announcements
-            subject.save()
-            return Response({'message': 'Announcements updated'}, status=status.HTTP_200_OK)
+        if not isinstance(announcements, str):
+            return Response({'error': 'Announcements are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        subject.announcements = announcements
+        subject.save(update_fields=['announcements'])
+        return Response({'message': 'Announcements updated'}, status=status.HTTP_200_OK)
+
+    if request.method == 'PATCH':
+        photo = request.FILES.get('display_photo')
+        if not photo:
+            return Response({'error': 'Choose a banner image.'}, status=status.HTTP_400_BAD_REQUEST)
+        if photo.size > 5 * 1024 * 1024:
+            return Response({'error': 'Banner images must be 5 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            with Image.open(photo) as image:
+                if image.format not in {'JPEG', 'PNG', 'WEBP'}:
+                    raise ValueError('Unsupported image format')
+                image.verify()
+        except (UnidentifiedImageError, OSError, ValueError):
+            return Response({'error': 'Use a valid JPG, PNG, or WebP image.'}, status=status.HTTP_400_BAD_REQUEST)
+        photo.seek(0)
+        subject.display_photo = photo
+        subject.save(update_fields=['display_photo'])
+        return Response({'display_photo': subject.display_photo.url})
 
     emails = list({e.lower() for e in subject.student_sets.values_list('students__email', flat=True) if e})
     subject.delete()
@@ -1428,13 +1557,13 @@ def subject_students(request, subject_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
         qs = (
-            EnrolledStudent.objects.filter(student_set__subject=subject, student_set__created_by=request.user)
+            EnrolledStudent.objects.filter(student_set__subject=subject)
             .select_related('student_set')
             .order_by('email')
         )
@@ -1467,7 +1596,6 @@ def subject_students(request, subject_id):
 
     roster = StudentSet.objects.filter(
         id=student_set_id,
-        created_by=request.user,
         subject=subject,
     ).first()
     if not roster:
@@ -1506,10 +1634,12 @@ def subject_student_detail(request, subject_id, enrollment_id):
     enrollment = (
         EnrolledStudent.objects.select_related('student_set', 'student_set__subject')
         .filter(
+            Q(student_set__subject__instructor=request.user)
+            | Q(student_set__subject__additional_instructors=request.user),
             id=enrollment_id,
             student_set__subject_id=subject_id,
-            student_set__created_by=request.user,
         )
+        .distinct()
         .first()
     )
     if not enrollment:
@@ -1526,13 +1656,13 @@ def subject_student_detail(request, subject_id, enrollment_id):
 def subject_sets(request, subject_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
         rows = (
-            StudentSet.objects.filter(created_by=request.user, subject=subject)
+            StudentSet.objects.filter(subject=subject)
             .annotate(student_count=Count('students', distinct=True))
             .values('id', 'name', 'created_at', 'student_count')
             .order_by('name')
@@ -1542,7 +1672,7 @@ def subject_sets(request, subject_id):
     name = (request.data.get('name') or '').strip()
     if not name:
         return Response({'error': 'Set name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-    if StudentSet.objects.filter(created_by=request.user, subject=subject, name__iexact=name).exists():
+    if StudentSet.objects.filter(subject=subject, name__iexact=name).exists():
         return Response({'error': 'Set name already exists in this subject.'}, status=status.HTTP_409_CONFLICT)
     roster = StudentSet.objects.create(name=name, created_by=request.user, subject=subject)
     return Response(
@@ -1558,10 +1688,11 @@ def subject_set_detail(request, subject_id, set_id):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
     roster = (
         StudentSet.objects.filter(
+            Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
             id=set_id,
             subject_id=subject_id,
-            created_by=request.user,
         )
+        .distinct()
         .prefetch_related('students')
         .first()
     )
@@ -1580,7 +1711,7 @@ def subject_exam_sets(request, subject_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1716,10 +1847,10 @@ def subject_exam_set_detail(request, subject_id, exam_set_id):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     exam_set = ExamSet.objects.filter(
+        Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
         id=exam_set_id,
         subject_id=subject_id,
-        subject__instructor=request.user,
-    ).first()
+    ).distinct().first()
     if not exam_set:
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1779,10 +1910,11 @@ def exam_set_stats(request, subject_id, exam_set_id):
 
     exam_set = (
         ExamSet.objects.filter(
+            Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
             id=exam_set_id,
             subject_id=subject_id,
-            subject__instructor=request.user,
         )
+        .distinct()
         .prefetch_related('assigned_sets')
         .first()
     )
@@ -1791,7 +1923,6 @@ def exam_set_stats(request, subject_id, exam_set_id):
 
     students = EnrolledStudent.objects.filter(
         student_set__subject_id=subject_id,
-        student_set__created_by=request.user,
     ).select_related('student_set')
     
     submissions = list(
@@ -1878,11 +2009,11 @@ def instructor_submission_snapshot(request, subject_id, exam_set_id, submission_
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     submission = ExamSubmission.objects.filter(
+        Q(exam_set__subject__instructor=request.user) | Q(exam_set__subject__additional_instructors=request.user),
         pk=submission_id,
         exam_set_id=exam_set_id,
         exam_set__subject_id=subject_id,
-        exam_set__subject__instructor=request.user,
-    ).only('latest_snapshot').first()
+    ).distinct().only('latest_snapshot').first()
     if not submission or not submission.latest_snapshot:
         return Response({'error': 'Snapshot not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1902,7 +2033,7 @@ def subject_exam_progress(request, subject_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1954,7 +2085,6 @@ def subject_exam_progress(request, subject_id):
     enrollment_qs = (
         EnrolledStudent.objects.filter(
             student_set__subject=subject,
-            student_set__created_by=request.user,
         )
         .select_related('student_set')
     )
@@ -2596,7 +2726,7 @@ def exam_questions(request, subject_id, exam_set_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -2710,7 +2840,7 @@ def exam_question_detail(request, subject_id, exam_set_id, question_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -2735,7 +2865,7 @@ def finalize_exam(request, subject_id, exam_set_id):
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject = Subject.objects.filter(id=subject_id, instructor=request.user).first()
+    subject = Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -3650,10 +3780,10 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     exam_set = ExamSet.objects.filter(
+        Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
         id=exam_set_id,
         subject_id=subject_id,
-        subject__instructor=request.user,
-    ).first()
+    ).distinct().first()
     if not exam_set:
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
