@@ -227,6 +227,30 @@ class ExamSubmission(models.Model):
         return f'{self.exam_set_id} - {self.student_email}'
 
 
+class QuestionBankItem(models.Model):
+    """Reusable course question; exams receive independent copies."""
+
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='question_bank')
+    question_type = models.CharField(max_length=20, choices=[
+        ('multiple_choice', 'Multiple Choice'),
+        ('identification', 'Identification'),
+        ('enumeration', 'Enumeration'),
+        ('essay', 'Essay'),
+    ])
+    question_text = models.TextField()
+    choices = models.JSONField(null=True, blank=True)
+    correct_answer = models.CharField(max_length=2000, null=True, blank=True)
+    points = models.PositiveIntegerField(null=True, blank=True)
+    case_sensitive = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f'{self.subject_id}: {self.question_text[:60]}'
+
+
 class ExamQuestion(models.Model):
     """A single question inside an ExamSet created by the instructor."""
 
@@ -245,6 +269,10 @@ class ExamQuestion(models.Model):
         ExamSet,
         on_delete=models.CASCADE,
         related_name='questions',
+    )
+    bank_item = models.ForeignKey(
+        QuestionBankItem, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='exam_questions',
     )
     order = models.PositiveIntegerField(default=0)
     question_type = models.CharField(

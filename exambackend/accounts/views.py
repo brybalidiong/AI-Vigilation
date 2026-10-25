@@ -36,6 +36,7 @@ from .models import (
     ExamProctoringEvent,
     ExamProctoringEvidence,
     ExamQuestion,
+    QuestionBankItem,
     ExamSet,
     ExamSubmission,
     EnrolledStudent,
@@ -1814,7 +1815,8 @@ def subject_exam_sets(request, subject_id):
         description=description,
         available_from=available_from_value,
         due_at=due_at_value,
-        exam_file=exam_file,
+        # The uploaded text is a bank import, not an attachment to this exam.
+        exam_file=None,
         max_attempts=int(max_attempts_raw) if str(max_attempts_raw).isdigit() else 1,
         time_limit=int(time_limit_raw) if str(time_limit_raw).isdigit() else 60,
         allow_backtracking=str(allow_backtracking_raw).lower() == 'true',
@@ -1829,9 +1831,9 @@ def subject_exam_sets(request, subject_id):
         pass
 
     if parsed_questions:
-        ExamQuestion.objects.bulk_create([
-            ExamQuestion(exam_set=exam_set, order=index, **question)
-            for index, question in enumerate(parsed_questions, start=1)
+        QuestionBankItem.objects.bulk_create([
+            QuestionBankItem(subject=subject, **question)
+            for question in parsed_questions
         ])
     return Response(
         {
@@ -1849,6 +1851,7 @@ def subject_exam_sets(request, subject_id):
             'created_at': exam_set.created_at,
             'exam_file': exam_set.exam_file.url if exam_set.exam_file else None,
             'exam_file_name': exam_set.exam_file.name.split('/')[-1] if exam_set.exam_file else None,
+            'bank_questions_added': len(parsed_questions),
         },
         status=status.HTTP_201_CREATED,
     )
@@ -2727,10 +2730,174 @@ def _serialize_question(q, include_answer=True):
         'points': q.points,
         'case_sensitive': q.case_sensitive,
         'created_at': q.created_at,
+        'bank_item_id': q.bank_item_id,
     }
     if include_answer:
         data['correct_answer'] = q.correct_answer
     return data
+
+
+def _serialize_bank_item(item):
+    return {
+        'id': item.id,
+        'question_type': item.question_type,
+        'question_text': item.question_text,
+        'choices': item.choices or [],
+        'correct_answer': item.correct_answer,
+        'points': item.points,
+        'case_sensitive': item.case_sensitive,
+        'created_at': item.created_at,
+    }
+
+
+def _question_fields_from_payload(data):
+    question_text = (data.get('question_text') or '').strip()
+    question_type = (data.get('question_type') or '').strip()
+    choices_raw = data.get('choices')
+    correct_answer = (data.get('correct_answer') or '').strip() or None
+    points_raw = data.get('points')
+    case_sensitive = data.get('case_sensitive', False) in (True, 'true', 'True', '1', 1)
+    valid_types = {choice[0] for choice in ExamQuestion.QUESTION_TYPE_CHOICES}
+    if not question_text:
+        raise ValueError('question_text is required.')
+    if question_type not in valid_types:
+        raise ValueError(f"question_type must be one of: {', '.join(sorted(valid_types))}.")
+    choices = None
+    points = None
+    if question_type == ExamQuestion.TYPE_MULTIPLE_CHOICE:
+        if not isinstance(choices_raw, list) or len(choices_raw) < 2:
+            raise ValueError('Multiple choice questions require at least 2 choices.')
+        choices = [str(choice).strip() for choice in choices_raw if str(choice).strip()]
+        if len(choices) < 2:
+            raise ValueError('Multiple choice questions require at least 2 choices.')
+        if not correct_answer:
+            raise ValueError('correct_answer is required for multiple choice questions.')
+        if correct_answer not in choices:
+            raise ValueError('correct_answer must be one of the provided choices.')
+        case_sensitive = False
+    elif question_type == ExamQuestion.TYPE_ENUMERATION:
+        try:
+            points = int(points_raw) if points_raw not in (None, '') else None
+        except (ValueError, TypeError):
+            raise ValueError('points must be a positive number.') from None
+        if points is not None and points < 1:
+            raise ValueError('points must be a positive number.')
+    elif question_type == ExamQuestion.TYPE_ESSAY:
+        correct_answer = None
+        case_sensitive = False
+    return {
+        'question_type': question_type,
+        'question_text': question_text,
+        'choices': choices,
+        'correct_answer': correct_answer,
+        'points': points,
+        'case_sensitive': case_sensitive,
+    }
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def subject_question_bank(request, subject_id):
+    """Course-scoped reusable question library for assigned instructors."""
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+    subject = Subject.objects.filter(
+        Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id,
+    ).distinct().first()
+    if not subject:
+        return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if request.method == 'GET':
+        items = QuestionBankItem.objects.filter(subject=subject)
+        return Response({'questions': [_serialize_bank_item(item) for item in items]})
+
+    upload = request.FILES.get('question_file')
+    bulk_text = request.data.get('bulk_text')
+    if upload or bulk_text is not None:
+        if upload and bulk_text is not None:
+            return Response({'error': 'Choose a file or pasted text, not both.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not upload:
+            upload = ContentFile(str(bulk_text).encode('utf-8'), name='questions.txt')
+        try:
+            parsed = _parse_uploaded_exam(upload, request.data.get('question_file_format', 'auto'))
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        items = QuestionBankItem.objects.bulk_create([
+            QuestionBankItem(subject=subject, **fields) for fields in parsed
+        ])
+        return Response({'created_count': len(items)}, status=status.HTTP_201_CREATED)
+
+    try:
+        question_fields = _question_fields_from_payload(request.data)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    item = QuestionBankItem.objects.create(subject=subject, **question_fields)
+    return Response(_serialize_bank_item(item), status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def subject_question_bank_detail(request, subject_id, question_id):
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+    subject = Subject.objects.filter(
+        Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id,
+    ).distinct().first()
+    if not subject:
+        return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
+    item = QuestionBankItem.objects.filter(subject=subject, id=question_id).first()
+    if not item:
+        return Response({'error': 'Question not found.'}, status=status.HTTP_404_NOT_FOUND)
+    item.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def exam_add_bank_questions(request, subject_id, exam_set_id):
+    """Copy selected bank questions into a draft exam in the chosen order."""
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+    subject = Subject.objects.filter(
+        Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id,
+    ).distinct().first()
+    if not subject:
+        return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
+    ids_raw = request.data.get('question_ids')
+    if not isinstance(ids_raw, list) or not 1 <= len(ids_raw) <= 500:
+        return Response({'error': 'Select between 1 and 500 bank questions.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        ids = [int(value) for value in ids_raw]
+    except (TypeError, ValueError):
+        return Response({'error': 'Invalid question selection.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(set(ids)) != len(ids):
+        return Response({'error': 'Duplicate questions in selection.'}, status=status.HTTP_400_BAD_REQUEST)
+    bank_items = {item.id: item for item in QuestionBankItem.objects.filter(subject=subject, id__in=ids)}
+    if len(bank_items) != len(ids):
+        return Response({'error': 'One or more questions are outside this course.'}, status=status.HTTP_400_BAD_REQUEST)
+    with transaction.atomic():
+        exam_set = ExamSet.objects.select_for_update().filter(id=exam_set_id, subject=subject).first()
+        if not exam_set:
+            return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if exam_set.is_final:
+            return Response({'error': 'Published exams cannot be altered.'}, status=status.HTTP_403_FORBIDDEN)
+        existing_ids = set(ExamQuestion.objects.filter(exam_set=exam_set, bank_item_id__in=ids).values_list('bank_item_id', flat=True))
+        last_order = ExamQuestion.objects.filter(exam_set=exam_set).order_by('-order').values_list('order', flat=True).first() or 0
+        copies = []
+        for item_id in ids:
+            if item_id in existing_ids:
+                continue
+            item = bank_items[item_id]
+            last_order += 1
+            copies.append(ExamQuestion(
+                exam_set=exam_set, bank_item=item, order=last_order,
+                question_type=item.question_type, question_text=item.question_text,
+                choices=item.choices, correct_answer=item.correct_answer,
+                points=item.points, case_sensitive=item.case_sensitive,
+            ))
+        ExamQuestion.objects.bulk_create(copies)
+        if any(question.question_type != ExamQuestion.TYPE_ESSAY for question in copies):
+            _enable_all_proctoring_restrictions(exam_set)
+    return Response({'added_count': len(copies)}, status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET', 'POST'])
@@ -2765,66 +2932,11 @@ def exam_questions(request, subject_id, exam_set_id):
     if exam_set.is_final:
         return Response({'error': 'Exam is final and cannot be altered.'}, status=status.HTTP_403_FORBIDDEN)
 
-    # POST – create a new question
-    question_text = (request.data.get('question_text') or '').strip()
-    question_type = (request.data.get('question_type') or '').strip()
-    choices_raw = request.data.get('choices')  # list of strings (MC only)
-    correct_answer = (request.data.get('correct_answer') or '').strip() or None
-    points_raw = request.data.get('points')  # optional hint / item count
-    case_sensitive = bool(request.data.get('case_sensitive', False))
-
-    VALID_TYPES = (
-        ExamQuestion.TYPE_MULTIPLE_CHOICE,
-        ExamQuestion.TYPE_IDENTIFICATION,
-        ExamQuestion.TYPE_ENUMERATION,
-        ExamQuestion.TYPE_ESSAY,
-    )
-
-    if not question_text:
-        return Response({'error': 'question_text is required.'}, status=status.HTTP_400_BAD_REQUEST)
-    if question_type not in VALID_TYPES:
-        return Response(
-            {'error': f"question_type must be one of: {', '.join(VALID_TYPES)}."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    choices = None
-    points = None
-
-    if question_type == ExamQuestion.TYPE_MULTIPLE_CHOICE:
-        if not isinstance(choices_raw, list) or len(choices_raw) < 2:
-            return Response(
-                {'error': 'Multiple choice questions require at least 2 choices.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        choices = [str(c).strip() for c in choices_raw if str(c).strip()]
-        if not correct_answer:
-            return Response(
-                {'error': 'correct_answer is required for multiple choice questions.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if correct_answer not in choices:
-            return Response(
-                {'error': 'correct_answer must be one of the provided choices.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        case_sensitive = False  # MC is always case-insensitive (already lowercased on grading)
-    elif question_type == ExamQuestion.TYPE_IDENTIFICATION:
-        # correct_answer is the expected short answer (optional – instructor may leave blank for fully manual)
-        # case_sensitive applies to grading
-        pass  # correct_answer and case_sensitive already set above
-    elif question_type == ExamQuestion.TYPE_ENUMERATION:
-        # correct_answer is a newline-separated list of expected items
-        # points is the expected number of items (optional hint)
-        try:
-            points = int(points_raw) if points_raw is not None else None
-        except (ValueError, TypeError):
-            points = None
-        # case_sensitive applies to per-item matching
-    else:
-        # essay: no correct answer, no case sensitivity
-        correct_answer = None
-        case_sensitive = False
+    # Keep legacy direct creation working while also making it reusable.
+    try:
+        question_fields = _question_fields_from_payload(request.data)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     # Auto-assign order = next integer
     last_order = (
@@ -2832,17 +2944,10 @@ def exam_questions(request, subject_id, exam_set_id):
     )
     order = (last_order or 0) + 1
 
-    q = ExamQuestion.objects.create(
-        exam_set=exam_set,
-        order=order,
-        question_type=question_type,
-        question_text=question_text,
-        choices=choices,
-        correct_answer=correct_answer,
-        points=points,
-        case_sensitive=case_sensitive,
-    )
-    if question_type != ExamQuestion.TYPE_ESSAY:
+    with transaction.atomic():
+        bank_item = QuestionBankItem.objects.create(subject=subject, **question_fields)
+        q = ExamQuestion.objects.create(exam_set=exam_set, order=order, bank_item=bank_item, **question_fields)
+    if q.question_type != ExamQuestion.TYPE_ESSAY:
         _enable_all_proctoring_restrictions(exam_set)
     return Response(_serialize_question(q), status=status.HTTP_201_CREATED)
 

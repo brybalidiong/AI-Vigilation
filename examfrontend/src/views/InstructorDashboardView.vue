@@ -357,6 +357,19 @@
                 type="button"
                 role="tab"
                 class="course-tab"
+                :class="{ active: activeCourseTab === 'question-bank' }"
+                :aria-selected="activeCourseTab === 'question-bank'"
+                @click="activeCourseTab = 'question-bank'"
+                id="tab-question-bank"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+                Question Bank
+                <span class="course-tab__count">{{ bankQuestions.length }}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="course-tab"
                 :class="{ active: activeCourseTab === 'sets' }"
                 :aria-selected="activeCourseTab === 'sets'"
                 @click="activeCourseTab = 'sets'"
@@ -399,7 +412,7 @@
               </div>
               <button type="button" class="new-course-btn" @click="showUploadExamPanel = !showUploadExamPanel" id="toggle-upload-exam">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
-                {{ showUploadExamPanel ? 'Cancel' : 'Upload exam' }}
+                {{ showUploadExamPanel ? 'Cancel' : 'Create exam' }}
               </button>
             </div>
 
@@ -411,8 +424,8 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
                   </div>
                   <div>
-                    <h3 class="create-panel__title">Upload New Exam</h3>
-                    <p class="create-panel__sub">Upload Aiken multiple-choice questions or essay prompts, then configure the exam settings. Published exams shuffle question and multiple-choice option order for each student and attempt.</p>
+                    <h3 class="create-panel__title">Create New Exam</h3>
+                    <p class="create-panel__sub">Create the draft, then select its questions from this course's question bank. Any file added here goes into the bank first.</p>
                   </div>
                 </div>
                 <form @submit.prevent="createExamSet">
@@ -460,7 +473,7 @@
                       </select>
                     </div>
                     <div class="create-panel__field">
-                      <label class="create-panel__label">Question File (.txt)</label>
+                      <label class="create-panel__label">Add questions to bank (.txt, optional)</label>
                       <label class="file-pick-label" style="width:100%;">
                         <input type="file" accept=".txt" @change="onExamFileChange" class="file-pick-input" />
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
@@ -470,11 +483,11 @@
                     </div>
                   </div>
                   <div class="create-panel__actions" style="margin-top:1.5rem;">
-                    <p style="font-size:0.82rem;color:#94a3b8;flex:1;">Students see the exam after you add questions and click <strong>Publish exam</strong>.</p>
+                    <p style="font-size:0.82rem;color:#64748b;flex:1;">Select bank questions after creating the draft. Students see it after you publish.</p>
                     <button type="button" class="ghost-btn" @click="showUploadExamPanel = false">Cancel</button>
                     <button type="submit" class="primary-btn" :disabled="examSetsLoading || examUploading">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v12m-5-5 5-5 5 5"/></svg>
-                      {{ examUploading ? 'Uploading…' : 'Upload Exam' }}
+                      {{ examUploading ? 'Creating…' : 'Create exam' }}
                     </button>
                   </div>
                 </form>
@@ -488,11 +501,11 @@
             <EmptyState 
               v-else-if="examSets.length === 0" 
               title="No exams yet" 
-              description="Upload a question file to create the first exam. Students will not see it until you publish." 
+              description="Create an exam draft, then choose questions from the course bank."
               icon='<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline>'
             >
               <template #actions>
-                <button type="button" class="primary-btn" @click="showUploadExamPanel = true">Upload exam</button>
+                <button type="button" class="primary-btn" @click="showUploadExamPanel = true">Create exam</button>
               </template>
             </EmptyState>
             <EmptyState
@@ -530,6 +543,114 @@
               </ExamRow>
             </template>
           </div>
+          </div>
+
+          <!-- TAB: COURSE QUESTION BANK -->
+          <div v-if="activeCourseTab === 'question-bank'" class="workspace-area bank-workspace">
+            <div class="bank-heading">
+              <div>
+                <h2>Question Bank</h2>
+                <p>Reusable questions for {{ selectedCourse?.name }}. Select bank questions when assembling an exam.</p>
+              </div>
+              <span class="bank-count">{{ bankQuestions.length }} questions</span>
+            </div>
+            <div class="bank-layout">
+              <section class="bank-list-panel">
+                <div class="bank-filter-row">
+                  <input v-model.trim="bankSearch" type="search" class="create-panel__input" placeholder="Search questions" aria-label="Search bank questions" />
+                  <select v-model="bankTypeFilter" class="create-panel__input" aria-label="Filter bank by question type">
+                    <option value="all">All types</option>
+                    <option value="multiple_choice">Multiple choice</option>
+                    <option value="identification">Identification</option>
+                    <option value="enumeration">Enumeration</option>
+                    <option value="essay">Essay</option>
+                  </select>
+                </div>
+                <p class="bank-help">Deleting a bank question does not change exams that already use it.</p>
+                <template v-if="bankLoading"><SkeletonLoader v-for="i in 3" :key="`bank-skel-${i}`" type="row" /></template>
+                <EmptyState v-else-if="bankQuestions.length === 0" title="No questions in this course" description="Add a question or import a file to build the bank." />
+                <EmptyState v-else-if="filteredBankQuestions.length === 0" title="No matching questions" description="Try another search or question type." />
+                <div v-else class="bank-item-list">
+                  <article v-for="item in filteredBankQuestions" :key="item.id" class="bank-item">
+                    <div class="bank-item__main">
+                      <span class="bank-item__type">{{ questionTypeLabel(item.question_type) }}</span>
+                      <p>{{ item.question_text }}</p>
+                      <details v-if="item.choices?.length || item.correct_answer" class="bank-item__details">
+                        <summary>Show answer details</summary>
+                        <ul v-if="item.choices?.length"><li v-for="choice in item.choices" :key="choice">{{ choice }}</li></ul>
+                        <span v-if="item.correct_answer">Answer: {{ item.correct_answer }}</span>
+                      </details>
+                    </div>
+                    <button type="button" class="bank-item__delete" :disabled="bankSaving" @click="requestDeleteBankQuestion(item)">Delete</button>
+                  </article>
+                </div>
+              </section>
+              <div class="bank-editor">
+                <section class="bank-editor-card">
+                  <h3>Add a question</h3>
+                  <form @submit.prevent="addBankQuestion" class="bank-form">
+                    <label>Question type
+                      <select v-model="newQ.type" class="create-panel__input">
+                        <option value="multiple_choice">Multiple choice</option>
+                        <option value="identification">Identification</option>
+                        <option value="enumeration">Enumeration</option>
+                        <option value="essay">Essay</option>
+                      </select>
+                    </label>
+                    <label>Question prompt
+                      <textarea v-model.trim="newQ.text" class="create-panel__input bank-textarea" required placeholder="Enter the question students will see"></textarea>
+                    </label>
+                    <template v-if="newQ.type === 'multiple_choice'">
+                      <fieldset class="bank-choice-fieldset">
+                        <legend>Choices · select the correct answer</legend>
+                        <div v-for="(choice, index) in newQ.choices" :key="index" class="bank-choice-row">
+                          <input v-model="newQ.correctIdx" type="radio" name="bank-correct-choice" :value="index" :aria-label="`Choice ${index + 1} is correct`" />
+                          <input v-model.trim="newQ.choices[index]" class="create-panel__input" :placeholder="`Choice ${index + 1}`" required />
+                          <button v-if="newQ.choices.length > 2" type="button" class="bank-remove-choice" @click="removeChoice(index)" aria-label="Remove choice">×</button>
+                        </div>
+                        <button v-if="newQ.choices.length < 6" type="button" class="bank-text-button" @click="addChoice">+ Add choice</button>
+                      </fieldset>
+                    </template>
+                    <template v-else-if="newQ.type === 'identification'">
+                      <label>Correct answer <small>(optional for manual grading)</small>
+                        <input v-model.trim="newQ.correctAnswer" class="create-panel__input" />
+                      </label>
+                      <label class="bank-checkbox"><input v-model="newQ.caseSensitive" type="checkbox" /> Case sensitive</label>
+                    </template>
+                    <template v-else-if="newQ.type === 'enumeration'">
+                      <fieldset class="bank-choice-fieldset">
+                        <legend>Expected answers</legend>
+                        <div v-for="(item, index) in newQ.enumerationItems" :key="index" class="bank-choice-row">
+                          <input v-model.trim="newQ.enumerationItems[index]" class="create-panel__input" :placeholder="`Item ${index + 1}`" />
+                          <button v-if="newQ.enumerationItems.length > 1" type="button" class="bank-remove-choice" @click="removeEnumerationItem(index)" aria-label="Remove item">×</button>
+                        </div>
+                        <button type="button" class="bank-text-button" @click="addEnumerationItem">+ Add item</button>
+                      </fieldset>
+                      <label>Points <small>(optional)</small><input v-model="newQ.points" type="number" min="1" class="create-panel__input" /></label>
+                      <label class="bank-checkbox"><input v-model="newQ.caseSensitive" type="checkbox" /> Case sensitive</label>
+                    </template>
+                    <button type="submit" class="primary-btn" :disabled="bankSaving">{{ bankSaving ? 'Saving…' : 'Save to bank' }}</button>
+                  </form>
+                </section>
+                <section class="bank-editor-card">
+                  <h3>Import questions</h3>
+                  <p>Upload a text file or paste questions. Aiken multiple choice uses an ANSWER letter; essay prompts are separated by blank lines.</p>
+                  <form @submit.prevent="processBulkQuestions" class="bank-form">
+                    <label>Format
+                      <select v-model="bankImportFormat" class="create-panel__input"><option value="aiken">Multiple choice (Aiken)</option><option value="essay">Essay prompts</option></select>
+                    </label>
+                    <label>Question file (.txt)
+                      <input type="file" accept=".txt" class="create-panel__input" @change="onAikenFileUpload" />
+                    </label>
+                    <span v-if="aikenFileName" class="bank-help">Loaded {{ aikenFileName }}</span>
+                    <label>Questions to import
+                      <textarea v-model="bulkText" class="create-panel__input bank-textarea" placeholder="Paste questions here" required></textarea>
+                    </label>
+                    <button type="submit" class="primary-btn" :disabled="bankSaving || !bulkText.trim()">{{ bankSaving ? 'Importing…' : 'Import to bank' }}</button>
+                  </form>
+                </section>
+              </div>
+            </div>
           </div>
 
           <!-- TAB: ENROLL STUDENTS -->
@@ -1018,7 +1139,7 @@
               <span class="exam-item__badge" :class="examIsFinal ? 'exam-item__badge--pub' : 'exam-item__badge--draft'">{{ examIsFinal ? 'Published' : 'Draft' }}</span>
               <h1>{{ managingExam.title }}</h1>
             </div>
-            <p class="header-sub">{{ examQuestions.length }} {{ examQuestions.length === 1 ? 'question' : 'questions' }}. Add items, then publish when the set is ready.</p>
+            <p class="header-sub">{{ examQuestions.length }} {{ examQuestions.length === 1 ? 'question' : 'questions' }} selected from the course bank. Publish when the set is ready.</p>
           </div>
           <button type="button" class="ghost-btn" @click="closeManageQuestions">Close</button>
         </header>
@@ -1027,7 +1148,7 @@
           
           <!-- LEFT SIDE: EXISTING QUESTIONS -->
           <div class="qe-col">
-            <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 1.5rem; color: #334155;">Existing Questions</h2>
+            <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 1.5rem; color: #334155;">Exam preview</h2>
             <div class="taking-questions">
             <template v-if="questionsLoading">
               <SkeletonLoader type="text" width="60%" height="2rem" />
@@ -1037,51 +1158,17 @@
               v-else-if="examQuestions.length === 0" 
               style="margin-top:2rem;" 
               title="Empty Exam" 
-              description="Your exam is currently empty. Start adding questions on the right!" 
+              description="Select questions from the course bank to assemble this exam."
             />
             <template v-else>
               <div class="q-list">
-              <div v-for="(q, idx) in examQuestions" :key="q.id" class="q-card" style="margin-bottom: 1rem; position: relative;">
+              <div v-for="(q, idx) in examQuestions" :key="q.id" class="q-card bank-exam-preview" style="margin-bottom: 0.65rem;">
                 <div class="q-header" style="justify-content: flex-start; gap: 0.75rem;">
                   <strong style="color: #0f172a;">Q{{ idx + 1 }}.</strong>
-                  <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.4px;"
-                    :style="{
-                      background: q.question_type === 'multiple_choice' ? '#dbeafe' : q.question_type === 'identification' ? '#fce7f3' : q.question_type === 'enumeration' ? '#dcfce7' : '#fef3c7',
-                      color:      q.question_type === 'multiple_choice' ? '#1d4ed8' : q.question_type === 'identification' ? '#9d174d'  : q.question_type === 'enumeration' ? '#15803d'  : '#b45309'
-                    }">
-                    {{ q.question_type === 'multiple_choice' ? 'Multiple Choice' : q.question_type === 'identification' ? 'Identification' : q.question_type === 'enumeration' ? 'Enumeration' : 'Essay' }}
-                  </span>
+                  <span class="bank-item__type">{{ questionTypeLabel(q.question_type) }}</span>
                 </div>
-                <p class="q-text" style="color: #1e293b; font-weight: 500; font-size: 1.05rem; margin-top: 0.5rem;">{{ q.question_text }}</p>
-                <!-- MC choices -->
-                <ul v-if="q.question_type === 'multiple_choice'" class="q-choices-list" style="padding-left: 1.2rem; color: #475569;">
-                  <li v-for="(choice, cIdx) in q.choices" :key="cIdx" :class="{ 'correct-choice': choice === q.correct_answer }" style="margin-bottom: 0.25rem;">
-                    {{ choice }} <span v-if="choice === q.correct_answer" style="color: #059669; font-weight: 800; font-size: 0.85rem; margin-left: 0.5rem; background: #d1fae5; padding: 2px 6px; border-radius: 4px;">✓ CORRECT</span>
-                  </li>
-                </ul>
-                <!-- Enumeration expected items -->
-                <div v-else-if="q.question_type === 'enumeration' && q.correct_answer" style="margin-top: 0.5rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 0.75rem 1rem;">
-                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem;">
-                    <p style="font-size: 0.8rem; color: #15803d; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin: 0;">Expected Answers</p>
-                    <span v-if="q.case_sensitive" style="font-size: 0.7rem; font-weight: 700; background: #166534; color: #fff; padding: 2px 7px; border-radius: 10px; text-transform: uppercase;">Case Sensitive</span>
-                    <span v-else style="font-size: 0.7rem; font-weight: 700; background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 10px; text-transform: uppercase;">Case Insensitive</span>
-                  </div>
-                  <ul style="list-style: disc; padding-left: 1.2rem; color: #166534; font-size: 0.9rem;">
-                    <li v-for="(item, eIdx) in q.correct_answer.split('\n').filter(i => i.trim())" :key="eIdx">{{ item }}</li>
-                  </ul>
-                </div>
-                <!-- Essay: open note -->
-                <p v-else-if="q.question_type === 'essay'" style="margin-top: 0.5rem; font-size: 0.85rem; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.6rem 1rem;">📝 Open-ended — manually graded</p>
-                <!-- Identification: answer + case sensitivity -->
-                <div v-else-if="q.question_type === 'identification'" style="margin-top: 0.5rem;">
-                  <div v-if="q.correct_answer" style="background: #fdf2f8; border: 1px solid #fbcfe8; border-radius: 8px; padding: 0.6rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
-                    <span style="font-size: 0.85rem; color: #9d174d;">✅ Answer: <strong>{{ q.correct_answer }}</strong></span>
-                    <span v-if="q.case_sensitive" style="font-size: 0.7rem; font-weight: 700; background: #9d174d; color: #fff; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; white-space: nowrap;">Case Sensitive</span>
-                    <span v-else style="font-size: 0.7rem; font-weight: 700; background: #fce7f3; color: #9d174d; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; white-space: nowrap;">Case Insensitive</span>
-                  </div>
-                  <p v-else style="font-size: 0.85rem; color: #9d174d; background: #fdf2f8; border: 1px solid #fbcfe8; border-radius: 8px; padding: 0.6rem 1rem; margin: 0;">✏️ Short-answer — manually graded</p>
-                </div>
-                <button v-if="!examIsFinal" @click="deleteExamQuestion(q.id)" style="position: absolute; top: 1rem; right: 1rem; background: #fee2e2; color: #ef4444; border:none; padding: 0.4rem 0.6rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 700;">Delete</button>
+                <p class="q-text">{{ q.question_text }}</p>
+                <button v-if="!examIsFinal" type="button" class="bank-item__delete" @click="deleteExamQuestion(q.id)">Remove</button>
             </div>
             </div>
             </template>
@@ -1185,180 +1272,38 @@
             </div>
           </div>
           
-          <!-- RIGHT SIDE: CREATION FORMS -->
-          <div class="qe-col qe-col--stack" v-if="!examIsFinal">
-            
-            <!-- BULK CREATE -->
-            <div style="background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; padding: 2rem;">
-              <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; color: #334155;">Bulk Create (Multiple Choice)</h2>
-              <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem; line-height: 1.5; background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 3px solid #3b82f6;">
-                <strong>Aiken Format:</strong><br/>
-                What is the capital of Japan?<br/>
-                A. Beijing<br/>
-                B. Tokyo<br/>
-                C. Seoul<br/>
-                D. Bangkok<br/>
-                ANSWER: B
-              </p>
-
-              <!-- Upload Aiken file -->
-              <div style="margin-bottom: 1rem;">
-                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; padding: 0.85rem 1.25rem; border: 2px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; transition: all 0.2s;" onmouseover="this.style.borderColor='#1D3461'; this.style.background='#f0f4ff';" onmouseout="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1D3461" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  <span style="font-size: 0.9rem; font-weight: 600; color: #334155;">{{ aikenFileName || 'Upload Aiken file (.txt)' }}</span>
-                  <input type="file" accept=".txt" @change="onAikenFileUpload" style="display: none;" />
+          <!-- RIGHT SIDE: SELECT FROM COURSE BANK -->
+          <div v-if="!examIsFinal" class="qe-col qe-col--stack bank-select-panel">
+            <div class="bank-editor-card">
+              <h2>Select from Question Bank</h2>
+              <p>Choose questions for this exam. Questions already included are marked as added.</p>
+              <div class="bank-filter-row">
+                <input v-model.trim="bankSelectSearch" type="search" class="create-panel__input" placeholder="Search bank questions" aria-label="Search bank questions for exam" />
+                <select v-model="bankSelectType" class="create-panel__input" aria-label="Filter selectable question type">
+                  <option value="all">All types</option>
+                  <option value="multiple_choice">Multiple choice</option>
+                  <option value="identification">Identification</option>
+                  <option value="enumeration">Enumeration</option>
+                  <option value="essay">Essay</option>
+                </select>
+              </div>
+              <p v-if="bankLoading" class="bank-help">Loading question bank…</p>
+              <p v-else-if="!bankQuestions.length" class="bank-help">This course bank is empty. Add questions in the Question Bank tab first.</p>
+              <p v-else-if="!selectableBankQuestions.length" class="bank-help">No questions match this search.</p>
+              <div v-else class="bank-select-list">
+                <label v-for="item in selectableBankQuestions" :key="item.id" class="bank-select-item" :class="{ 'bank-select-item--added': examBankItemIds.has(item.id) }">
+                  <input v-model="selectedBankQuestionIds" type="checkbox" :value="item.id" :disabled="examBankItemIds.has(item.id) || bankSaving" />
+                  <span><small>{{ questionTypeLabel(item.question_type) }}</small><strong>{{ item.question_text }}</strong></span>
+                  <em v-if="examBankItemIds.has(item.id)">Added</em>
                 </label>
               </div>
-
-              <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; color: #94a3b8; font-size: 0.85rem; font-weight: 500;">
-                <span style="flex: 1; height: 1px; background: #e2e8f0;"></span>
-                or paste below
-                <span style="flex: 1; height: 1px; background: #e2e8f0;"></span>
-              </div>
-              
-              <form @submit.prevent="processBulkQuestions" class="flex-col-form">
-                <textarea v-model="bulkText" placeholder="Paste your questions here using the Aiken format above..." style="min-height: 250px; font-family: monospace; font-size: 0.85rem;" required></textarea>
-                <button type="submit" class="primary-btn" style="background: #1D3461;" :disabled="questionsLoading || !bulkText">Import Bulk Questions</button>
-              </form>
-            </div>
-            
-            <!-- SINGLE CREATE -->
-            <div style="background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(74,69,124,0.06); border: 1px solid #e8e6f5; overflow: hidden;">
-              <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
-                <h2 style="font-size: 1.15rem; font-weight: 700; margin: 0; color: #0f172a; display: flex; align-items: center; gap: 0.5rem;">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a457c" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                  Add Single Question
-                </h2>
-              </div>
-              
-              <div style="padding: 1.5rem;">
-                <form @submit.prevent="addExamQuestion" style="display: flex; flex-direction: column; gap: 1.25rem;">
-                  
-                  <!-- Type Select - styled as pill tabs -->
-                  <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    <label style="font-size: 0.85rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Question Type</label>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                      <label v-for="qtype in [{val:'multiple_choice',label:'Multiple Choice',icon:'🔘',color:'#1d4ed8',bg:'#dbeafe'},{val:'identification',label:'Identification',icon:'✏️',color:'#9d174d',bg:'#fce7f3'},{val:'enumeration',label:'Enumeration',icon:'📋',color:'#15803d',bg:'#dcfce7'},{val:'essay',label:'Essay',icon:'📝',color:'#b45309',bg:'#fef3c7'}]" :key="qtype.val"
-                        style="display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.85rem; border-radius: 8px; border: 2px solid; cursor: pointer; transition: all 0.2s;"
-                        :style="newQ.type === qtype.val ? `border-color:${qtype.color}; background:${qtype.bg};` : 'border-color: #e2e8f0; background: #f8fafc;'"
-                      >
-                        <input type="radio" :value="qtype.val" v-model="newQ.type" style="display:none;" />
-                        <span>{{ qtype.icon }}</span>
-                        <span style="font-size: 0.82rem; font-weight: 700;" :style="newQ.type === qtype.val ? `color:${qtype.color}` : 'color:#64748b'">{{ qtype.label }}</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <!-- Question Text -->
-                  <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    <label style="font-size: 0.85rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Question Prompt</label>
-                    <textarea v-model="newQ.text" placeholder="E.g., What is the primary function of mitochondria?" required style="width: 100%; min-height: 120px; padding: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; background: #f8fafc; color: #1e293b; font-size: 0.95rem; font-family: inherit; resize: vertical; outline: none; transition: border-color 0.2s, box-shadow 0.2s;" onfocus="this.style.borderColor='#4a457c'; this.style.boxShadow='0 0 0 3px rgba(74,69,124,0.1)';" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none';"></textarea>
-                  </div>
-  
-                  <!-- ===== MULTIPLE CHOICE: Choices Editor ===== -->
-                  <div v-if="newQ.type === 'multiple_choice'" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 1.25rem; border-radius: 10px; display: flex; flex-direction: column; gap: 1rem;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <h5 style="margin: 0; font-size: 0.95rem; color: #0f172a; font-weight: 700;">Answer Choices</h5>
-                      <span style="font-size: 0.75rem; color: #64748b; background: #e2e8f0; padding: 2px 8px; border-radius: 12px;">Select correct via radio</span>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                      <label v-for="(ch, idx) in newQ.choices" :key="idx" style="display: flex; align-items: center; gap: 0.75rem; background: #ffffff; padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid" :style="newQ.correctIdx === idx ? 'border-color: #059669; box-shadow: 0 0 0 1px #059669;' : 'border-color: #cbd5e1;'">
-                        <input type="radio" :value="idx" v-model="newQ.correctIdx" required name="correct_choice" style="width: 18px; height: 18px; accent-color: #059669; cursor: pointer;" />
-                        <input type="text" v-model="newQ.choices[idx]" :placeholder="'Choice ' + String.fromCharCode(65 + idx)" required style="flex: 1; border: none; outline: none; font-size: 0.95rem; color: #1e293b; background: transparent;" />
-                        <button type="button" @click="removeChoice(idx)" v-if="newQ.choices.length > 2" style="background: #fee2e2; color: #ef4444; border: none; width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='#fee2e2'">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                      </label>
-                    </div>
-                    <button type="button" @click="addChoice" v-if="newQ.choices.length < 6" style="width: 100%; padding: 0.75rem; background: #ffffff; border: 1px dashed #94a3b8; color: #4a457c; font-weight: 600; font-size: 0.9rem; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#4a457c'; this.style.background='#f1f5f9';" onmouseout="this.style.borderColor='#94a3b8'; this.style.background='#ffffff';">
-                      + Add Another Choice
-                    </button>
-                  </div>
-
-                  <!-- ===== IDENTIFICATION: answer + case sensitivity ===== -->
-                  <div v-else-if="newQ.type === 'identification'" style="background: #fdf2f8; border: 1px solid #fbcfe8; padding: 1.25rem; border-radius: 10px; display: flex; flex-direction: column; gap: 1rem;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                      <h5 style="margin: 0; font-size: 0.95rem; color: #9d174d; font-weight: 700;">✏️ Identification Setup</h5>
-                    </div>
-
-                    <!-- Correct answer input -->
-                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
-                      <label style="font-size: 0.8rem; font-weight: 700; color: #9d174d; text-transform: uppercase; letter-spacing: 0.4px;">Correct Answer <span style="font-weight: 400; text-transform: none; color: #be185d;">(leave blank for manual grading)</span></label>
-                      <input
-                        type="text"
-                        v-model="newQ.correctAnswer"
-                        placeholder="e.g. Photosynthesis"
-                        style="padding: 0.65rem 0.9rem; border-radius: 8px; border: 1px solid #fbcfe8; background: #fff; font-size: 0.95rem; outline: none; transition: border-color 0.2s;"
-                        onfocus="this.style.borderColor='#9d174d';"
-                        onblur="this.style.borderColor='#fbcfe8';"
-                      />
-                    </div>
-
-                    <!-- Case sensitive toggle -->
-                    <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid; transition: all 0.2s;"
-                      :style="newQ.caseSensitive ? 'border-color: #9d174d; background: #fdf2f8;' : 'border-color: #fbcfe8; background: #fff;'"
-                    >
-                      <input type="checkbox" v-model="newQ.caseSensitive" style="width: 16px; height: 16px; accent-color: #9d174d; cursor: pointer;" />
-                      <div>
-                        <span style="font-size: 0.88rem; font-weight: 700; color: #9d174d;">Case Sensitive</span>
-                        <p style="margin: 0; font-size: 0.78rem; color: #be185d; line-height: 1.4;">
-                          When ON — <em>"Apple"</em> ≠ <em>"apple"</em>. Students will be notified.
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-
-                  <!-- ===== ENUMERATION: list of expected answers + case sensitivity ===== -->
-                  <div v-else-if="newQ.type === 'enumeration'" style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 1.25rem; border-radius: 10px; display: flex; flex-direction: column; gap: 1rem;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <h5 style="margin: 0; font-size: 0.95rem; color: #14532d; font-weight: 700;">📋 Expected Answers</h5>
-                      <span style="font-size: 0.75rem; color: #166534; background: #dcfce7; padding: 2px 8px; border-radius: 12px;">{{ newQ.enumerationItems.filter(i => i.trim()).length }} item(s)</span>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.6rem;">
-                      <div v-for="(item, eIdx) in newQ.enumerationItems" :key="eIdx" style="display: flex; align-items: center; gap: 0.6rem;">
-                        <span style="width: 22px; height: 22px; background: #15803d; color: #fff; border-radius: 50%; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">{{ eIdx + 1 }}</span>
-                        <input type="text" v-model="newQ.enumerationItems[eIdx]" :placeholder="'Item ' + (eIdx + 1)" style="flex: 1; padding: 0.55rem 0.8rem; border-radius: 8px; border: 1px solid #86efac; background: #fff; font-size: 0.92rem; outline: none;" onfocus="this.style.borderColor='#15803d';" onblur="this.style.borderColor='#86efac';" />
-                        <button type="button" @click="removeEnumerationItem(eIdx)" v-if="newQ.enumerationItems.length > 1" style="background: #fee2e2; color: #ef4444; border: none; width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                      </div>
-                    </div>
-                    <button type="button" @click="addEnumerationItem" style="width: 100%; padding: 0.65rem; background: #ffffff; border: 1px dashed #4ade80; color: #15803d; font-weight: 600; font-size: 0.88rem; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#dcfce7';" onmouseout="this.style.background='#ffffff';">
-                      + Add Item
-                    </button>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                      <label style="font-size: 0.82rem; color: #166534; font-weight: 600; white-space: nowrap;">Points (optional):</label>
-                      <input type="number" v-model="newQ.points" min="1" placeholder="auto" style="width: 90px; padding: 0.45rem 0.7rem; border-radius: 6px; border: 1px solid #86efac; font-size: 0.88rem; background: #fff; outline: none;" />
-                      <span style="font-size: 0.78rem; color: #4ade80;">defaults to item count</span>
-                    </div>
-                    <!-- Case sensitive toggle -->
-                    <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid; transition: all 0.2s;"
-                      :style="newQ.caseSensitive ? 'border-color: #15803d; background: #dcfce7;' : 'border-color: #86efac; background: #fff;'"
-                    >
-                      <input type="checkbox" v-model="newQ.caseSensitive" style="width: 16px; height: 16px; accent-color: #15803d; cursor: pointer;" />
-                      <div>
-                        <span style="font-size: 0.88rem; font-weight: 700; color: #15803d;">Case Sensitive</span>
-                        <p style="margin: 0; font-size: 0.78rem; color: #166534; line-height: 1.4;">
-                          When ON — each item must match exactly (e.g. <em>"Mitosis"</em> ≠ <em>"mitosis"</em>). Students will be notified.
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-
-                  <!-- ===== ESSAY: hint note ===== -->
-                  <div v-else-if="newQ.type === 'essay'" style="background: #fffbeb; border: 1px solid #fde68a; padding: 1rem; border-radius: 10px;">
-                    <p style="margin: 0; font-size: 0.88rem; color: #92400e; line-height: 1.55;">
-                      <strong>📝 Essay</strong> — Students write a long-form answer. You can set a word/character guidance in the question prompt. Grading is done manually by the instructor.
-                    </p>
-                  </div>
-  
-                  <button type="submit" class="primary-btn" :disabled="questionsLoading" style="padding: 1rem; font-size: 1.05rem; border-radius: 8px; background: linear-gradient(135deg, #4a457c, #3a3663); box-shadow: 0 4px 12px rgba(74,69,124,0.2); margin-top: 0.5rem; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 6px 16px rgba(74,69,124,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(74,69,124,0.2)';">
-                    Save Question
-                  </button>
-                </form>
+              <div class="bank-select-actions">
+                <button type="button" class="primary-btn" :disabled="bankSaving || !selectedBankQuestionIds.length" @click="addSelectedBankQuestions">
+                  {{ bankSaving ? 'Adding…' : `Add ${selectedBankQuestionIds.length} to exam` }}
+                </button>
+                <button type="button" class="ghost-btn" @click="closeManageQuestions(); activeCourseTab = 'question-bank'">Manage Question Bank</button>
               </div>
             </div>
-            
           </div>
 
         </div>
@@ -2120,12 +2065,30 @@ const courseSort = ref("name_asc");
 const courseView = ref("card");
 const examSearch = ref("");
 const examStatusFilter = ref("all");
+const bankQuestions = ref([]);
+const bankLoading = ref(false);
+const bankSaving = ref(false);
+const bankSearch = ref("");
+const bankTypeFilter = ref('all');
+const bankSelectSearch = ref("");
+const bankSelectType = ref('all');
+const bankImportFormat = ref('aiken');
+const selectedBankQuestionIds = ref([]);
+const filteredBankQuestions = computed(() => bankQuestions.value.filter(item =>
+  (bankTypeFilter.value === 'all' || item.question_type === bankTypeFilter.value)
+  && item.question_text.toLowerCase().includes(bankSearch.value.toLowerCase()),
+));
+const selectableBankQuestions = computed(() => bankQuestions.value.filter(item =>
+  (bankSelectType.value === 'all' || item.question_type === bankSelectType.value)
+  && item.question_text.toLowerCase().includes(bankSelectSearch.value.toLowerCase()),
+));
 const studentSearch = ref("");
 const showBatchEnroll = ref(false);
 const progressStudentSearch = ref("");
 
 const managingExam = ref(null);
 const examQuestions = ref([]);
+const examBankItemIds = computed(() => new Set(examQuestions.value.map(question => question.bank_item_id).filter(Boolean)));
 const examIsFinal = ref(false);
 const questionsLoading = ref(false);
 const restrictionsSaving = ref(false);
@@ -3176,8 +3139,10 @@ async function createExamSet() {
     const setsArray = newExamAssignedSet.value ? [Number(newExamAssignedSet.value)] : [];
     payload.append("assigned_sets", JSON.stringify(setsArray));
     if (newExamFile.value) payload.append("exam_file", newExamFile.value);
-    await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/`, payload);
-    showSuccess('Exam uploaded', 'The exam was added as a draft.');
+    const { data } = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/`, payload);
+    showSuccess('Exam created', data.bank_questions_added
+      ? `${data.bank_questions_added} question(s) were saved to the course bank. Select which ones belong in this exam.`
+      : 'The draft is ready. Select questions from the course bank.');
     newExamTitle.value = "";
     newExamStartAt.value = "";
     newExamDueAt.value = "";
@@ -3189,7 +3154,10 @@ async function createExamSet() {
     newExamFileFormat.value = 'aiken';
     showUploadExamPanel.value = false;
     await fetchExamSets();
+    await fetchQuestionBank();
     await fetchUpcomingExams();
+    const createdExam = examSets.value.find(exam => exam.id === data.id);
+    if (createdExam) openManageQuestions(createdExam);
   } catch (err) {
     error.value = err?.response?.data?.error || "Unable to upload exam.";
   } finally {
@@ -3237,12 +3205,17 @@ async function removeExamSetImpl(examSetId) {
 
 function openManageQuestions(exam) {
   managingExam.value = exam;
+  selectedBankQuestionIds.value = [];
+  bankSelectSearch.value = '';
+  bankSelectType.value = 'all';
   fetchExamQuestions();
+  fetchQuestionBank();
 }
 
 function closeManageQuestions() {
   managingExam.value = null;
   examQuestions.value = [];
+  selectedBankQuestionIds.value = [];
   examRestrictions.value = {
     gaze_above: true,
     gaze_below: true,
@@ -3324,8 +3297,29 @@ async function saveExamRestrictions() {
   }
 }
 
-async function addExamQuestion() {
-  if (!managingExam.value || !selectedSubjectId.value) return;
+function questionTypeLabel(type) {
+  return ({ multiple_choice: 'Multiple choice', identification: 'Identification', enumeration: 'Enumeration', essay: 'Essay' })[type] || type;
+}
+
+async function fetchQuestionBank() {
+  const subjectId = selectedSubjectId.value;
+  if (!subjectId) {
+    bankQuestions.value = [];
+    return;
+  }
+  bankLoading.value = true;
+  try {
+    const { data } = await apiClient.get(`/api/instructor/subjects/${subjectId}/question-bank/`);
+    if (selectedSubjectId.value === subjectId) bankQuestions.value = data.questions || [];
+  } catch (err) {
+    error.value = err?.response?.data?.error || 'Unable to load the question bank.';
+  } finally {
+    bankLoading.value = false;
+  }
+}
+
+async function addBankQuestion() {
+  if (!selectedSubjectId.value) return;
 
   const payload = {
     question_type: newQ.value.type,
@@ -3350,18 +3344,59 @@ async function addExamQuestion() {
   }
   // essay: no extra fields
 
-  questionsLoading.value = true;
+  bankSaving.value = true;
   message.value = "";
   error.value = "";
   try {
-    await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/`, payload);
-    showSuccess('Question added', 'The question was added to the exam.');
+    await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, payload);
+    showSuccess('Question saved', 'The question is ready to use in exams for this course.');
     newQ.value = { type: newQ.value.type, text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: newQ.value.caseSensitive };
-    await fetchExamQuestions();
+    await fetchQuestionBank();
   } catch (err) {
-    error.value = err?.response?.data?.error || "Failed to add question.";
+    error.value = err?.response?.data?.error || 'Failed to save question.';
   } finally {
-    questionsLoading.value = false;
+    bankSaving.value = false;
+  }
+}
+
+function requestDeleteBankQuestion(item) {
+  openConfirm({
+    title: 'Delete bank question?',
+    message: 'This removes the question from the course bank. Exams that already use a copy will keep it.',
+    confirmText: 'Delete question',
+    variant: 'danger',
+    onConfirm: async () => {
+      bankSaving.value = true;
+      try {
+        await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/${item.id}/`);
+        bankQuestions.value = bankQuestions.value.filter(question => question.id !== item.id);
+        selectedBankQuestionIds.value = selectedBankQuestionIds.value.filter(id => id !== item.id);
+        showSuccess('Question deleted', 'The question was removed from this course bank.');
+      } catch (err) {
+        error.value = err?.response?.data?.error || 'Unable to delete bank question.';
+      } finally {
+        bankSaving.value = false;
+      }
+    },
+  });
+}
+
+async function addSelectedBankQuestions() {
+  if (!managingExam.value || !selectedSubjectId.value || !selectedBankQuestionIds.value.length || bankSaving.value) return;
+  bankSaving.value = true;
+  error.value = '';
+  try {
+    const { data } = await apiClient.post(
+      `/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/from-bank/`,
+      { question_ids: selectedBankQuestionIds.value },
+    );
+    selectedBankQuestionIds.value = [];
+    await fetchExamQuestions();
+    showSuccess('Exam updated', `${data.added_count} question(s) added from the course bank.`);
+  } catch (err) {
+    error.value = err?.response?.data?.error || 'Unable to add selected questions.';
+  } finally {
+    bankSaving.value = false;
   }
 }
 
@@ -3390,61 +3425,23 @@ function onAikenFileUpload(event) {
 }
 
 async function processBulkQuestions() {
-  if (!bulkText.value.trim() || !managingExam.value || !selectedSubjectId.value) return;
-  questionsLoading.value = true;
+  if (!bulkText.value.trim() || !selectedSubjectId.value) return;
+  bankSaving.value = true;
   message.value = "";
   error.value = "";
-  
-  const lines = bulkText.value.split('\n').map(l => l.trim());
-  let addedCount = 0;
-  let qText = "";
-  let choices = [];
-
-  async function flushQuestion(answerLetter) {
-    if (!qText || choices.length < 2) { qText = ""; choices = []; return; }
-    let correctAnsText = "";
-    const cleanChoices = [];
-    for (const c of choices) {
-      const match = c.match(/^([A-Z])[.)]\s+(.*)/i);
-      if (match) {
-        cleanChoices.push(match[2].trim());
-        if (match[1].toUpperCase() === answerLetter) {
-          correctAnsText = match[2].trim();
-        }
-      }
-    }
-    if (cleanChoices.length >= 2 && correctAnsText) {
-      await apiClient.post(
-        `/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/`,
-        { question_type: 'multiple_choice', question_text: qText, choices: cleanChoices, correct_answer: correctAnsText }
-      );
-      addedCount++;
-    }
-    qText = "";
-    choices = [];
-  }
-
   try {
-    for (const line of lines) {
-      if (!line) continue;
-      if (line.toUpperCase().startsWith('ANSWER:')) {
-        const letter = line.split(':')[1].trim().toUpperCase();
-        await flushQuestion(letter);
-      } else if (!qText) {
-        qText = line;
-      } else {
-        choices.push(line);
-      }
-    }
+    const response = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, {
+      bulk_text: bulkText.value,
+      question_file_format: bankImportFormat.value,
+    });
     bulkText.value = "";
     aikenFileName.value = "";
-    showSuccess('Questions imported', `${addedCount} question(s) were added to the exam.`);
-    error.value = "";
-    await fetchExamQuestions();
+    showSuccess('Questions imported', `${response.data.created_count} question(s) were added to this course's bank.`);
+    await fetchQuestionBank();
   } catch (err) {
-      error.value = `Error adding bulk. Only added ${addedCount} questions.`;
+    error.value = err.response?.data?.error || 'Could not import questions.';
   } finally {
-      questionsLoading.value = false;
+    bankSaving.value = false;
   }
 }
 
@@ -3571,6 +3568,7 @@ watch(activeNav, async () => {
       if (activeCourseTab.value === "exam-progress") {
         if (!examProgressLoaded.value) await fetchExamProgress();
       }
+      if (activeCourseTab.value === "question-bank") await fetchQuestionBank();
     }
   }
 });
@@ -3592,6 +3590,7 @@ watch(
     }
     if (activeCourseTab.value === "sets") await refreshSetsView();
     if (activeCourseTab.value === "exam-progress") await fetchExamProgress();
+    if (activeCourseTab.value === "question-bank") await fetchQuestionBank();
   },
   { immediate: true },
 );
@@ -3614,6 +3613,8 @@ watch(selectedSubjectId, async () => {
   examSetsLoaded.value = false;
   subjectSetsLoaded.value = false;
   examProgressLoaded.value = false;
+  bankQuestions.value = [];
+  selectedBankQuestionIds.value = [];
   if (!selectedSubjectId.value) {
     examSets.value = [];
     subjectSets.value = [];
@@ -3626,6 +3627,7 @@ watch(selectedSubjectId, async () => {
   }
   if (activeCourseTab.value === "sets") await refreshSetsView();
   if (activeCourseTab.value === "exam-progress") await fetchExamProgress();
+  if (activeCourseTab.value === "question-bank") await fetchQuestionBank();
 });
 
 watch(activeCourseTab, async () => {
@@ -3640,6 +3642,7 @@ watch(activeCourseTab, async () => {
   if (activeCourseTab.value === "exam-progress") {
     if (!examProgressLoaded.value) await fetchExamProgress();
   }
+  if (activeCourseTab.value === "question-bank") await fetchQuestionBank();
 });
 
 watch(progressSets, (sets) => {
@@ -4386,6 +4389,52 @@ onMounted(async () => {
 .archive-course-card__restore:hover:not(:disabled) { background: #eaf0f9; }
 .archive-course-card__restore:disabled { opacity: .55; cursor: wait; }
 .archive-course-card__restore:focus-visible { outline: 3px solid #9db4d8; outline-offset: 2px; }
+
+.bank-workspace { padding: 1.5rem; }
+.bank-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.bank-heading h2, .bank-editor-card h2, .bank-editor-card h3 { margin: 0 0 .3rem; color: #1d3461; font-family: 'Poppins', sans-serif; }
+.bank-heading p, .bank-editor-card > p { margin: 0; color: #64748b; font-size: .85rem; }
+.bank-count { flex: none; border-radius: 999px; background: #edf2f8; color: #30496d; padding: .4rem .7rem; font-size: .75rem; font-weight: 700; }
+.bank-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); gap: 1rem; align-items: start; }
+.bank-list-panel, .bank-editor-card { min-width: 0; padding: 1.2rem; border: 1px solid #e0e7f0; border-radius: 14px; background: #fff; }
+.bank-editor { display: grid; gap: 1rem; }
+.bank-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, .42fr); gap: .6rem; margin-bottom: .8rem; }
+.bank-help { color: #66768e; font-size: .78rem; line-height: 1.5; }
+.bank-item-list { display: grid; gap: .5rem; max-height: 620px; overflow: auto; }
+.bank-item { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; padding: .85rem; border: 1px solid #e4eaf2; border-radius: 10px; background: #f9fbfd; }
+.bank-item__main { min-width: 0; overflow-wrap: anywhere; }
+.bank-item__main p { margin: .3rem 0; color: #213553; font-size: .88rem; font-weight: 600; white-space: pre-wrap; }
+.bank-item__type { color: #667c9c; font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.bank-item__details { color: #566983; font-size: .75rem; }
+.bank-item__details summary { cursor: pointer; }
+.bank-item__details ul { margin: .4rem 0; padding-left: 1.3rem; }
+.bank-item__delete { flex: none; border: 0; background: none; color: #b33542; font: 700 .75rem 'Poppins', sans-serif; cursor: pointer; }
+.bank-item__delete:disabled { opacity: .5; cursor: default; }
+.bank-form, .bank-form label { display: grid; gap: .45rem; }
+.bank-form { gap: .9rem; margin-top: 1rem; }
+.bank-form label { color: #31476b; font-size: .78rem; font-weight: 700; }
+.bank-form small { color: #75869c; font-weight: 500; }
+.bank-form .primary-btn { justify-self: start; }
+.bank-textarea { min-height: 95px; resize: vertical; }
+.bank-choice-fieldset { margin: 0; padding: .8rem; border: 1px solid #e1e7f0; border-radius: 10px; }
+.bank-choice-fieldset legend { color: #516789; font-size: .75rem; font-weight: 700; }
+.bank-choice-row { display: flex; align-items: center; gap: .5rem; margin: .4rem 0; }
+.bank-choice-row .create-panel__input { flex: 1; min-width: 0; }
+.bank-checkbox { display: flex !important; align-items: center; gap: .5rem; }
+.bank-remove-choice, .bank-text-button { border: 0; background: none; color: #315684; font-weight: 700; cursor: pointer; }
+.bank-select-list { display: grid; gap: .35rem; max-height: 430px; overflow: auto; }
+.bank-select-item { display: flex; align-items: flex-start; gap: .6rem; padding: .7rem; border: 1px solid #e3eaf2; border-radius: 9px; cursor: pointer; }
+.bank-select-item:hover { background: #f7f9fc; }
+.bank-select-item--added { opacity: .62; cursor: default; }
+.bank-select-item span { display: grid; gap: .2rem; min-width: 0; overflow-wrap: anywhere; }
+.bank-select-item small { color: #7185a1; font-size: .68rem; }
+.bank-select-item strong { color: #263c5b; font-size: .8rem; font-weight: 600; white-space: pre-wrap; }
+.bank-select-item em { margin-left: auto; color: #52775e; font-size: .68rem; font-style: normal; font-weight: 700; }
+.bank-select-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+.bank-exam-preview { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: .6rem; }
+.bank-exam-preview p { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 1000px) { .bank-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .bank-heading { flex-direction: column; } .bank-filter-row { grid-template-columns: 1fr; } .bank-workspace { padding: 1rem; } }
 
 @media (max-width: 720px) {
   .archive-heading { align-items: flex-start; flex-direction: column; }

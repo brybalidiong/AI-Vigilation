@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from accounts.grading import grade_question
 from accounts.models import (
-    EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, StudentAnswer,
+    EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, QuestionBankItem, StudentAnswer,
     StudentSet, Subject, UserProfile,
 )
 from accounts.student_id_service import StudentIdError, _name_matches, verify_student_id
@@ -843,14 +843,17 @@ class ExamQuestionUploadTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         exam = ExamSet.objects.get(pk=response.data['id'])
+        self.assertEqual(exam.questions.count(), 0)
+        self.assertFalse(exam.exam_file)
+        self.assertEqual(response.data['bank_questions_added'], 2)
         self.assertEqual(
-            list(exam.questions.values_list('question_type', 'question_text')),
+            list(QuestionBankItem.objects.filter(subject=self.subject).order_by('id').values_list('question_type', 'question_text')),
             [
                 (ExamQuestion.TYPE_ESSAY, 'Explain the water cycle.'),
                 (ExamQuestion.TYPE_ESSAY, 'Compare mitosis and meiosis.'),
             ],
         )
-        self.assertFalse(response.data['requires_all_restrictions'])
+        self.assertTrue(response.data['requires_all_restrictions'])
 
     def test_invalid_aiken_upload_returns_an_error_instead_of_empty_exam(self):
         response = self.upload('Question without choices or answer', 'aiken')
