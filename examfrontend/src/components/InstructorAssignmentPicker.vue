@@ -1,10 +1,9 @@
 <template>
   <div class="assignment-field">
     <span class="assignment-field__label">Assigned instructors</span>
-    <details ref="picker" class="assignment-picker" :class="{ 'assignment-picker--disabled': disabled }">
+    <details ref="picker" class="assignment-picker" :class="{ 'assignment-picker--disabled': disabled, 'assignment-picker--above': openAbove }" @toggle="positionPanel">
       <summary :aria-label="`${label}: ${summary}`" @click="disabled && $event.preventDefault()">
         <span class="assignment-picker__summary">{{ summary }}</span>
-        <span class="assignment-picker__chevron" aria-hidden="true">⌄</span>
       </summary>
       <div class="assignment-picker__panel">
         <input
@@ -33,7 +32,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 
 const props = defineProps({
   instructors: { type: Array, required: true },
@@ -44,6 +43,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 const picker = ref(null);
 const search = ref('');
+const openAbove = ref(false);
 const summary = computed(() => {
   if (!props.modelValue.length) return props.disabled ? 'Choose a course group first' : 'Select instructors';
   const first = props.instructors.find((instructor) => instructor.id === props.modelValue[0]);
@@ -73,6 +73,15 @@ function selectShown() {
 function closeOnOutsideClick(event) {
   if (picker.value?.open && !picker.value.contains(event.target)) picker.value.open = false;
 }
+async function positionPanel() {
+  if (!picker.value?.open) return;
+  await nextTick();
+  const panel = picker.value?.querySelector('.assignment-picker__panel');
+  if (!panel) return;
+  const bounds = picker.value.getBoundingClientRect();
+  const below = window.innerHeight - bounds.bottom;
+  openAbove.value = below < panel.offsetHeight + 12 && bounds.top > below;
+}
 onMounted(() => document.addEventListener('pointerdown', closeOnOutsideClick));
 onUnmounted(() => document.removeEventListener('pointerdown', closeOnOutsideClick));
 </script>
@@ -81,14 +90,13 @@ onUnmounted(() => document.removeEventListener('pointerdown', closeOnOutsideClic
 .assignment-field { display: grid; gap: .25rem; min-width: 0; }
 .assignment-field__label { color: #6a788d; font-size: .68rem; font-weight: 700; }
 .assignment-picker { position: relative; min-width: 0; }
-.assignment-picker summary { display: flex; align-items: center; justify-content: space-between; gap: .6rem; min-height: 41px; padding: .55rem .75rem; border: 1px solid #d8e1ee; border-radius: 9px; background: #fff; color: #203553; font-size: .75rem; font-weight: 700; cursor: pointer; list-style: none; }
+.assignment-picker summary { display: flex; align-items: center; min-height: 41px; padding: .55rem 2.65rem .55rem .85rem; border: 1px solid #d5dfeb; border-radius: 10px; background-color: #fff; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right .95rem center; background-size: .95rem; color: #334155; font: inherit; font-size: .75rem; cursor: pointer; list-style: none; }
 .assignment-picker summary::-webkit-details-marker { display: none; }
-.assignment-picker summary:focus-visible, .assignment-picker__search:focus-visible { outline: 2px solid #28548e; outline-offset: 2px; }
+.assignment-picker summary:focus, .assignment-picker__search:focus-visible { border-color: #1d3461; outline: 3px solid rgba(29, 52, 97, .14); }
 .assignment-picker__summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.assignment-picker__chevron { flex: none; color: #64748b; font-size: 1rem; line-height: 1; }
-.assignment-picker[open] .assignment-picker__chevron { transform: rotate(180deg); }
-.assignment-picker--disabled summary { background: #f4f6fa; color: #8895a8; cursor: default; }
+.assignment-picker--disabled summary { background-color: #f4f6fa; color: #8895a8; cursor: default; }
 .assignment-picker__panel { position: absolute; z-index: 30; top: calc(100% + .35rem); right: 0; width: max(100%, 18rem); padding: .65rem; border: 1px solid #d8e1ee; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px rgba(24, 43, 74, .16); }
+.assignment-picker--above .assignment-picker__panel { top: auto; bottom: calc(100% + .35rem); }
 .assignment-picker__search { width: 100%; height: 38px; padding: .5rem .7rem; border: 1px solid #d8e1ee; border-radius: 8px; background: #fff; color: #203553; font: inherit; font-size: .75rem; }
 .assignment-picker__toolbar { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .5rem .1rem .35rem; color: #7b899d; font-size: .7rem; }
 .assignment-picker__toolbar button { padding: .1rem 0; border: 0; background: transparent; color: #28548e; font: inherit; font-weight: 700; cursor: pointer; }

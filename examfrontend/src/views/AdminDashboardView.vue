@@ -253,7 +253,7 @@
                         </select>
                       </label>
                       <InstructorAssignmentPicker v-model="course._instructor_ids" :instructors="courseInstructorOptions(course)" :disabled="course._saving || !course._category" :label="course.name" />
-                      <button type="button" class="row-action admin-course-save" :disabled="course._saving || !course._instructor_ids.length || !course._category || (course._category === course.category && sameInstructorIds(course._instructor_ids, course.instructor_ids))" @click="saveCourseAssignment(course)">{{ course._saving ? 'Saving…' : 'Save' }}</button>
+                      <div class="admin-course-actions"><span v-if="courseHasPendingChanges(course)" class="admin-course-unsaved">Unsaved changes</span><button type="button" class="row-action admin-course-save" :disabled="course._saving || !course._instructor_ids.length || !course._category || !courseHasPendingChanges(course)" @click="saveCourseAssignment(course)">{{ course._saving ? 'Saving…' : 'Save' }}</button></div>
                     </div>
                   </article>
                 </div>
@@ -651,6 +651,9 @@ function courseInstructorOptions(course) {
 function sameInstructorIds(a, b) {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
+function courseHasPendingChanges(course) {
+  return course._category !== course.category || !sameInstructorIds(course._instructor_ids, course.instructor_ids);
+}
 
 // Students
 const students = ref([]);
@@ -860,6 +863,7 @@ async function createCourse() {
 }
 
 async function saveCourseAssignment(course) {
+  if (course._saving || !course._category || !course._instructor_ids.length || !courseHasPendingChanges(course)) return;
   course._saving = true;
   try {
     const { data } = await axios.patch(`${backendBaseUrl}/api/admin/courses/${course.id}/`, {
@@ -1315,6 +1319,8 @@ onMounted(() => {
 .admin-course-row__assignment { display: grid; grid-template-columns: minmax(115px, .75fr) minmax(175px, 1.3fr) auto; align-items: end; gap: .55rem; }
 .admin-course-row__assignment label { display: grid; gap: .25rem; min-width: 0; color: #6a788d; font-size: .68rem; font-weight: 700; }
 .admin-course-row__assignment .admin-filter { width: 100%; min-width: 0; font-size: .75rem; }
+.admin-course-actions { display: grid; justify-items: end; gap: .22rem; }
+.admin-course-unsaved { color: #8b6330; font-size: .65rem; font-weight: 700; white-space: nowrap; }
 .admin-course-create-picker { max-width: 28rem; margin-top: .85rem; }
 .admin-course-save { min-height: 41px; padding: .55rem .8rem; color: #1d3461; }
 .admin-course-save:disabled { opacity: .48; cursor: default; }
