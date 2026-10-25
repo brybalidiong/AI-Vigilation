@@ -393,7 +393,7 @@
               </button>
             </div>
 
-            <div class="course-tab-panel course-exam-scroll" role="tabpanel">
+            <div class="course-tab-panel" :class="{ 'course-exam-scroll': activeCourseTab !== 'question-bank' }" role="tabpanel">
 
           <!-- TAB: UPLOADED EXAMS -->
           <div v-if="activeCourseTab === 'uploaded-exams'" class="workspace-area">
@@ -4522,7 +4522,7 @@ onMounted(async () => {
 .bank-select.create-panel__input:hover { border-color: #a9b9cd; }
 .bank-select.create-panel__input:focus-visible { border-color: #2859c5; box-shadow: 0 0 0 3px rgba(40, 89, 197, .14); }
 .bank-help { margin: .5rem 0 1rem; color: #667991; font-size: .76rem; line-height: 1.55; }
-.bank-item-list { display: grid; align-content: start; gap: .7rem; max-height: 700px; overflow: auto; padding-right: .2rem; }
+.bank-item-list { display: grid; align-content: start; gap: .7rem; }
 .bank-batch { border: 1px solid #dce5ef; border-radius: 12px; background: #fff; overflow: hidden; }
 .bank-batch > summary { display: flex; align-items: center; gap: .7rem; min-height: 43px; padding: .92rem 1rem; color: #254264; background: #f9fbfd; cursor: pointer; list-style: none; }
 .bank-batch > summary::-webkit-details-marker { display: none; }
