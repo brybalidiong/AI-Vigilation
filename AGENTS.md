@@ -21,6 +21,7 @@ Read the relevant implementation before editing. If documentation and code disag
 ## Working rules
 
 - Keep changes focused on the requested feature and follow nearby code conventions.
+- Match new dropdowns to the app's existing select styling, including the shared chevron, comfortable text and icon spacing, and consistent focus states.
 - Enforce roles and exam ownership on the backend; frontend route guards alone are insufficient.
 - Keep API fields consistent between Django handlers and Vue callers.
 - Preserve exam timing, attempt limits, grading, and proctoring behavior unless the request changes them.

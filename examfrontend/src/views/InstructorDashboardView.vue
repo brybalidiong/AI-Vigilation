@@ -550,7 +550,7 @@
                 </div>
                 <div class="bank-filter-row">
                   <input v-model.trim="bankSearch" type="search" class="create-panel__input" placeholder="Search questions" aria-label="Search bank questions" />
-                  <select v-model="bankTypeFilter" class="create-panel__input" aria-label="Filter bank by question type">
+                  <select v-model="bankTypeFilter" class="create-panel__input bank-select" aria-label="Filter bank by question type">
                     <option value="all">All types</option>
                     <option value="multiple_choice">Multiple choice</option>
                     <option value="identification">Identification</option>
@@ -597,7 +597,7 @@
                         <button type="button" :class="{ active: bankBatchChoice === 'new' }" :aria-pressed="bankBatchChoice === 'new'" @click="bankBatchChoice = 'new'">New batch</button>
                       </div>
                       <label v-if="bankBatchChoice === 'existing'">Choose a batch
-                        <select v-model="bankSelectedBatchId" class="create-panel__input" required>
+                        <select v-model="bankSelectedBatchId" class="create-panel__input bank-select" required>
                           <option value="" disabled>Select a batch</option>
                           <option v-for="batch in bankBatches" :key="batch.id" :value="String(batch.id)">{{ batch.name }} · {{ batch.questions.length }} questions</option>
                         </select>
@@ -657,7 +657,7 @@
                         <button type="button" :class="{ active: bankImportChoice === 'new' }" :aria-pressed="bankImportChoice === 'new'" @click="bankImportChoice = 'new'">New batch</button>
                       </div>
                       <label v-if="bankImportChoice === 'existing'">Choose a batch
-                        <select v-model="bankImportSelectedBatchId" class="create-panel__input" required>
+                        <select v-model="bankImportSelectedBatchId" class="create-panel__input bank-select" required>
                           <option value="" disabled>Select a batch</option>
                           <option v-for="batch in bankBatches" :key="batch.id" :value="String(batch.id)">{{ batch.name }} · {{ batch.questions.length }} questions</option>
                         </select>
@@ -667,7 +667,7 @@
                       </label>
                     </div>
                     <label>Format
-                      <select v-model="bankImportFormat" class="create-panel__input"><option value="aiken">Multiple choice (Aiken)</option><option value="essay">Essay prompts</option></select>
+                      <select v-model="bankImportFormat" class="create-panel__input bank-select"><option value="aiken">Multiple choice (Aiken)</option><option value="essay">Essay prompts</option></select>
                     </label>
                     <label>Question file (.txt)
                       <input type="file" accept=".txt" class="create-panel__input" @change="onAikenFileUpload" />
@@ -1317,7 +1317,7 @@
               <div class="draft-bank-summary"><span><strong>{{ bankBatches.length }}</strong> batches</span><span><strong>{{ availableBankQuestions.length }}</strong> available</span><span><strong>{{ selectedBankQuestionIds.length }}</strong> selected</span></div>
               <div class="bank-filter-row">
                 <input v-model.trim="bankSelectSearch" type="search" class="create-panel__input" placeholder="Search bank questions" aria-label="Search bank questions for exam" />
-                <select v-model="bankSelectType" class="create-panel__input" aria-label="Filter selectable question type">
+                <select v-model="bankSelectType" class="create-panel__input bank-select" aria-label="Filter selectable question type">
                   <option value="all">All types</option>
                   <option value="multiple_choice">Multiple choice</option>
                   <option value="identification">Identification</option>
@@ -4510,7 +4510,7 @@ onMounted(async () => {
 .bank-heading__stats { display: flex; align-items: center; gap: 1.5rem; flex: none; }
 .bank-heading__stats span { display: grid; gap: .05rem; color: #bdcde5; font-size: .72rem; }
 .bank-heading__stats strong { color: #fff; font: 750 1.45rem 'Poppins', sans-serif; }
-.bank-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); gap: 1.2rem; align-items: start; }
+.bank-layout { display: grid; grid-template-columns: minmax(290px, 2fr) minmax(0, 3fr); gap: 1.2rem; align-items: start; }
 .bank-list-panel, .bank-editor-card { min-width: 0; padding: 1.35rem; border: 1px solid #dfe7f1; border-radius: 16px; background: #fff; box-shadow: 0 10px 28px rgba(25, 50, 88, .055); }
 .bank-panel-heading { display: flex; align-items: center; gap: .85rem; margin-bottom: 1rem; }
 .bank-panel-heading h2, .bank-panel-heading h3 { margin: .1rem 0 0; color: #1d3461; font: 750 1.08rem 'Poppins', sans-serif; }
@@ -4518,6 +4518,9 @@ onMounted(async () => {
 .bank-panel-heading__icon svg { width: 19px; height: 19px; }
 .bank-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, .45fr); gap: .65rem; margin: 1rem 0 .55rem; }
 .bank-filter-row .create-panel__input { min-height: 43px; }
+.bank-select.create-panel__input { min-width: 0; min-height: 43px; padding: .65rem 2.75rem .65rem .9rem; border: 1px solid #dce3ed; border-radius: 9px; background-color: #fff; color: #2c3b52; font-size: .85rem; font-weight: 500; cursor: pointer; box-shadow: none; }
+.bank-select.create-panel__input:hover { border-color: #a9b9cd; }
+.bank-select.create-panel__input:focus-visible { border-color: #2859c5; box-shadow: 0 0 0 3px rgba(40, 89, 197, .14); }
 .bank-help { margin: .5rem 0 1rem; color: #667991; font-size: .76rem; line-height: 1.55; }
 .bank-item-list { display: grid; align-content: start; gap: .7rem; max-height: 700px; overflow: auto; padding-right: .2rem; }
 .bank-batch { border: 1px solid #dce5ef; border-radius: 12px; background: #fff; overflow: hidden; }
