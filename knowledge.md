@@ -60,6 +60,7 @@ The grading helper is `exambackend/accounts/grading.py`.
 | Essay | Requires manual grading. |
 
 Published exams shuffle question order and multiple-choice options for each student and attempt. The order stays the same if a student refreshes an active attempt; answers are still graded against their choice text.
+Instructors can choose whether students may return to earlier questions when creating an exam. Existing exams allow it by default. In one-way exams, Next saves and locks the current answer on the server; refreshing resumes at the next question, and final grading uses locked answers for earlier questions.
 
 For grading changes, use the custom [exam-grading skill](.agents/skills/exam-grading/SKILL.md).
 

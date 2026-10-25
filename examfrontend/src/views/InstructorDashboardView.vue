@@ -437,6 +437,14 @@
                       <label class="create-panel__label" for="new-exam-time-limit">Time Limit <span style="font-weight:400;color:#94a3b8">(mins, 0 = none)</span></label>
                       <input id="new-exam-time-limit" v-model="newExamTimeLimit" type="number" min="0" step="1" class="create-panel__input" placeholder="60" required />
                     </div>
+                    <div class="create-panel__field" style="grid-column: 1 / -1;">
+                      <label class="create-panel__label" for="new-exam-backtracking">Question navigation</label>
+                      <select id="new-exam-backtracking" v-model="newExamAllowBacktracking" class="create-panel__input">
+                        <option :value="true">Allow students to return to previous questions</option>
+                        <option :value="false">Do not allow students to return to previous questions</option>
+                      </select>
+                      <small style="color:#64748b;line-height:1.4;">When returning is disabled, selecting Next saves that answer and locks the question for this attempt.</small>
+                    </div>
                     <div class="create-panel__field">
                       <label class="create-panel__label" for="new-exam-section">Assign to Section</label>
                       <select id="new-exam-section" v-model="newExamAssignedSet" class="create-panel__input">
@@ -2094,6 +2102,7 @@ const newExamFile = ref(null);
 const newExamFileFormat = ref('aiken');
 const newExamMaxAttempts = ref(1);
 const newExamTimeLimit = ref(60);
+const newExamAllowBacktracking = ref(true);
 const newExamAssignedSet = ref("");
 const upcomingExamRows = ref([]);
 const upcomingLoading = ref(false);
@@ -3162,6 +3171,7 @@ async function createExamSet() {
     payload.append("due_at", localDatetimeInputToApi(newExamDueAt.value));
     payload.append("max_attempts", newExamMaxAttempts.value);
     payload.append("time_limit", newExamTimeLimit.value);
+    payload.append("allow_backtracking", newExamAllowBacktracking.value);
     payload.append("question_file_format", newExamFileFormat.value);
     const setsArray = newExamAssignedSet.value ? [Number(newExamAssignedSet.value)] : [];
     payload.append("assigned_sets", JSON.stringify(setsArray));
@@ -3173,6 +3183,7 @@ async function createExamSet() {
     newExamDueAt.value = "";
     newExamMaxAttempts.value = 1;
     newExamTimeLimit.value = 60;
+    newExamAllowBacktracking.value = true;
     newExamAssignedSet.value = "";
     newExamFile.value = null;
     newExamFileFormat.value = 'aiken';

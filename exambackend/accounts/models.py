@@ -176,6 +176,7 @@ class ExamSet(models.Model):
     is_final = models.BooleanField(default=False)
     max_attempts = models.PositiveIntegerField(default=1)
     time_limit = models.PositiveIntegerField(default=60)  # Time limit in minutes, 0 for unlimited
+    allow_backtracking = models.BooleanField(default=True)
     detect_gaze_above = models.BooleanField(default=True)
     detect_gaze_below = models.BooleanField(default=True)
     detect_gaze_left = models.BooleanField(default=True)
@@ -207,6 +208,8 @@ class ExamSubmission(models.Model):
     terminated = models.BooleanField(default=False)  # True if exam was force-ended by the system
     tab_switches = models.PositiveSmallIntegerField(default=0)  # Number of times student switched tabs
     attempt_count = models.PositiveIntegerField(default=1)  # Which attempt this submission represents
+    question_index = models.PositiveIntegerField(default=0)
+    locked_answers = models.JSONField(default=dict, blank=True)
     latest_snapshot = models.ImageField(upload_to='snapshots/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

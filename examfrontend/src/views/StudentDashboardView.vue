@@ -506,6 +506,10 @@
         />
         <div v-else>
 
+          <p v-if="!allowBacktracking" role="status" style="padding: 0.75rem 1rem; border-radius: 8px; background: #eef2f7; color: #334155; margin: 0 0 1.5rem;">
+            One-way exam: after you select Next, your answer is saved and you cannot return to that question.
+          </p>
+
           <!-- Single Question Display -->
           <div style="display: grid; grid-template-columns: 180px 1fr; gap: 1.5rem; margin-bottom: 2rem;">
 
@@ -585,7 +589,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0;">
             <button type="button"
               style="background: #cbd5e1; color: #334155; padding: 0.6rem 1.2rem; border-radius: 6px; border: none; font-weight: 600; cursor: pointer;"
-              :style="{ visibility: currentQuestionIndex > 0 ? 'visible' : 'hidden' }"
+              :style="{ visibility: allowBacktracking && currentQuestionIndex > 0 ? 'visible' : 'hidden' }"
               @click.prevent="currentQuestionIndex--"
             >&larr; Previous</button>
 
@@ -596,12 +600,13 @@
               
               <button type="button" v-if="currentQuestionIndex < examQuestions.length - 1"
                 style="background: #1D3461; color: white; padding: 0.6rem 1.5rem; border-radius: 6px; border: none; font-weight: 600; cursor: pointer;"
-                @click.prevent="currentQuestionIndex++"
-              >Next &rarr;</button>
+                :disabled="advancingQuestion || submitting"
+                @click.prevent="advanceQuestion"
+              >{{ advancingQuestion ? 'Saving...' : 'Next →' }}</button>
   
               <button v-else
                 style="background: #115e59; color: white; padding: 0.6rem 1.5rem; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; font-size: 1rem;"
-                @click="submitExam" :disabled="submitting"
+                @click="submitExam" :disabled="submitting || advancingQuestion"
               >{{ submitting ? 'Submitting...' : 'Finish attempt...' }}</button>
             </div>
           </div>
@@ -621,9 +626,10 @@
               <button
                 v-for="(q, idx) in examQuestions"
                 :key="'nav_'+q.id"
-                @click="currentQuestionIndex = idx"
+                @click="allowBacktracking && (currentQuestionIndex = idx)"
+                :disabled="!allowBacktracking && idx !== currentQuestionIndex"
                 style="width: 32px; height: 42px; border-radius: 4px; display: flex; flex-direction: column; overflow: hidden; cursor: pointer; padding: 0; border: none;"
-                :style="{ border: idx === currentQuestionIndex ? '2px solid #1D3461' : '1px solid #cbd5e1', background: 'transparent' }"
+                :style="{ border: idx === currentQuestionIndex ? '2px solid #1D3461' : '1px solid #cbd5e1', background: 'transparent', opacity: !allowBacktracking && idx !== currentQuestionIndex ? 0.5 : 1, cursor: !allowBacktracking && idx !== currentQuestionIndex ? 'not-allowed' : 'pointer' }"
               >
                 <div style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 600; color: #334155;">{{ idx + 1 }}</div>
                 <div style="height: 18px; border-top: 1px solid #cbd5e1; background: #f1f5f9;">
@@ -634,7 +640,7 @@
 
             <!-- Finish button at bottom -->
             <div style="margin-top: 2rem;">
-              <button style="background: #115e59; color: white; padding: 0.6rem 1.5rem; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; font-size: 1rem;" @click="submitExam" :disabled="submitting">
+              <button style="background: #115e59; color: white; padding: 0.6rem 1.5rem; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; font-size: 1rem;" @click="submitExam" :disabled="submitting || advancingQuestion">
                 {{ submitting ? 'Submitting...' : 'Finish attempt...' }}
               </button>
             </div>
@@ -943,6 +949,8 @@ const examsError = ref("");
 const selectedSubjectId = ref(null);
 
 const currentQuestionIndex = ref(0);
+const allowBacktracking = ref(true);
+const advancingQuestion = ref(false);
 const currentQuestion = computed(() => examQuestions.value[currentQuestionIndex.value] || {});
 
 const takingExam = ref(null);
@@ -3142,6 +3150,8 @@ async function _doOpenExam(exam) {
   examResult.value = null;
   submitError.value = "";
   currentQuestionIndex.value = 0;
+  allowBacktracking.value = true;
+  advancingQuestion.value = false;
   browserWarningCount.value = 0;
   tabSwitchCount.value = 0;
   gazeViolationCount.value = 0;
@@ -3165,6 +3175,11 @@ async function _doOpenExam(exam) {
   try {
     const qRes = await getWithRetry(`/api/student/exams/${exam.id}/questions/`);
     examQuestions.value = qRes.data.questions || [];
+    allowBacktracking.value = qRes.data.allow_backtracking ?? true;
+    currentQuestionIndex.value = allowBacktracking.value ? 0 : Math.min(
+      Math.max(Number(qRes.data.question_index) || 0, 0),
+      Math.max(examQuestions.value.length - 1, 0),
+    );
     activeExamRestrictions.value = {
       gaze_above: qRes.data.proctoring_restrictions?.gaze_above ?? true,
       gaze_below: qRes.data.proctoring_restrictions?.gaze_below ?? true,
@@ -3174,6 +3189,11 @@ async function _doOpenExam(exam) {
     };
     for (const q of examQuestions.value) {
       studentAnswers.value[q.id] = "";
+    }
+    if (!allowBacktracking.value) {
+      for (const [questionId, answer] of Object.entries(qRes.data.locked_answers || {})) {
+        studentAnswers.value[questionId] = answer;
+      }
     }
     
     // Timer setup
@@ -3701,6 +3721,30 @@ async function _timeUpSubmit() {
     message: 'The time allocated for this exam has expired. Your answers have automatically been submitted.'
   };
   await submitExam();
+}
+
+async function advanceQuestion() {
+  if (advancingQuestion.value || submitting.value || currentQuestionIndex.value >= examQuestions.value.length - 1) return;
+  if (allowBacktracking.value) {
+    currentQuestionIndex.value += 1;
+    return;
+  }
+  const question = currentQuestion.value;
+  const examId = takingExam.value?.id;
+  if (!question?.id || !examId) return;
+  advancingQuestion.value = true;
+  submitError.value = '';
+  try {
+    const { data } = await api.post(`/api/student/exams/${examId}/advance/`, {
+      question_id: question.id,
+      answer_text: studentAnswers.value[question.id] || '',
+    });
+    if (takingExam.value?.id === examId) currentQuestionIndex.value = data.question_index;
+  } catch (err) {
+    submitError.value = err?.response?.data?.error || 'Could not save this answer. Please try again.';
+  } finally {
+    advancingQuestion.value = false;
+  }
 }
 
 async function submitExam() {

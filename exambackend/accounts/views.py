@@ -1753,6 +1753,7 @@ def subject_exam_sets(request, subject_id):
                     'due_at': exam.due_at,
                     'time_limit': exam.time_limit,
                     'max_attempts': exam.max_attempts,
+                    'allow_backtracking': exam.allow_backtracking,
                     'is_final': exam.is_final,
                     'proctoring_restrictions': _serialize_proctoring_restrictions(exam),
                     'requires_all_restrictions': _exam_requires_all_restrictions(exam),
@@ -1771,6 +1772,9 @@ def subject_exam_sets(request, subject_id):
     question_file_format = request.data.get('question_file_format', 'auto')
     max_attempts_raw = request.data.get('max_attempts', 1)
     time_limit_raw = request.data.get('time_limit', 60)
+    allow_backtracking_raw = request.data.get('allow_backtracking', 'true')
+    if str(allow_backtracking_raw).lower() not in ('true', 'false'):
+        return Response({'error': 'Invalid question navigation setting.'}, status=status.HTTP_400_BAD_REQUEST)
     assigned_sets_raw = request.data.get('assigned_sets', '[]')
     if not title:
         return Response({'error': 'Exam set title is required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1813,6 +1817,7 @@ def subject_exam_sets(request, subject_id):
         exam_file=exam_file,
         max_attempts=int(max_attempts_raw) if str(max_attempts_raw).isdigit() else 1,
         time_limit=int(time_limit_raw) if str(time_limit_raw).isdigit() else 60,
+        allow_backtracking=str(allow_backtracking_raw).lower() == 'true',
     )
 
     try:
@@ -1838,6 +1843,7 @@ def subject_exam_sets(request, subject_id):
             'description': exam_set.description,
             'available_from': exam_set.available_from,
             'due_at': exam_set.due_at,
+            'allow_backtracking': exam_set.allow_backtracking,
             'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
             'requires_all_restrictions': _exam_requires_all_restrictions(exam_set),
             'created_at': exam_set.created_at,
@@ -2923,6 +2929,20 @@ def _student_question_choices(question, submission):
     )]
 
 
+def _student_ordered_questions(exam_set, submission):
+    return sorted(
+        ExamQuestion.objects.filter(exam_set=exam_set),
+        key=lambda question: (
+            question.question_type == ExamQuestion.TYPE_ESSAY,
+            salted_hmac(
+                'student-exam-question-order',
+                f'{submission.pk}:{submission.attempt_count}:{question.pk}',
+                algorithm='sha256',
+            ).digest(),
+        ),
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def student_exam_questions(request, exam_id):
@@ -2962,6 +2982,8 @@ def student_exam_questions(request, exam_id):
             submission.attempt_count += 1
             submission.started_at = now
             submission.submitted_at = None
+            submission.question_index = 0
+            submission.locked_answers = {}
             submission.save()
             _clear_proctoring_for_attempt(submission)
             # Clear gaze smoother state for the new attempt
@@ -2991,17 +3013,7 @@ def student_exam_questions(request, exam_id):
     # A stable pseudorandom rank gives each student/attempt its own sequence,
     # including across refreshes and server restarts. Keep stored question IDs
     # and instructor ordering intact so answers continue to grade by ID.
-    qs = sorted(
-        ExamQuestion.objects.filter(exam_set=exam_set),
-        key=lambda q: (
-            q.question_type == ExamQuestion.TYPE_ESSAY,
-            salted_hmac(
-                'student-exam-question-order',
-                f'{submission.pk}:{submission.attempt_count}:{q.pk}',
-                algorithm='sha256',
-            ).digest(),
-        ),
-    )
+    qs = _student_ordered_questions(exam_set, submission)
     questions = [
         {
             **_serialize_question(q, include_answer=False),
@@ -3016,8 +3028,49 @@ def student_exam_questions(request, exam_id):
         'questions': questions,
         'started_at': submission.started_at,
         'time_limit': exam_set.time_limit,
+        'allow_backtracking': exam_set.allow_backtracking,
+        'question_index': min(submission.question_index, max(len(qs) - 1, 0)),
+        'locked_answers': submission.locked_answers if not exam_set.allow_backtracking else {},
         'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def student_advance_question(request, exam_id):
+    """Lock the current answer before advancing in a one-way exam."""
+    exam_set = ExamSet.objects.filter(id=exam_id).first()
+    if not exam_set:
+        return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if not _student_can_access_exam(request.user.email, exam_set):
+        return Response({'error': 'You are not enrolled in this exam.'}, status=status.HTTP_403_FORBIDDEN)
+    if not exam_set.is_final or exam_set.allow_backtracking:
+        return Response({'error': 'This exam does not use one-way navigation.'}, status=status.HTTP_400_BAD_REQUEST)
+    now = timezone.now()
+    if (exam_set.available_from and now < exam_set.available_from) or (exam_set.due_at and now > exam_set.due_at):
+        return Response({'error': 'This exam is not open.'}, status=status.HTTP_403_FORBIDDEN)
+    with transaction.atomic():
+        submission = ExamSubmission.objects.select_for_update().filter(
+            exam_set=exam_set, student_email=request.user.email.lower(), is_done=False,
+        ).first()
+        if not submission:
+            return Response({'error': 'Start the exam before advancing.'}, status=status.HTTP_409_CONFLICT)
+        questions = _student_ordered_questions(exam_set, submission)
+        index = submission.question_index
+        if index >= len(questions) - 1:
+            return Response({'error': 'This is the last question.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            question_id = int(request.data.get('question_id'))
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid question.'}, status=status.HTTP_400_BAD_REQUEST)
+        if question_id != questions[index].id:
+            return Response({'error': 'Question position changed. Reload the exam to continue.'}, status=status.HTTP_409_CONFLICT)
+        locked = dict(submission.locked_answers or {})
+        locked[str(question_id)] = str(request.data.get('answer_text') or '').strip()
+        submission.locked_answers = locked
+        submission.question_index = index + 1
+        submission.save(update_fields=['locked_answers', 'question_index', 'updated_at'])
+    return Response({'question_index': index + 1}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -3094,6 +3147,17 @@ def student_submit_answers(request, exam_id):
             answered_map[int(q_id)] = str(item.get('answer_text') or '').strip()
         except (TypeError, ValueError):
             continue
+
+    if not exam_set.allow_backtracking:
+        if not existing:
+            return Response({'error': 'Start the exam before submitting.'}, status=status.HTTP_409_CONFLICT)
+        ordered_questions = _student_ordered_questions(exam_set, existing)
+        locked = existing.locked_answers or {}
+        for index, question in enumerate(ordered_questions):
+            if index < existing.question_index:
+                answered_map[question.id] = str(locked.get(str(question.id), ''))
+            elif index > existing.question_index:
+                answered_map[question.id] = ''
 
     for q in questions.values():
         answer_text = answered_map.get(q.id, '')
