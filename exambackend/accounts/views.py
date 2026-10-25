@@ -2730,6 +2730,7 @@ def _serialize_question(q, include_answer=True):
         'question_text': q.question_text,
         'choices': q.choices or [],
         'points': q.points,
+        'max_words': q.max_words,
         'case_sensitive': q.case_sensitive,
         'created_at': q.created_at,
         'bank_item_id': q.bank_item_id,
@@ -2748,6 +2749,7 @@ def _serialize_bank_item(item):
         'choices': item.choices or [],
         'correct_answer': item.correct_answer,
         'points': item.points,
+        'max_words': item.max_words,
         'case_sensitive': item.case_sensitive,
         'created_at': item.created_at,
     }
@@ -2787,6 +2789,7 @@ def _question_fields_from_payload(data):
     choices_raw = data.get('choices')
     correct_answer = (data.get('correct_answer') or '').strip() or None
     points_raw = data.get('points')
+    max_words_raw = data.get('max_words')
     case_sensitive = data.get('case_sensitive', False) in (True, 'true', 'True', '1', 1)
     valid_types = {choice[0] for choice in ExamQuestion.QUESTION_TYPE_CHOICES}
     if not question_text:
@@ -2795,6 +2798,7 @@ def _question_fields_from_payload(data):
         raise ValueError(f"question_type must be one of: {', '.join(sorted(valid_types))}.")
     choices = None
     points = None
+    max_words = None
     if question_type == ExamQuestion.TYPE_MULTIPLE_CHOICE:
         if not isinstance(choices_raw, list) or len(choices_raw) < 2:
             raise ValueError('Multiple choice questions require at least 2 choices.')
@@ -2806,14 +2810,20 @@ def _question_fields_from_payload(data):
         if correct_answer not in choices:
             raise ValueError('correct_answer must be one of the provided choices.')
         case_sensitive = False
-    elif question_type == ExamQuestion.TYPE_ENUMERATION:
+    elif question_type in {ExamQuestion.TYPE_ENUMERATION, ExamQuestion.TYPE_ESSAY}:
         try:
             points = int(points_raw) if points_raw not in (None, '') else None
         except (ValueError, TypeError):
             raise ValueError('points must be a positive number.') from None
         if points is not None and points < 1:
             raise ValueError('points must be a positive number.')
-    elif question_type == ExamQuestion.TYPE_ESSAY:
+    if question_type == ExamQuestion.TYPE_ESSAY:
+        try:
+            max_words = int(max_words_raw) if max_words_raw not in (None, '') else None
+        except (ValueError, TypeError):
+            raise ValueError('max_words must be a positive number.') from None
+        if max_words is not None and not 1 <= max_words <= 10000:
+            raise ValueError('max_words must be between 1 and 10000.')
         correct_answer = None
         case_sensitive = False
     return {
@@ -2822,6 +2832,7 @@ def _question_fields_from_payload(data):
         'choices': choices,
         'correct_answer': correct_answer,
         'points': points,
+        'max_words': max_words,
         'case_sensitive': case_sensitive,
     }
 
@@ -2857,6 +2868,20 @@ def subject_question_bank(request, subject_id):
             parsed = _parse_uploaded_exam(upload, request.data.get('question_file_format', 'auto'))
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if any(fields['question_type'] == ExamQuestion.TYPE_ESSAY for fields in parsed):
+            try:
+                essay_settings = _question_fields_from_payload({
+                    'question_type': ExamQuestion.TYPE_ESSAY,
+                    'question_text': 'Imported essay',
+                    'points': request.data.get('points'),
+                    'max_words': request.data.get('max_words'),
+                })
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            for fields in parsed:
+                if fields['question_type'] == ExamQuestion.TYPE_ESSAY:
+                    fields['points'] = essay_settings['points']
+                    fields['max_words'] = essay_settings['max_words']
         batch_id = request.data.get('batch_id')
         if batch_id not in (None, ''):
             try:
@@ -2963,7 +2988,7 @@ def exam_add_bank_questions(request, subject_id, exam_set_id):
                 exam_set=exam_set, bank_item=item, order=last_order,
                 question_type=item.question_type, question_text=item.question_text,
                 choices=item.choices, correct_answer=item.correct_answer,
-                points=item.points, case_sensitive=item.case_sensitive,
+                points=item.points, max_words=item.max_words, case_sensitive=item.case_sensitive,
             ))
         ExamQuestion.objects.bulk_create(copies)
         if any(question.question_type != ExamQuestion.TYPE_ESSAY for question in copies):
@@ -3242,8 +3267,15 @@ def student_advance_question(request, exam_id):
             return Response({'error': 'Invalid question.'}, status=status.HTTP_400_BAD_REQUEST)
         if question_id != questions[index].id:
             return Response({'error': 'Question position changed. Reload the exam to continue.'}, status=status.HTTP_409_CONFLICT)
+        answer_text = str(request.data.get('answer_text') or '').strip()
+        question = questions[index]
+        if question.question_type == ExamQuestion.TYPE_ESSAY and question.max_words and len(answer_text.split()) > question.max_words:
+            return Response(
+                {'error': f'Essay answer exceeds the {question.max_words}-word limit.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         locked = dict(submission.locked_answers or {})
-        locked[str(question_id)] = str(request.data.get('answer_text') or '').strip()
+        locked[str(question_id)] = answer_text
         submission.locked_answers = locked
         submission.question_index = index + 1
         submission.save(update_fields=['locked_answers', 'question_index', 'updated_at'])
@@ -3335,6 +3367,14 @@ def student_submit_answers(request, exam_id):
                 answered_map[question.id] = str(locked.get(str(question.id), ''))
             elif index > existing.question_index:
                 answered_map[question.id] = ''
+
+    if not terminated:
+        for question in questions.values():
+            if question.question_type == ExamQuestion.TYPE_ESSAY and question.max_words and len(answered_map.get(question.id, '').split()) > question.max_words:
+                return Response(
+                    {'error': f'Essay answer exceeds the {question.max_words}-word limit.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
     for q in questions.values():
         answer_text = answered_map.get(q.id, '')

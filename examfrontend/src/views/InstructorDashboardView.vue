@@ -570,6 +570,7 @@
                       <div class="bank-item__main">
                         <span class="bank-item__type">{{ questionTypeLabel(item.question_type) }}</span>
                         <p>{{ item.question_text }}</p>
+                        <span v-if="item.question_type === 'essay'" class="bank-item__meta">{{ item.points || 1 }} {{ (item.points || 1) === 1 ? 'point' : 'points' }} · {{ item.max_words ? `${item.max_words} words maximum` : 'No word limit' }}</span>
                         <details class="bank-item__details">
                           <summary>Show answer details</summary>
                           <ul v-if="item.choices?.length"><li v-for="choice in item.choices" :key="choice">{{ choice }}</li></ul>
@@ -643,6 +644,14 @@
                       <label>Points <small>(optional)</small><input v-model="newQ.points" type="number" min="1" class="create-panel__input" /></label>
                       <label class="bank-checkbox"><input v-model="newQ.caseSensitive" type="checkbox" /> Case sensitive</label>
                     </template>
+                    <div v-else-if="newQ.type === 'essay'" class="bank-essay-settings">
+                      <label>Points
+                        <input v-model.number="newQ.points" type="number" min="1" step="1" class="create-panel__input" required placeholder="e.g. 10" />
+                      </label>
+                      <label>Maximum words
+                        <input v-model.number="newQ.maxWords" type="number" min="1" max="10000" step="1" class="create-panel__input" required placeholder="e.g. 500" />
+                      </label>
+                    </div>
                     <button type="submit" class="primary-btn" :disabled="bankSaving">{{ bankSaving ? 'Saving…' : 'Save to bank' }}</button>
                   </form>
                 </section>
@@ -669,6 +678,14 @@
                     <label>Format
                       <select v-model="bankImportFormat" class="create-panel__input bank-select"><option value="aiken">Multiple choice (Aiken)</option><option value="essay">Essay prompts</option></select>
                     </label>
+                    <div v-if="bankImportFormat === 'essay'" class="bank-essay-settings">
+                      <label>Points per essay
+                        <input v-model.number="bankImportPoints" type="number" min="1" step="1" class="create-panel__input" required placeholder="e.g. 10" />
+                      </label>
+                      <label>Maximum words per essay
+                        <input v-model.number="bankImportMaxWords" type="number" min="1" max="10000" step="1" class="create-panel__input" required placeholder="e.g. 500" />
+                      </label>
+                    </div>
                     <label>Question file (.txt)
                       <input type="file" accept=".txt" class="create-panel__input" @change="onAikenFileUpload" />
                     </label>
@@ -1199,6 +1216,7 @@
                 </div>
                 <div class="bank-exam-preview__body">
                   <p class="q-text">{{ q.question_text }}</p>
+                  <span v-if="q.question_type === 'essay'" class="bank-item__meta">{{ q.points || 1 }} {{ (q.points || 1) === 1 ? 'point' : 'points' }} · {{ q.max_words ? `${q.max_words} words maximum` : 'No word limit' }}</span>
                   <details class="bank-item__details">
                     <summary>Show answer</summary>
                     <ul v-if="q.choices?.length"><li v-for="choice in q.choices" :key="choice">{{ choice }}</li></ul>
@@ -2161,9 +2179,11 @@ const examRequiresAllRestrictions = computed(() =>
   examQuestions.value.length === 0
   || !examQuestions.value.some(question => question.question_type === 'essay'),
 );
-const newQ = ref({ type: 'multiple_choice', text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: false });
+const newQ = ref({ type: 'multiple_choice', text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', maxWords: '', correctAnswer: '', caseSensitive: false });
 const bulkText = ref("");
 const aikenFileName = ref("");
+const bankImportPoints = ref('');
+const bankImportMaxWords = ref('');
 
 const statsExam = ref(null);
 const statsLoading = ref(false);
@@ -3411,8 +3431,10 @@ async function addBankQuestion() {
     payload.correct_answer = items.join('\n');
     payload.points = newQ.value.points ? parseInt(newQ.value.points) : items.length;
     payload.case_sensitive = newQ.value.caseSensitive;
+  } else if (newQ.value.type === 'essay') {
+    payload.points = newQ.value.points;
+    payload.max_words = newQ.value.maxWords;
   }
-  // essay: no extra fields
 
   bankSaving.value = true;
   message.value = "";
@@ -3420,7 +3442,7 @@ async function addBankQuestion() {
   try {
     const { data } = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, payload);
     showSuccess('Question saved', 'The question is ready to use in exams for this course.');
-    newQ.value = { type: newQ.value.type, text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: newQ.value.caseSensitive };
+    newQ.value = { type: newQ.value.type, text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', maxWords: '', correctAnswer: '', caseSensitive: newQ.value.caseSensitive };
     await fetchQuestionBank();
     bankBatchChoice.value = 'existing';
     bankSelectedBatchId.value = String(data.batch_id);
@@ -3537,6 +3559,7 @@ async function processBulkQuestions() {
     const response = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, {
       bulk_text: bulkText.value,
       question_file_format: bankImportFormat.value,
+      ...(bankImportFormat.value === 'essay' ? { points: bankImportPoints.value, max_words: bankImportMaxWords.value } : {}),
       ...(bankImportChoice.value === 'existing'
         ? { batch_id: bankImportSelectedBatchId.value }
         : { batch_name: bankImportBatchName.value.trim() }),
@@ -3544,6 +3567,8 @@ async function processBulkQuestions() {
     bulkText.value = "";
     aikenFileName.value = "";
     bankImportBatchName.value = '';
+    bankImportPoints.value = '';
+    bankImportMaxWords.value = '';
     showSuccess('Questions imported', `${response.data.created_count} question(s) were added to this course's bank.`);
     await fetchQuestionBank();
     bankImportChoice.value = 'existing';
@@ -4538,6 +4563,7 @@ onMounted(async () => {
 .bank-item { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; padding: .85rem; border: 1px solid #e6ebf2; border-radius: 10px; background: #fff; }
 .bank-item__main { min-width: 0; overflow-wrap: anywhere; }
 .bank-item__main p { margin: .32rem 0 .45rem; color: #203858; font-size: .84rem; font-weight: 650; line-height: 1.5; white-space: pre-wrap; }
+.bank-item__meta { display: block; margin: .1rem 0 .45rem; color: #5f7490; font-size: .72rem; font-weight: 650; }
 .bank-item__type { color: #59779c; font-size: .66rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .bank-item__details { color: #506882; font-size: .76rem; white-space: pre-line; }
 .bank-item__details summary { width: fit-content; color: #315d91; font-weight: 700; cursor: pointer; }
@@ -4564,6 +4590,8 @@ onMounted(async () => {
 .bank-form label, .bank-type-fieldset legend { color: #314b6d; font-size: .76rem; font-weight: 750; }
 .bank-form small { color: #75869c; font-weight: 500; }
 .bank-form .primary-btn { justify-self: stretch; padding: .78rem 1rem; }
+.bank-essay-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+@media (max-width: 700px) { .bank-essay-settings { grid-template-columns: 1fr; } }
 .bank-textarea { min-height: 100px; resize: vertical; }
 .bank-type-fieldset, .bank-choice-fieldset { margin: 0; padding: 0; border: 0; }
 .bank-type-fieldset legend, .bank-choice-fieldset legend { margin-bottom: .5rem; }

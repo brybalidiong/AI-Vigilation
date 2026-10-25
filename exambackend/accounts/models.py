@@ -256,6 +256,7 @@ class QuestionBankItem(models.Model):
     choices = models.JSONField(null=True, blank=True)
     correct_answer = models.CharField(max_length=2000, null=True, blank=True)
     points = models.PositiveIntegerField(null=True, blank=True)
+    max_words = models.PositiveIntegerField(null=True, blank=True)
     case_sensitive = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -300,8 +301,10 @@ class ExamQuestion(models.Model):
     choices = models.JSONField(null=True, blank=True)
     # Correct answer string (MC / Identification) or newline-separated expected items (Enumeration)
     correct_answer = models.CharField(max_length=2000, null=True, blank=True)
-    # Points / expected item count hint for enumeration questions
+    # Maximum score for essays or expected item count hint for enumeration.
     points = models.PositiveIntegerField(null=True, blank=True)
+    # Optional essay answer limit; older questions remain unlimited.
+    max_words = models.PositiveIntegerField(null=True, blank=True)
     # Whether grading for Identification / Enumeration is case-sensitive
     case_sensitive = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

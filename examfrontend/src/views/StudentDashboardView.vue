@@ -575,8 +575,9 @@
 
               <!-- Essay: long-form answer -->
               <div v-else-if="currentQuestion.question_type === 'essay'">
-                <p style="font-size: 0.82rem; color: #92400e; margin-bottom: 0.5rem; font-weight: 600;">📝 Write your essay answer below:</p>
-                <textarea v-model="studentAnswers[currentQuestion.id]" placeholder="Compose your answer here. Be thorough and support your points..." style="width: 100%; min-height: 220px; padding: 1rem; border: 1px solid #fde68a; border-radius: 6px; font-family: inherit; resize: vertical; outline: none; line-height: 1.65;"></textarea>
+                <p style="font-size: 0.82rem; color: #92400e; margin-bottom: 0.5rem; font-weight: 600;">Write your essay answer below:</p>
+                <textarea :value="studentAnswers[currentQuestion.id] || ''" @input="updateEssayAnswer($event, currentQuestion)" placeholder="Compose your answer here. Be thorough and support your points..." style="width: 100%; min-height: 220px; padding: 1rem; border: 1px solid #fde68a; border-radius: 6px; font-family: inherit; resize: vertical; outline: none; line-height: 1.65;"></textarea>
+                <div class="essay-answer-meta"><span>Worth {{ currentQuestion.points || 1 }} {{ (currentQuestion.points || 1) === 1 ? 'point' : 'points' }} · Graded by your instructor</span><span v-if="currentQuestion.max_words" role="status">{{ essayWordCount(studentAnswers[currentQuestion.id]) }} / {{ currentQuestion.max_words }} words</span></div>
               </div>
 
               <!-- Fallback -->
@@ -960,6 +961,22 @@ const takingLoading = ref(false);
 const submitting = ref(false);
 const examQuestions = ref([]);
 const studentAnswers = ref({});
+function essayWordCount(answer) {
+  return String(answer || '').trim().match(/\S+/g)?.length || 0;
+}
+function updateEssayAnswer(event, question) {
+  const answer = event.target.value;
+  const limit = question.max_words;
+  if (limit && essayWordCount(answer) > limit) {
+    const words = [...answer.matchAll(/\S+/g)];
+    const lastAllowed = words[limit - 1];
+    const trimmed = answer.slice(0, lastAllowed.index + lastAllowed[0].length);
+    studentAnswers.value[question.id] = trimmed;
+    event.target.value = trimmed;
+    return;
+  }
+  studentAnswers.value[question.id] = answer;
+}
 const examResult = ref(null);
 const submitError = ref("");
 const activeExamRestrictions = ref({
@@ -3979,6 +3996,7 @@ async function performLogout() {
 
 <style scoped>
 @import '@/assets/dashboard.css';
+.essay-answer-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; margin-top: .55rem; color: #6c5b46; font-size: .75rem; font-weight: 600; }
 
 /* â”€â”€ Student-specific â”€â”€ */
 

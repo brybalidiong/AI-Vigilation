@@ -51,6 +51,10 @@ Deleting a bank question or an entire batch removes those sources but preserves 
 draft or published exams. Existing exam questions are added to the bank by the
 question-bank migration and grouped by source exam in the batch migration. The
 instructor exam preview stays compact and lets instructors reveal each answer.
+New essay questions and essay imports let instructors set points and a maximum
+word count. The point value is used for manual grading. Students see a live word
+counter, and the server rejects answers above a configured limit. Older essay
+questions without a word limit remain unrestricted.
 Production settings read credentials, hosts, origins, and media storage from
 environment variables. See [deployment guide](docs/DEPLOYMENT.md).
 The planned first deployment serves Vue from Vercel and Django/Daphne behind
