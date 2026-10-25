@@ -252,8 +252,9 @@
                           <option v-for="category in courseCategories" :key="category.code" :value="category.code">{{ category.code === 'MINOR' ? 'Minor courses' : category.code }}</option>
                         </select>
                       </label>
-                      <InstructorAssignmentPicker v-model="course._instructor_ids" :instructors="courseInstructorOptions(course)" :disabled="course._saving || !course._category" :label="course.name" />
-                      <div class="admin-course-actions"><span v-if="courseHasPendingChanges(course)" class="admin-course-unsaved">Unsaved changes</span><button type="button" class="row-action admin-course-save" :disabled="course._saving || !course._instructor_ids.length || !course._category || !courseHasPendingChanges(course)" @click="saveCourseAssignment(course)">{{ course._saving ? 'Saving…' : 'Save' }}</button></div>
+                      <InstructorAssignmentPicker v-model="course._instructor_ids" :instructors="courseInstructorOptions(course)" :disabled="course._saving || !course._category" :label="course.name" @update:model-value="course._assignment_error = ''" />
+                      <div class="admin-course-actions"><span v-if="courseHasPendingChanges(course)" class="admin-course-unsaved">Unsaved changes</span><button type="button" class="row-action admin-course-save" :disabled="course._saving || !courseHasPendingChanges(course)" @click="saveCourseAssignment(course)">{{ course._saving ? 'Saving…' : 'Save' }}</button></div>
+                      <p v-if="course._assignment_error || (courseHasPendingChanges(course) && !course._instructor_ids.length)" class="admin-course-assignment-hint" :role="course._assignment_error ? 'alert' : 'status'">{{ course._assignment_error || 'Select at least one instructor before saving.' }}</p>
                     </div>
                   </article>
                 </div>
@@ -646,7 +647,8 @@ function assignableInstructors(category) {
 function courseInstructorOptions(course) {
   return instructors.value.filter((instructor) =>
     (instructor.is_active && (course._category === 'MINOR' || instructor.institute === course._category))
-    || course._instructor_ids.includes(instructor.id));
+    || course._instructor_ids.includes(instructor.id)
+    || course.instructor_ids.includes(instructor.id));
 }
 function sameInstructorIds(a, b) {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -714,6 +716,7 @@ function closeCourseForm() {
 function onCourseCategoryChange(course) {
   const allowed = new Set(assignableInstructors(course._category).map((instructor) => instructor.id));
   course._instructor_ids = course._instructor_ids.filter((id) => allowed.has(id));
+  course._assignment_error = '';
 }
 
 function openInstructorForm() {
@@ -863,7 +866,12 @@ async function createCourse() {
 }
 
 async function saveCourseAssignment(course) {
-  if (course._saving || !course._category || !course._instructor_ids.length || !courseHasPendingChanges(course)) return;
+  if (course._saving || !courseHasPendingChanges(course)) return;
+  if (!course._category || !course._instructor_ids.length) {
+    course._assignment_error = !course._category ? 'Choose a course group before saving.' : 'Select at least one instructor before saving.';
+    return;
+  }
+  course._assignment_error = '';
   course._saving = true;
   try {
     const { data } = await axios.patch(`${backendBaseUrl}/api/admin/courses/${course.id}/`, {
@@ -1321,6 +1329,7 @@ onMounted(() => {
 .admin-course-row__assignment .admin-filter { width: 100%; min-width: 0; font-size: .75rem; }
 .admin-course-actions { display: grid; justify-items: end; gap: .22rem; }
 .admin-course-unsaved { color: #8b6330; font-size: .65rem; font-weight: 700; white-space: nowrap; }
+.admin-course-assignment-hint { grid-column: 1 / -1; margin: 0; color: #a04428; font-size: .7rem; font-weight: 600; }
 .admin-course-create-picker { max-width: 28rem; margin-top: .85rem; }
 .admin-course-save { min-height: 41px; padding: .55rem .8rem; color: #1d3461; }
 .admin-course-save:disabled { opacity: .48; cursor: default; }
