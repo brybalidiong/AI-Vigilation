@@ -143,25 +143,35 @@
             <template v-else-if="analytics">
               <div class="analytics-metrics">
                 <div class="analytics-metric"><span>Recorded violations</span><strong>{{ analytics.summary.recorded_violations }}</strong><small>Classified proctoring events</small></div>
-                <div class="analytics-metric"><span>Gadget alerts</span><strong>{{ gadgetAlertCount }}</strong><small>Confirmed detection events</small></div>
-                <div class="analytics-metric"><span>Flagged attempts</span><strong>{{ analytics.summary.flagged_attempts }}</strong><small>Integrity below 100%</small></div>
-                <div class="analytics-metric"><span>Auto-terminated</span><strong>{{ analytics.summary.terminated_attempts }}</strong><small>Recorded in integrity reports</small></div>
+                <div class="analytics-metric"><span>Gadget alerts</span><strong>{{ gadgetAlertCount }}</strong><small>{{ formatShare(gadgetAlertCount, analytics.summary.recorded_violations) }} of recorded violations</small></div>
+                <div class="analytics-metric"><span>Flagged attempts</span><strong>{{ formatShare(analytics.summary.flagged_attempts, analytics.summary.completed_attempts) }}</strong><small>{{ analytics.summary.flagged_attempts }} of {{ analytics.summary.completed_attempts }} completed attempts</small></div>
+                <div class="analytics-metric"><span>Auto-terminated</span><strong>{{ formatShare(analytics.summary.terminated_attempts, analytics.summary.completed_attempts) }}</strong><small>{{ analytics.summary.terminated_attempts }} of {{ analytics.summary.completed_attempts }} completed attempts</small></div>
               </div>
               <div class="analytics-grid">
                 <article class="analytics-panel analytics-panel--violations">
-                  <div class="analytics-panel__heading"><div><h3>Most recorded violations</h3><p>{{ analytics.summary.recorded_violations }} classified events</p></div><span class="analytics-panel__index">01</span></div>
+                  <div class="analytics-panel__heading"><div><h3>Most recorded violations</h3><p>Share of {{ analytics.summary.recorded_violations }} classified events</p></div><span class="analytics-panel__index">01</span></div>
                   <div v-if="topViolations.length" class="analytics-bars">
                     <div v-for="(item, index) in topViolations" :key="item.key" class="analytics-bar-row">
                       <span class="analytics-bar-rank">{{ String(index + 1).padStart(2, '0') }}</span>
-                      <div class="analytics-bar-main"><div class="analytics-bar-title"><span>{{ item.label }}</span><strong>{{ item.count }}</strong></div><div class="analytics-bar-track"><span :style="{ width: barWidth(item.count, topViolations[0].count) }"></span></div></div>
+                      <div class="analytics-bar-main"><div class="analytics-bar-title"><span>{{ item.label }}</span><strong>{{ item.count }} · {{ formatShare(item.count, analytics.summary.recorded_violations) }}</strong></div><div class="analytics-bar-track"><span :style="{ width: barWidth(item.count, analytics.summary.recorded_violations) }"></span></div></div>
                     </div>
                   </div>
                   <p v-else class="analytics-empty">No violations have been recorded yet.</p>
                 </article>
                 <article class="analytics-panel">
-                  <div class="analytics-panel__heading"><div><h3>Prohibited devices</h3><p>Confirmed gadget detections by type</p></div><span class="analytics-panel__index">02</span></div>
-                  <div v-if="analytics.devices.length" class="device-list">
-                    <div v-for="device in analytics.devices" :key="device.label" class="device-row"><span class="device-mark" aria-hidden="true">▣</span><span>{{ device.label }}</span><strong>{{ device.count }}</strong></div>
+                  <div class="analytics-panel__heading"><div><h3>Prohibited devices</h3><p>Share of recorded device detections</p></div><span class="analytics-panel__index">02</span></div>
+                  <div v-if="deviceChartItems.length" class="device-chart">
+                    <div class="device-chart__donut" :style="{ background: deviceChartGradient }" role="img" :aria-label="`Device detections by type: ${deviceChartItems.map((item) => `${item.label} ${formatShare(item.count, deviceDetectionCount)}`).join(', ')}`">
+                      <div class="device-chart__center"><strong>{{ deviceDetectionCount }}</strong><span>detections</span></div>
+                    </div>
+                    <div class="device-chart__legend">
+                      <div v-for="(device, index) in deviceChartItems" :key="device.label" class="device-chart__item">
+                        <span class="device-chart__swatch" :style="{ backgroundColor: deviceChartColors[index] }" aria-hidden="true"></span>
+                        <span class="device-chart__label">{{ device.label }}</span>
+                        <strong>{{ formatShare(device.count, deviceDetectionCount) }}</strong>
+                        <small>{{ device.count }}</small>
+                      </div>
+                    </div>
                   </div>
                   <p v-else class="analytics-empty">No prohibited devices have been recorded yet.</p>
                 </article>
@@ -672,7 +682,27 @@ const loadingAnalytics = ref(false);
 const analyticsError = ref('');
 const topViolations = computed(() => (analytics.value?.violations || []).filter((item) => item.count > 0).slice(0, 6));
 const gadgetAlertCount = computed(() => analytics.value?.violations?.find((item) => item.key === 'gadget_detected')?.count ?? 0);
+const deviceChartColors = ['#1d3461', '#4974ad', '#4b9a96', '#c89550', '#a5b2c4'];
+const deviceDetectionCount = computed(() => (analytics.value?.devices || []).reduce((total, item) => total + item.count, 0));
+const deviceChartItems = computed(() => {
+  const devices = (analytics.value?.devices || []).filter((item) => item.count > 0);
+  if (devices.length <= 5) return devices;
+  return [...devices.slice(0, 4), {
+    label: 'Other devices', count: devices.slice(4).reduce((total, item) => total + item.count, 0),
+  }];
+});
+const deviceChartGradient = computed(() => {
+  let start = 0;
+  const slices = deviceChartItems.value.map((item, index) => {
+    const end = start + item.count / deviceDetectionCount.value * 100;
+    const slice = `${deviceChartColors[index]} ${start}% ${end}%`;
+    start = end;
+    return slice;
+  });
+  return `conic-gradient(${slices.join(', ')})`;
+});
 const formatIntegrity = (value) => value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
+const formatShare = (count, total) => total > 0 ? `${(count / total * 100).toFixed(1)}%` : '—';
 const barWidth = (value, maximum) => `${maximum ? Math.max(0, Math.min(100, value / maximum * 100)) : 0}%`;
 const reviewStudent = ref(null);
 const studentStatusFilter = ref('all');
@@ -1197,11 +1227,18 @@ onMounted(() => {
 .analytics-bar-track { width: 100%; height: 7px; overflow: hidden; border-radius: 999px; background: #edf1f6; }
 .analytics-bar-track span { display: block; height: 100%; border-radius: inherit; background: #6f88ac; }
 .analytics-empty { margin: 0; padding: 2rem .5rem; color: #8492a6; font-size: .84rem; text-align: center; }
-.device-list { display: grid; }
-.device-row { display: flex; align-items: center; gap: .75rem; padding: .85rem 0; border-top: 1px solid #edf0f5; color: #374a64; font-size: .84rem; }
-.device-row:first-child { border-top: 0; padding-top: 0; }
-.device-row strong { margin-left: auto; color: #1d3461; font-size: .94rem; }
-.device-mark { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; background: #edf2f8; color: #45678f; font-size: .95rem; }
+.device-chart { display: flex; align-items: center; gap: 1.5rem; }
+.device-chart__donut { display: grid; place-items: center; flex: none; width: clamp(130px, 15vw, 180px); aspect-ratio: 1; border-radius: 50%; }
+.device-chart__center { display: grid; place-content: center; width: 62%; aspect-ratio: 1; border-radius: 50%; background: #fff; text-align: center; }
+.device-chart__center strong { color: #1b3157; font: 750 1.6rem 'Poppins', sans-serif; line-height: 1.2; }
+.device-chart__center span { color: #75849a; font-size: .68rem; }
+.device-chart__legend { display: grid; flex: 1; min-width: 0; }
+.device-chart__item { display: grid; grid-template-columns: .65rem minmax(0, 1fr) auto auto; align-items: center; gap: .55rem; padding: .55rem 0; border-bottom: 1px solid #edf0f5; color: #374a64; font-size: .76rem; }
+.device-chart__item:last-child { border-bottom: 0; }
+.device-chart__swatch { width: .65rem; height: .65rem; border-radius: 50%; }
+.device-chart__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-chart__item strong { color: #1d3461; font-size: .78rem; }
+.device-chart__item small { min-width: 1.3rem; color: #8492a6; font-size: .7rem; text-align: right; }
 .institute-panel { display: grid; gap: .2rem; }
 .institute-insight { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .7rem; padding: .85rem 1rem; margin-bottom: .65rem; border-radius: 10px; background: #f3f6fa; color: #62738c; font-size: .76rem; }
 .institute-insight strong { color: #1d3461; font-size: .85rem; }
@@ -1348,6 +1385,8 @@ onMounted(() => {
 }
 @media (max-width: 620px) {
   .stats-grid { grid-template-columns: 1fr; }
+  .device-chart { flex-direction: column; align-items: stretch; }
+  .device-chart__donut { align-self: center; width: 170px; }
   .analytics-heading { align-items: start; flex-direction: column; }
   .analytics-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analytics-panel { padding: 1.1rem; }
