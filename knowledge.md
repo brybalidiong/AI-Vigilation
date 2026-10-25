@@ -43,7 +43,8 @@ list. The local in-memory channel layer supports one backend process. Deployment
 with multiple processes set `REDIS_URL` for a shared Redis channel layer.
 Each course has a reusable Question Bank organized into named batches. Instructors
 create questions or import Aiken multiple-choice and blank-line-separated essay
-prompts only on the course Question Bank page. A new exam draft starts empty;
+prompts only on the course Question Bank page. For each question or import, they
+choose an existing course batch or create a named batch. A new exam draft starts empty;
 the instructor selects questions from the available bank batches before
 publishing. Exam questions are independent copies linked to their bank source.
 Deleting a bank question or an entire batch removes those sources but preserves questions already in

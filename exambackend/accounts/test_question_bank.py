@@ -60,6 +60,48 @@ class CourseQuestionBankTests(TestCase):
         self.assertEqual(QuestionBankBatch.objects.get(subject=self.subject).name, 'Chapter one')
         self.assertEqual(self.exam.questions.count(), 0)
 
+    def test_new_batch_choice_keeps_same_named_batches_separate(self):
+        existing = QuestionBankBatch.objects.create(subject=self.subject, name='Unit one')
+        response = self.client.post(self.bank_url, {
+            'question_type': 'essay', 'question_text': 'Synthetic new prompt',
+            'batch_name': 'Unit one', 'create_new_batch': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertNotEqual(response.data['batch_id'], existing.id)
+        self.assertEqual(QuestionBankBatch.objects.filter(subject=self.subject, name='Unit one').count(), 2)
+
+    def test_manual_and_bulk_questions_append_to_selected_batch(self):
+        batch = QuestionBankBatch.objects.create(subject=self.subject, name='Unit one')
+        manual = self.client.post(self.bank_url, {
+            'question_type': 'essay', 'question_text': 'Synthetic manual prompt',
+            'batch_id': batch.id,
+        }, format='json')
+        self.assertEqual(manual.status_code, 201, manual.data)
+        self.assertEqual(manual.data['batch_id'], batch.id)
+        imported = self.client.post(self.bank_url, {
+            'bulk_text': 'What is two plus two?\nA. Three\nB. Four\nANSWER: B',
+            'question_file_format': 'aiken', 'batch_id': batch.id,
+        }, format='json')
+        self.assertEqual(imported.status_code, 201, imported.data)
+        self.assertEqual(imported.data['batch']['id'], batch.id)
+        self.assertEqual(imported.data['created_count'], 1)
+        self.assertEqual(batch.questions.count(), 2)
+        self.assertEqual(QuestionBankBatch.objects.filter(subject=self.subject).count(), 1)
+
+    def test_cannot_append_to_another_courses_batch(self):
+        foreign = QuestionBankBatch.objects.create(subject=self.other_subject, name='Private batch')
+        manual = self.client.post(self.bank_url, {
+            'question_type': 'essay', 'question_text': 'Synthetic manual prompt',
+            'batch_id': foreign.id,
+        }, format='json')
+        self.assertEqual(manual.status_code, 400, manual.data)
+        imported = self.client.post(self.bank_url, {
+            'bulk_text': 'What is two plus two?\nA. Three\nB. Four\nANSWER: B',
+            'question_file_format': 'aiken', 'batch_id': foreign.id,
+        }, format='json')
+        self.assertEqual(imported.status_code, 400, imported.data)
+        self.assertEqual(QuestionBankItem.objects.count(), 0)
+
     def test_batches_group_questions_and_can_be_deleted_without_changing_exam(self):
         first = self.client.post(self.bank_url, {
             'question_type': 'essay', 'question_text': 'Explain concept A', 'batch_name': 'Unit one',

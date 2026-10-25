@@ -2775,6 +2775,8 @@ def _bank_batch_for_manual_question(subject, data):
     name = str(data.get('batch_name') or 'Manual questions').strip()[:160]
     if not name:
         raise ValueError('Batch name is required.')
+    if data.get('create_new_batch') in (True, 'true', 'True', '1', 1):
+        return QuestionBankBatch.objects.create(subject=subject, name=name)
     batch = QuestionBankBatch.objects.filter(subject=subject, name=name).order_by('id').first()
     return batch or QuestionBankBatch.objects.create(subject=subject, name=name)
 
@@ -2855,10 +2857,17 @@ def subject_question_bank(request, subject_id):
             parsed = _parse_uploaded_exam(upload, request.data.get('question_file_format', 'auto'))
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        batch_name = str(request.data.get('batch_name') or 'Question import').strip()[:160]
-        if not batch_name:
-            return Response({'error': 'Batch name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        batch = QuestionBankBatch.objects.create(subject=subject, name=batch_name)
+        batch_id = request.data.get('batch_id')
+        if batch_id not in (None, ''):
+            try:
+                batch = _bank_batch_for_manual_question(subject, {'batch_id': batch_id})
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            batch_name = str(request.data.get('batch_name') or 'Question import').strip()[:160]
+            if not batch_name:
+                return Response({'error': 'Batch name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            batch = QuestionBankBatch.objects.create(subject=subject, name=batch_name)
         items = QuestionBankItem.objects.bulk_create([
             QuestionBankItem(subject=subject, batch=batch, **fields) for fields in parsed
         ])

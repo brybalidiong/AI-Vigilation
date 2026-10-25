@@ -590,9 +590,22 @@
                   <div class="bank-panel-heading"><span class="bank-panel-heading__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2 2 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span><div><span class="bank-eyebrow">QUESTION EDITOR</span><h3>Create a question</h3></div></div>
                   <p>Build a question here, then select it from a batch when preparing an exam.</p>
                   <form @submit.prevent="addBankQuestion" class="bank-form">
-                    <label>Batch name
-                      <input v-model.trim="bankBatchName" class="create-panel__input" maxlength="160" required placeholder="e.g. Chapter 1" />
-                    </label>
+                    <div class="bank-target">
+                      <span class="bank-target__label">Save in</span>
+                      <div class="bank-target__switch" role="group" aria-label="Question batch destination">
+                        <button type="button" :class="{ active: bankBatchChoice === 'existing' }" :disabled="!bankBatches.length" :aria-pressed="bankBatchChoice === 'existing'" @click="bankBatchChoice = 'existing'">Existing batch</button>
+                        <button type="button" :class="{ active: bankBatchChoice === 'new' }" :aria-pressed="bankBatchChoice === 'new'" @click="bankBatchChoice = 'new'">New batch</button>
+                      </div>
+                      <label v-if="bankBatchChoice === 'existing'">Choose a batch
+                        <select v-model="bankSelectedBatchId" class="create-panel__input" required>
+                          <option value="" disabled>Select a batch</option>
+                          <option v-for="batch in bankBatches" :key="batch.id" :value="String(batch.id)">{{ batch.name }} · {{ batch.questions.length }} questions</option>
+                        </select>
+                      </label>
+                      <label v-else>New batch name
+                        <input v-model.trim="bankBatchName" class="create-panel__input" maxlength="160" required placeholder="e.g. Chapter 1" />
+                      </label>
+                    </div>
                     <fieldset class="bank-type-fieldset"><legend>Question type</legend><div class="bank-type-pills">
                       <label v-for="type in [{ value: 'multiple_choice', label: 'Multiple choice' }, { value: 'identification', label: 'Identification' }, { value: 'enumeration', label: 'Enumeration' }, { value: 'essay', label: 'Essay' }]" :key="type.value" :class="{ active: newQ.type === type.value }">
                         <input v-model="newQ.type" type="radio" name="bank-question-type" :value="type.value" />{{ type.label }}
@@ -637,9 +650,22 @@
                   <div class="bank-panel-heading"><span class="bank-panel-heading__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m0 0-4 4m4-4 4 4M4 16v4h16v-4"/></svg></span><div><span class="bank-eyebrow">BULK UPLOAD</span><h3>Import a batch</h3></div></div>
                   <p>Upload a text file or paste questions. Aiken multiple choice uses an ANSWER letter; essay prompts are separated by blank lines.</p>
                   <form @submit.prevent="processBulkQuestions" class="bank-form">
-                    <label>Batch name
-                      <input v-model.trim="bankImportBatchName" class="create-panel__input" maxlength="160" placeholder="e.g. Midterm question set" />
-                    </label>
+                    <div class="bank-target">
+                      <span class="bank-target__label">Import into</span>
+                      <div class="bank-target__switch" role="group" aria-label="Import batch destination">
+                        <button type="button" :class="{ active: bankImportChoice === 'existing' }" :disabled="!bankBatches.length" :aria-pressed="bankImportChoice === 'existing'" @click="bankImportChoice = 'existing'">Existing batch</button>
+                        <button type="button" :class="{ active: bankImportChoice === 'new' }" :aria-pressed="bankImportChoice === 'new'" @click="bankImportChoice = 'new'">New batch</button>
+                      </div>
+                      <label v-if="bankImportChoice === 'existing'">Choose a batch
+                        <select v-model="bankImportSelectedBatchId" class="create-panel__input" required>
+                          <option value="" disabled>Select a batch</option>
+                          <option v-for="batch in bankBatches" :key="batch.id" :value="String(batch.id)">{{ batch.name }} · {{ batch.questions.length }} questions</option>
+                        </select>
+                      </label>
+                      <label v-else>New batch name
+                        <input v-model.trim="bankImportBatchName" class="create-panel__input" maxlength="160" required placeholder="e.g. Midterm question set" />
+                      </label>
+                    </div>
                     <label>Format
                       <select v-model="bankImportFormat" class="create-panel__input"><option value="aiken">Multiple choice (Aiken)</option><option value="essay">Essay prompts</option></select>
                     </label>
@@ -2085,7 +2111,11 @@ const bankBatches = ref([]);
 const bankLoading = ref(false);
 const bankSaving = ref(false);
 const bankEditorMode = ref('create');
-const bankBatchName = ref('Manual questions');
+const bankBatchChoice = ref('new');
+const bankSelectedBatchId = ref('');
+const bankBatchName = ref('');
+const bankImportChoice = ref('new');
+const bankImportSelectedBatchId = ref('');
 const bankImportBatchName = ref('');
 const bankSearch = ref("");
 const bankTypeFilter = ref('all');
@@ -3331,6 +3361,14 @@ async function fetchQuestionBank() {
     if (selectedSubjectId.value === subjectId) {
       bankBatches.value = data.batches || [];
       bankQuestions.value = bankBatches.value.flatMap(batch => batch.questions);
+      if (!bankBatches.value.some(batch => String(batch.id) === bankSelectedBatchId.value)) {
+        bankSelectedBatchId.value = '';
+        bankBatchChoice.value = 'new';
+      }
+      if (!bankBatches.value.some(batch => String(batch.id) === bankImportSelectedBatchId.value)) {
+        bankImportSelectedBatchId.value = '';
+        bankImportChoice.value = 'new';
+      }
     }
   } catch (err) {
     error.value = err?.response?.data?.error || 'Unable to load the question bank.';
@@ -3341,11 +3379,21 @@ async function fetchQuestionBank() {
 
 async function addBankQuestion() {
   if (!selectedSubjectId.value) return;
+  if (bankBatchChoice.value === 'existing' && !bankSelectedBatchId.value) {
+    error.value = 'Select a batch for this question.';
+    return;
+  }
+  if (bankBatchChoice.value === 'new' && !bankBatchName.value.trim()) {
+    error.value = 'Enter a name for the new batch.';
+    return;
+  }
 
   const payload = {
     question_type: newQ.value.type,
     question_text: newQ.value.text,
-    batch_name: bankBatchName.value.trim(),
+    ...(bankBatchChoice.value === 'existing'
+      ? { batch_id: bankSelectedBatchId.value }
+      : { batch_name: bankBatchName.value.trim(), create_new_batch: true }),
   };
 
   if (newQ.value.type === 'multiple_choice') {
@@ -3370,10 +3418,13 @@ async function addBankQuestion() {
   message.value = "";
   error.value = "";
   try {
-    await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, payload);
+    const { data } = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, payload);
     showSuccess('Question saved', 'The question is ready to use in exams for this course.');
     newQ.value = { type: newQ.value.type, text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', correctAnswer: '', caseSensitive: newQ.value.caseSensitive };
     await fetchQuestionBank();
+    bankBatchChoice.value = 'existing';
+    bankSelectedBatchId.value = String(data.batch_id);
+    bankBatchName.value = '';
   } catch (err) {
     error.value = err?.response?.data?.error || 'Failed to save question.';
   } finally {
@@ -3471,6 +3522,14 @@ function onAikenFileUpload(event) {
 
 async function processBulkQuestions() {
   if (!bulkText.value.trim() || !selectedSubjectId.value) return;
+  if (bankImportChoice.value === 'existing' && !bankImportSelectedBatchId.value) {
+    error.value = 'Select a batch for these questions.';
+    return;
+  }
+  if (bankImportChoice.value === 'new' && !bankImportBatchName.value.trim()) {
+    error.value = 'Enter a name for the new batch.';
+    return;
+  }
   bankSaving.value = true;
   message.value = "";
   error.value = "";
@@ -3478,13 +3537,17 @@ async function processBulkQuestions() {
     const response = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, {
       bulk_text: bulkText.value,
       question_file_format: bankImportFormat.value,
-      batch_name: bankImportBatchName.value.trim() || aikenFileName.value || 'Question import',
+      ...(bankImportChoice.value === 'existing'
+        ? { batch_id: bankImportSelectedBatchId.value }
+        : { batch_name: bankImportBatchName.value.trim() }),
     });
     bulkText.value = "";
     aikenFileName.value = "";
     bankImportBatchName.value = '';
     showSuccess('Questions imported', `${response.data.created_count} question(s) were added to this course's bank.`);
     await fetchQuestionBank();
+    bankImportChoice.value = 'existing';
+    bankImportSelectedBatchId.value = String(response.data.batch.id);
   } catch (err) {
     error.value = err.response?.data?.error || 'Could not import questions.';
   } finally {
@@ -4484,6 +4547,13 @@ onMounted(async () => {
 .bank-editor-switch button { padding: .72rem .5rem; border: 0; border-radius: 9px; background: transparent; color: #5a6e88; font: 700 .78rem 'Poppins', sans-serif; cursor: pointer; }
 .bank-editor-switch button.active { background: #fff; color: #1d3461; box-shadow: 0 2px 8px rgba(24, 48, 88, .11); }
 .bank-editor-switch button:focus-visible, .bank-batch > summary:focus-visible, .bank-type-pills label:focus-within, .bank-select-item:focus-within { outline: 3px solid #94b8e9; outline-offset: 2px; }
+.bank-target { display: grid; gap: .7rem; padding: .85rem; border: 1px solid #e1e7f0; border-radius: 10px; background: #f8fafc; }
+.bank-target__label { color: #314b6d; font-size: .76rem; font-weight: 750; }
+.bank-target__switch { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; padding: .25rem; border-radius: 9px; background: #eaf0f7; }
+.bank-target__switch button { min-width: 0; padding: .6rem .35rem; border: 0; border-radius: 7px; background: transparent; color: #5a6e88; font: 700 .74rem 'Poppins', sans-serif; cursor: pointer; }
+.bank-target__switch button.active { background: #fff; color: #1d3461; box-shadow: 0 1px 6px rgba(24, 48, 88, .1); }
+.bank-target__switch button:disabled { opacity: .45; cursor: not-allowed; }
+.bank-target__switch button:focus-visible { outline: 3px solid #94b8e9; outline-offset: 2px; }
 .bank-editor-card > p { margin: 0 0 .5rem; color: #647991; font-size: .8rem; line-height: 1.55; }
 .bank-form, .bank-form label { display: grid; gap: .45rem; }
 .bank-form { gap: 1rem; margin-top: 1.1rem; }
