@@ -4524,9 +4524,10 @@ onMounted(async () => {
 .bank-help { margin: .5rem 0 1rem; color: #667991; font-size: .76rem; line-height: 1.55; }
 .bank-item-list { display: grid; align-content: start; gap: .7rem; max-height: 700px; overflow: auto; padding-right: .2rem; }
 .bank-batch { border: 1px solid #dce5ef; border-radius: 12px; background: #fff; overflow: hidden; }
-.bank-batch > summary { display: flex; align-items: center; gap: .7rem; padding: .92rem 1rem; color: #254264; background: #f9fbfd; cursor: pointer; list-style: none; }
+.bank-batch > summary { display: flex; align-items: center; gap: .7rem; min-height: 43px; padding: .92rem 1rem; color: #254264; background: #f9fbfd; cursor: pointer; list-style: none; }
 .bank-batch > summary::-webkit-details-marker { display: none; }
-.bank-batch > summary::after { content: '⌄'; color: #647b9b; font-size: 1.2rem; line-height: 1; transition: transform .2s; }
+.bank-batch > summary::marker { content: ''; }
+.bank-batch > summary::after { content: ''; flex: none; width: .95rem; height: .95rem; margin-left: .25rem; background: var(--select-chevron) center / contain no-repeat; transition: transform .2s; }
 .bank-batch[open] > summary::after { transform: rotate(180deg); }
 .bank-batch > summary strong { flex: 1; min-width: 0; font: 700 .83rem 'Poppins', sans-serif; overflow-wrap: anywhere; }
 .bank-batch > summary span:not(.bank-batch__index) { color: #687c96; font-size: .72rem; white-space: nowrap; }
