@@ -150,10 +150,24 @@
               <div class="analytics-grid">
                 <article class="analytics-panel analytics-panel--violations">
                   <div class="analytics-panel__heading"><div><h3>Most recorded violations</h3><p>Share of {{ analytics.summary.recorded_violations }} classified events</p></div><span class="analytics-panel__index">01</span></div>
-                  <div v-if="topViolations.length" class="analytics-bars">
-                    <div v-for="(item, index) in topViolations" :key="item.key" class="analytics-bar-row">
-                      <span class="analytics-bar-rank">{{ String(index + 1).padStart(2, '0') }}</span>
-                      <div class="analytics-bar-main"><div class="analytics-bar-title"><span>{{ item.label }}</span><strong>{{ item.count }} · {{ formatShare(item.count, analytics.summary.recorded_violations) }}</strong></div><div class="analytics-bar-track"><span :style="{ width: barWidth(item.count, analytics.summary.recorded_violations) }"></span></div></div>
+                  <div v-if="topViolations.length" class="violation-chart">
+                    <svg class="violation-chart__plot" viewBox="0 0 680 245" role="img" :aria-label="`Violations by type: ${topViolations.map((item) => `${item.label}, ${item.count} events, ${formatShare(item.count, analytics.summary.recorded_violations)}`).join('; ')}`">
+                      <text x="48" y="17" class="violation-chart__axis-title">EVENTS</text>
+                      <text x="632" y="17" class="violation-chart__axis-title" text-anchor="end">SHARE</text>
+                      <g v-for="tick in violationChartTicks" :key="tick.percent">
+                        <line x1="50" :y1="tick.y" x2="630" :y2="tick.y" class="violation-chart__grid" />
+                        <text x="42" :y="tick.y + 4" class="violation-chart__axis-label" text-anchor="end">{{ tick.count }}</text>
+                        <text x="638" :y="tick.y + 4" class="violation-chart__axis-label">{{ tick.percent }}%</text>
+                      </g>
+                      <polyline :points="violationChartPoints.map((point) => `${point.x},${point.y}`).join(' ')" class="violation-chart__line" />
+                      <g v-for="point in violationChartPoints" :key="point.key">
+                        <circle :cx="point.x" :cy="point.y" r="6" class="violation-chart__point" />
+                        <text :x="point.x" :y="point.y - 13" class="violation-chart__value" text-anchor="middle">{{ point.count }} · {{ formatShare(point.count, analytics.summary.recorded_violations) }}</text>
+                        <text :x="point.x" y="232" class="violation-chart__number" text-anchor="middle">{{ String(point.index + 1).padStart(2, '0') }}</text>
+                      </g>
+                    </svg>
+                    <div class="violation-chart__key" aria-label="Violation types">
+                      <div v-for="(item, index) in topViolations" :key="item.key"><span>{{ String(index + 1).padStart(2, '0') }}</span><span class="violation-chart__key-label">{{ item.label }}<small>{{ item.count }} events · {{ formatShare(item.count, analytics.summary.recorded_violations) }}</small></span></div>
                     </div>
                   </div>
                   <p v-else class="analytics-empty">No violations have been recorded yet.</p>
@@ -681,6 +695,27 @@ const analytics = ref(null);
 const loadingAnalytics = ref(false);
 const analyticsError = ref('');
 const topViolations = computed(() => (analytics.value?.violations || []).filter((item) => item.count > 0).slice(0, 6));
+const violationChartScale = computed(() => {
+  const total = analytics.value?.summary?.recorded_violations || 0;
+  const highestShare = total ? topViolations.value[0]?.count / total * 100 || 0 : 0;
+  return Math.max(10, Math.ceil(highestShare / 10) * 10);
+});
+const violationChartTicks = computed(() => Array.from({ length: 5 }, (_, index) => {
+  const percent = Math.round(violationChartScale.value * (4 - index) / 4);
+  return {
+    percent,
+    count: Math.round((analytics.value?.summary?.recorded_violations || 0) * percent / 100),
+    y: 49 + index * 38.75,
+  };
+}));
+const violationChartPoints = computed(() => {
+  const total = analytics.value?.summary?.recorded_violations || 0;
+  return topViolations.value.map((item, index) => ({
+    ...item, index,
+    x: topViolations.value.length === 1 ? 340 : 50 + index * 580 / (topViolations.value.length - 1),
+    y: 204 - (total ? item.count / total * 100 / violationChartScale.value * 155 : 0),
+  }));
+});
 const gadgetAlertCount = computed(() => analytics.value?.violations?.find((item) => item.key === 'gadget_detected')?.count ?? 0);
 const deviceChartColors = ['#1d3461', '#4974ad', '#4b9a96', '#c89550', '#a5b2c4'];
 const deviceDetectionCount = computed(() => (analytics.value?.devices || []).reduce((total, item) => total + item.count, 0));
@@ -1218,12 +1253,20 @@ onMounted(() => {
 .analytics-panel__heading h3 { margin: 0 0 .15rem; color: #192b48; font: 750 1rem 'Poppins', sans-serif; }
 .analytics-panel__heading p { margin: 0; color: #77869a; font-size: .76rem; }
 .analytics-panel__index { color: #a3afbf; font: 700 .72rem 'Poppins', sans-serif; }
-.analytics-bars { display: grid; gap: 1rem; }
-.analytics-bar-row { display: flex; align-items: center; gap: .85rem; }
-.analytics-bar-rank { flex: none; color: #9aa9bb; font-size: .74rem; font-weight: 750; }
-.analytics-bar-main { flex: 1; min-width: 0; }
-.analytics-bar-title { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .42rem; color: #32445e; font-size: .78rem; }
-.analytics-bar-title strong { color: #1d3461; }
+.violation-chart { display: grid; gap: .7rem; }
+.violation-chart__plot { display: block; width: 100%; height: auto; overflow: visible; }
+.violation-chart__grid { stroke: #e7edf5; stroke-width: 1; }
+.violation-chart__axis-title { fill: #8998ad; font: 700 10px 'Poppins', sans-serif; letter-spacing: .08em; }
+.violation-chart__axis-label { fill: #8b99ac; font: 11px 'Poppins', sans-serif; }
+.violation-chart__line { fill: none; stroke: #38649d; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.violation-chart__point { fill: #fff; stroke: #254e86; stroke-width: 3; }
+.violation-chart__value { fill: #1d3461; font: 700 11px 'Poppins', sans-serif; }
+.violation-chart__number { fill: #71829a; font: 700 11px 'Poppins', sans-serif; }
+.violation-chart__key { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem 1rem; padding-top: .7rem; border-top: 1px solid #edf0f5; }
+.violation-chart__key div { display: flex; gap: .5rem; min-width: 0; color: #445774; font-size: .72rem; }
+.violation-chart__key span { color: #8a9bb1; font-weight: 800; }
+.violation-chart__key .violation-chart__key-label { display: grid; color: #445774; font-weight: 600; }
+.violation-chart__key-label small { color: #8392a7; font-size: .68rem; font-weight: 400; }
 .analytics-bar-track { width: 100%; height: 7px; overflow: hidden; border-radius: 999px; background: #edf1f6; }
 .analytics-bar-track span { display: block; height: 100%; border-radius: inherit; background: #6f88ac; }
 .analytics-empty { margin: 0; padding: 2rem .5rem; color: #8492a6; font-size: .84rem; text-align: center; }
@@ -1385,6 +1428,7 @@ onMounted(() => {
 }
 @media (max-width: 620px) {
   .stats-grid { grid-template-columns: 1fr; }
+  .violation-chart__key { grid-template-columns: 1fr; }
   .device-chart { flex-direction: column; align-items: stretch; }
   .device-chart__donut { align-self: center; width: 170px; }
   .analytics-heading { align-items: start; flex-direction: column; }
