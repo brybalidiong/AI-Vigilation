@@ -323,6 +323,7 @@
       :attemptsLeft="fvAttemptsLeft"
       :errorMessage="fvErrorMsg"
       :prompt="fvPrompt"
+      :stream="fvPreviewStream"
       @retry="_onFaceVerifyRetry"
       @cancel="_onFaceVerifyCancel"
     />
@@ -781,7 +782,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from "vue";
 import axios from "axios";
 import { signOut } from "firebase/auth";
 import { auth } from "@/firebase";
@@ -797,7 +798,7 @@ import SkeletonLoader from "@/components/SkeletonLoader.vue";
 import EmptyState from "@/components/EmptyState.vue";
 
 import UserProfileSettings from "@/components/UserProfileSettings.vue";
-import { nextPrecheckFaceState } from "@/utils/precheckFace.js";
+import { classifyPrecheckFace, nextPrecheckFaceState } from "@/utils/precheckFace.js";
 import { attachExamWindowMonitor } from "@/utils/examWindowMonitor.js";
 import { hasExtendedDisplay, watchExtendedDisplays } from "@/utils/examDisplayMonitor.js";
 import { captureSharedDisplayImage } from "@/utils/examScreenEvidence.js";
@@ -2389,10 +2390,11 @@ let _precheckReadyStreak = 0;
 
 // --- Face Verification state ---
 const fvShow        = ref(false);
-const fvStep        = ref('verifying'); // 'verifying' | 'success' | 'failed' | 'no-photo'
+const fvStep        = ref('detecting');
 const fvAttemptsLeft = ref(2);
 const fvErrorMsg    = ref('');
 const fvPrompt = ref('');
+const fvPreviewStream = shallowRef(null);
 const FV_MAX_ATTEMPTS = 3;
 let _fvCaptureId = 0;
 const timelineSearch = ref("");
@@ -2954,9 +2956,10 @@ async function _runFaceVerification() {
   if (!exam) return;
   const captureId = ++_fvCaptureId;
 
-  fvStep.value = 'liveness';
-  fvPrompt.value = 'Keep your eyes open and look at the camera.';
+  fvStep.value = 'detecting';
+  fvPrompt.value = 'Center your face in the camera preview.';
   fvErrorMsg.value = '';
+  fvPreviewStream.value = activeMediaStream;
   fvShow.value = true;
 
   try {
@@ -2971,10 +2974,34 @@ async function _runFaceVerification() {
     canvas.width = captureWidth;
     canvas.height = Math.round((video.videoHeight / video.videoWidth) * captureWidth);
     const captureCtx = canvas.getContext('2d');
+
+    // Confirm one clearly visible face before giving the blink instruction.
+    captureCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const faceBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.74));
+    if (!faceBlob) throw new Error('Could not capture webcam frame.');
+    const faceForm = new FormData();
+    faceForm.append('image', faceBlob, 'face-check.jpg');
+    const faceResponse = await api.post(`/api/student/exams/${exam.id}/precheck-face/`, faceForm, {
+      headers: { 'Content-Type': 'multipart/form-data' }, timeout: 20000,
+    });
+    if (captureId !== _fvCaptureId || pendingExam?.id !== exam.id) return;
+    if (classifyPrecheckFace(faceResponse.data) !== 'ready') {
+      throw new Error('Face not clearly detected. Move closer, look at the camera, and retry.');
+    }
+    fvStep.value = 'face-found';
+    fvPrompt.value = 'Face detected. Get ready to blink when prompted.';
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    if (captureId !== _fvCaptureId || pendingExam?.id !== exam.id) return;
+
+    fvStep.value = 'liveness';
+    fvPrompt.value = 'Keep both eyes open until the blink prompt appears.';
     const form = new FormData();
-    for (let index = 0; index < 24; index++) {
+    for (let index = 0; index < 28; index++) {
       if (captureId !== _fvCaptureId || pendingExam?.id !== exam.id) return;
-      if (index === 4) fvPrompt.value = 'Blink now: close both eyes briefly, then open them.';
+      if (index === 8) {
+        fvStep.value = 'blink';
+        fvPrompt.value = 'Blink now: close both eyes briefly, then open them.';
+      }
       if (video.readyState < 2) throw new Error('Webcam stopped. Please try again.');
       captureCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.74));
@@ -2997,6 +3024,7 @@ async function _runFaceVerification() {
       // Briefly confirm success, then proceed without making the student wait.
       setTimeout(async () => {
         fvShow.value = false;
+        fvPreviewStream.value = null;
         if (!screenShareReady.value || !precheckFaceVisible.value || precheckStatus.value !== 'ready') {
           showPermissionModal.value = true;
           await nextTick();
@@ -3045,6 +3073,7 @@ function _onFaceVerifyCancel() {
   _fvCaptureId++;
   _stopPrecheckFaceCheck();
   fvShow.value = false;
+  fvPreviewStream.value = null;
   pendingExam = null;
   _stopScreenShare();
   // Stop the media stream since the student cancelled.

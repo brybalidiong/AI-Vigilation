@@ -2,17 +2,33 @@
   <Transition name="fv-fade">
     <div v-if="show" class="fv-overlay" role="dialog" aria-modal="true" aria-labelledby="fv-title">
       <div class="fv-card">
+        <div v-if="showLivePreview" class="fv-steps" aria-label="Verification progress">
+          <span :class="{ 'fv-step--active': step === 'detecting', 'fv-step--done': step !== 'detecting' }">1 Face</span>
+          <span :class="{ 'fv-step--active': ['face-found', 'liveness', 'blink'].includes(step), 'fv-step--done': step === 'verifying' }">2 Blink</span>
+          <span :class="{ 'fv-step--active': step === 'verifying' }">3 Match</span>
+        </div>
+        <div v-if="showLivePreview" class="fv-preview">
+          <video ref="previewVideo" autoplay muted playsinline></video>
+          <span class="fv-preview-label">Live camera</span>
+        </div>
 
-        <!-- ── STEP 1: Verifying ── -->
-        <template v-if="step === 'liveness'">
-          <div class="fv-icon fv-icon--blue">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32">
-              <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
-            </svg>
-          </div>
-          <h2 id="fv-title" class="fv-title">Live face check</h2>
-          <p class="fv-sub">{{ prompt }}</p>
-          <div class="fv-spinner"></div>
+        <template v-if="step === 'detecting'">
+          <h2 id="fv-title" class="fv-title">Finding your face</h2>
+          <p class="fv-sub" aria-live="polite">{{ prompt }}</p>
+          <div class="fv-spinner" aria-hidden="true"></div>
+          <button class="fv-btn fv-btn--secondary" type="button" @click="$emit('cancel')">Cancel</button>
+        </template>
+        <template v-else-if="step === 'face-found'">
+          <h2 id="fv-title" class="fv-title">Face detected</h2>
+          <p class="fv-sub fv-sub--ready" role="status">{{ prompt }}</p>
+          <button class="fv-btn fv-btn--secondary" type="button" @click="$emit('cancel')">Cancel</button>
+        </template>
+        <template v-else-if="step === 'liveness' || step === 'blink'">
+          <h2 id="fv-title" class="fv-title" :class="{ 'fv-title--blink': step === 'blink' }">
+            {{ step === 'blink' ? 'Blink now' : 'Prepare to blink' }}
+          </h2>
+          <p class="fv-sub" :class="{ 'fv-sub--blink': step === 'blink' }" aria-live="assertive">{{ prompt }}</p>
+          <div class="fv-capture-indicator" :class="{ 'fv-capture-indicator--blink': step === 'blink' }">Camera is checking your eyes</div>
           <button class="fv-btn fv-btn--secondary" type="button" @click="$emit('cancel')">Cancel</button>
         </template>
         <template v-else-if="step === 'verifying'">
@@ -23,7 +39,7 @@
             </svg>
           </div>
           <h2 id="fv-title" class="fv-title">Verifying Identity</h2>
-          <p class="fv-sub">Please look directly at the camera and stay still.</p>
+          <p class="fv-sub">Checking the blink and matching your face to your ID.</p>
           <div class="fv-spinner"></div>
         </template>
 
@@ -88,15 +104,29 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed, nextTick, ref, watch } from 'vue';
+
+const props = defineProps({
   show:         { type: Boolean, default: false },
-  step:         { type: String,  default: 'verifying' }, // 'verifying' | 'success' | 'failed' | 'no-photo'
+  step:         { type: String,  default: 'detecting' },
   attemptsLeft: { type: Number,  default: 2 },
   errorMessage: { type: String,  default: '' },
   prompt:       { type: String,  default: '' },
+  stream:       { type: Object,  default: null },
 });
 
 defineEmits(['cancel', 'retry']);
+
+const previewVideo = ref(null);
+const showLivePreview = computed(() => ['detecting', 'face-found', 'liveness', 'blink', 'verifying'].includes(props.step));
+watch(() => [props.show, props.step, props.stream], async () => {
+  if (!props.show || !props.stream || !showLivePreview.value) return;
+  await nextTick();
+  if (previewVideo.value && previewVideo.value.srcObject !== props.stream) {
+    previewVideo.value.srcObject = props.stream;
+    previewVideo.value.play().catch(() => {});
+  }
+}, { immediate: true, flush: 'post' });
 </script>
 
 <style scoped>
@@ -126,9 +156,55 @@ defineEmits(['cancel', 'retry']);
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   padding: 2.5rem 2rem;
   width: 90%;
-  max-width: 400px;
+  max-width: 460px;
   text-align: center;
 }
+
+.fv-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  color: #94a3b8;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.fv-steps span { padding: 0.4rem 0.25rem; border-radius: 6px; background: #f1f5f9; }
+.fv-steps .fv-step--active { color: #1d3461; background: #e8eef8; }
+.fv-steps .fv-step--done { color: #166534; background: #edf7ef; }
+.fv-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #17253d;
+  aspect-ratio: 16 / 10;
+  margin-bottom: 1.3rem;
+}
+.fv-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.fv-preview-label {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  background: #17253d;
+  color: #fff;
+  padding: 0.3rem 0.55rem;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.fv-title--blink { color: #a34e0d; font-size: 1.8rem; }
+.fv-sub--ready { color: #166534; font-weight: 600; }
+.fv-sub--blink { color: #74400b; font-weight: 700; }
+.fv-capture-indicator {
+  margin: 0 auto 1.2rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.fv-capture-indicator--blink { background: #fff2dc; color: #92400e; }
 
 /* Icons */
 .fv-icon {
