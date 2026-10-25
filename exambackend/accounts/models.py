@@ -227,10 +227,25 @@ class ExamSubmission(models.Model):
         return f'{self.exam_set_id} - {self.student_email}'
 
 
+class QuestionBankBatch(models.Model):
+    """A named group of questions added to a course together."""
+
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='question_batches')
+    name = models.CharField(max_length=160)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f'{self.subject_id}: {self.name}'
+
+
 class QuestionBankItem(models.Model):
     """Reusable course question; exams receive independent copies."""
 
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='question_bank')
+    batch = models.ForeignKey(QuestionBankBatch, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     question_type = models.CharField(max_length=20, choices=[
         ('multiple_choice', 'Multiple Choice'),
         ('identification', 'Identification'),

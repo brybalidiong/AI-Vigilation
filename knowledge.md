@@ -41,14 +41,15 @@ Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
 students enrolled in the course; their open dashboards refetch the authorized exam
 list. The local in-memory channel layer supports one backend process. Deployments
 with multiple processes set `REDIS_URL` for a shared Redis channel layer.
-Each course has a reusable Question Bank. Instructors can add a question manually
-or import Aiken multiple-choice or blank-line-separated essay prompts. A question
+Each course has a reusable Question Bank organized into named batches. Instructors
+can add a question manually or import Aiken multiple-choice or blank-line-separated essay prompts. A question
 file supplied while creating an exam is imported into the course bank; the draft
 starts empty, and the instructor selects which bank questions to include before
 publishing. Exam questions are independent copies linked to their bank source.
-Deleting a bank question removes that source but preserves questions already in
+Deleting a bank question or an entire batch removes those sources but preserves questions already in
 draft or published exams. Existing exam questions are added to the bank by the
-question-bank migration. The instructor exam preview shows question prompts only.
+question-bank migration and grouped by source exam in the batch migration. The
+instructor exam preview stays compact and lets instructors reveal each answer.
 Production settings read credentials, hosts, origins, and media storage from
 environment variables. See [deployment guide](docs/DEPLOYMENT.md).
 The planned first deployment serves Vue from Vercel and Django/Daphne behind

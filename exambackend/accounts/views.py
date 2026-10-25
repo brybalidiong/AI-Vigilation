@@ -36,6 +36,7 @@ from .models import (
     ExamProctoringEvent,
     ExamProctoringEvidence,
     ExamQuestion,
+    QuestionBankBatch,
     QuestionBankItem,
     ExamSet,
     ExamSubmission,
@@ -1831,8 +1832,9 @@ def subject_exam_sets(request, subject_id):
         pass
 
     if parsed_questions:
+        batch = QuestionBankBatch.objects.create(subject=subject, name=f'{title} upload'[:160])
         QuestionBankItem.objects.bulk_create([
-            QuestionBankItem(subject=subject, **question)
+            QuestionBankItem(subject=subject, batch=batch, **question)
             for question in parsed_questions
         ])
     return Response(
@@ -2740,6 +2742,7 @@ def _serialize_question(q, include_answer=True):
 def _serialize_bank_item(item):
     return {
         'id': item.id,
+        'batch_id': item.batch_id,
         'question_type': item.question_type,
         'question_text': item.question_text,
         'choices': item.choices or [],
@@ -2748,6 +2751,32 @@ def _serialize_bank_item(item):
         'case_sensitive': item.case_sensitive,
         'created_at': item.created_at,
     }
+
+
+def _serialize_bank_batch(batch):
+    return {
+        'id': batch.id,
+        'name': batch.name,
+        'created_at': batch.created_at,
+    }
+
+
+def _bank_batch_for_manual_question(subject, data):
+    batch_id = data.get('batch_id')
+    if batch_id not in (None, ''):
+        try:
+            batch_id = int(batch_id)
+        except (TypeError, ValueError):
+            raise ValueError('Question batch not found in this course.') from None
+        batch = QuestionBankBatch.objects.filter(subject=subject, id=batch_id).first()
+        if not batch:
+            raise ValueError('Question batch not found in this course.')
+        return batch
+    name = str(data.get('batch_name') or 'Manual questions').strip()[:160]
+    if not name:
+        raise ValueError('Batch name is required.')
+    batch = QuestionBankBatch.objects.filter(subject=subject, name=name).order_by('id').first()
+    return batch or QuestionBankBatch.objects.create(subject=subject, name=name)
 
 
 def _question_fields_from_payload(data):
@@ -2807,8 +2836,13 @@ def subject_question_bank(request, subject_id):
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
     if request.method == 'GET':
-        items = QuestionBankItem.objects.filter(subject=subject)
-        return Response({'questions': [_serialize_bank_item(item) for item in items]})
+        batches = QuestionBankBatch.objects.filter(subject=subject).prefetch_related('questions')
+        return Response({
+            'batches': [
+                {**_serialize_bank_batch(batch), 'questions': [_serialize_bank_item(item) for item in batch.questions.all()]}
+                for batch in batches
+            ],
+        })
 
     upload = request.FILES.get('question_file')
     bulk_text = request.data.get('bulk_text')
@@ -2821,16 +2855,24 @@ def subject_question_bank(request, subject_id):
             parsed = _parse_uploaded_exam(upload, request.data.get('question_file_format', 'auto'))
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        batch_name = str(request.data.get('batch_name') or 'Question import').strip()[:160]
+        if not batch_name:
+            return Response({'error': 'Batch name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        batch = QuestionBankBatch.objects.create(subject=subject, name=batch_name)
         items = QuestionBankItem.objects.bulk_create([
-            QuestionBankItem(subject=subject, **fields) for fields in parsed
+            QuestionBankItem(subject=subject, batch=batch, **fields) for fields in parsed
         ])
-        return Response({'created_count': len(items)}, status=status.HTTP_201_CREATED)
+        return Response({'created_count': len(items), 'batch': _serialize_bank_batch(batch)}, status=status.HTTP_201_CREATED)
 
     try:
         question_fields = _question_fields_from_payload(request.data)
     except ValueError as exc:
         return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    item = QuestionBankItem.objects.create(subject=subject, **question_fields)
+    try:
+        batch = _bank_batch_for_manual_question(subject, request.data)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    item = QuestionBankItem.objects.create(subject=subject, batch=batch, **question_fields)
     return Response(_serialize_bank_item(item), status=status.HTTP_201_CREATED)
 
 
@@ -2847,7 +2889,27 @@ def subject_question_bank_detail(request, subject_id, question_id):
     item = QuestionBankItem.objects.filter(subject=subject, id=question_id).first()
     if not item:
         return Response({'error': 'Question not found.'}, status=status.HTTP_404_NOT_FOUND)
+    batch = item.batch
     item.delete()
+    if batch and not batch.questions.exists():
+        batch.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def subject_question_bank_batch_detail(request, subject_id, batch_id):
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+    subject = Subject.objects.filter(
+        Q(instructor=request.user) | Q(additional_instructors=request.user), id=subject_id,
+    ).distinct().first()
+    if not subject:
+        return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
+    batch = QuestionBankBatch.objects.filter(subject=subject, id=batch_id).first()
+    if not batch:
+        return Response({'error': 'Question batch not found.'}, status=status.HTTP_404_NOT_FOUND)
+    batch.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -2945,7 +3007,8 @@ def exam_questions(request, subject_id, exam_set_id):
     order = (last_order or 0) + 1
 
     with transaction.atomic():
-        bank_item = QuestionBankItem.objects.create(subject=subject, **question_fields)
+        batch = _bank_batch_for_manual_question(subject, {'batch_name': f'{exam_set.title} questions'})
+        bank_item = QuestionBankItem.objects.create(subject=subject, batch=batch, **question_fields)
         q = ExamQuestion.objects.create(exam_set=exam_set, order=order, bank_item=bank_item, **question_fields)
     if q.question_type != ExamQuestion.TYPE_ESSAY:
         _enable_all_proctoring_restrictions(exam_set)

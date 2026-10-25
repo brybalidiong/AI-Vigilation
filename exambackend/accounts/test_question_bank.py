@@ -1,8 +1,10 @@
 from django.contrib.auth.models import User
+from django.apps import apps
 from django.test import TestCase
 from rest_framework.test import APIClient
+from importlib import import_module
 
-from accounts.models import ExamQuestion, ExamSet, QuestionBankItem, Subject
+from accounts.models import ExamQuestion, ExamSet, QuestionBankBatch, QuestionBankItem, Subject
 
 
 class CourseQuestionBankTests(TestCase):
@@ -50,8 +52,41 @@ class CourseQuestionBankTests(TestCase):
         response = self.client.post(self.bank_url, {
             'bulk_text': 'What is two plus two?\nA. Three\nB. Four\nANSWER: B',
             'question_file_format': 'aiken',
+            'batch_name': 'Chapter one',
         }, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['created_count'], 1)
         self.assertEqual(QuestionBankItem.objects.get(subject=self.subject).correct_answer, 'Four')
+        self.assertEqual(QuestionBankBatch.objects.get(subject=self.subject).name, 'Chapter one')
         self.assertEqual(self.exam.questions.count(), 0)
+
+    def test_batches_group_questions_and_can_be_deleted_without_changing_exam(self):
+        first = self.client.post(self.bank_url, {
+            'question_type': 'essay', 'question_text': 'Explain concept A', 'batch_name': 'Unit one',
+        }, format='json')
+        second = self.client.post(self.bank_url, {
+            'question_type': 'essay', 'question_text': 'Explain concept B', 'batch_name': 'Unit one',
+        }, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
+        response = self.client.get(self.bank_url)
+        self.assertEqual(len(response.data['batches']), 1)
+        batch = response.data['batches'][0]
+        self.assertEqual(batch['name'], 'Unit one')
+        self.assertEqual(len(batch['questions']), 2)
+        self.assertEqual(self.client.post(self.add_url, {'question_ids': [first.data['id']]}, format='json').status_code, 201)
+        self.assertEqual(self.client.delete(f'{self.bank_url}batches/{batch["id"]}/').status_code, 204)
+        self.assertEqual(QuestionBankItem.objects.filter(subject=self.subject).count(), 0)
+        self.assertEqual(self.exam.questions.count(), 1)
+        self.assertEqual(self.exam.questions.get().question_text, 'Explain concept A')
+
+    def test_cannot_delete_another_courses_batch(self):
+        foreign = QuestionBankBatch.objects.create(subject=self.other_subject, name='Private batch')
+        self.assertEqual(self.client.delete(f'{self.bank_url}batches/{foreign.id}/').status_code, 404)
+
+    def test_batch_migration_groups_existing_bank_items_by_exam(self):
+        item = QuestionBankItem.objects.create(subject=self.subject, question_type='essay', question_text='Older prompt')
+        ExamQuestion.objects.create(exam_set=self.exam, bank_item=item, question_type='essay', question_text='Older prompt')
+        import_module('accounts.migrations.0044_question_bank_batches').group_existing_questions(apps, None)
+        item.refresh_from_db()
+        self.assertEqual(item.batch.name, self.exam.title)
