@@ -781,6 +781,9 @@ def admin_course_detail(request, subject_id):
         subject.instructor = instructors[0]
         subject.save(update_fields=['category', 'instructor'])
         subject.additional_instructors.set(instructors[1:])
+        removed_ids = set(current_ids) - {instructor.id for instructor in instructors}
+        if removed_ids:
+            subject.archived_by.remove(*removed_ids)
         if previous_instructor_id != instructors[0].id:
             subject.student_sets.update(created_by=instructors[0])
     return Response(_serialize_admin_course(subject))
@@ -1485,6 +1488,7 @@ def instructor_subjects(request):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
+        archived_ids = set(request.user.archived_subjects.values_list('id', flat=True))
         qs = (
             Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user)).distinct()
             .annotate(student_count=Count('student_sets__students__email', distinct=True))
@@ -1500,6 +1504,7 @@ def instructor_subjects(request):
                 'student_count': s.student_count,
                 'announcements': s.announcements,
                 'display_photo': s.display_photo.url if s.display_photo else None,
+                'is_archived': s.id in archived_ids,
             }
             for s in qs
         ]
@@ -1508,7 +1513,7 @@ def instructor_subjects(request):
     return Response({'error': 'Courses are created and assigned by an administrator.'}, status=status.HTTP_403_FORBIDDEN)
 
 
-@api_view(['DELETE', 'PUT', 'PATCH'])
+@api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def instructor_subject_detail(request, subject_id):
     if not _is_instructor(request.user):
@@ -1527,6 +1532,15 @@ def instructor_subject_detail(request, subject_id):
         return Response({'message': 'Announcements updated'}, status=status.HTTP_200_OK)
 
     if request.method == 'PATCH':
+        if 'archived' in request.data:
+            archived = request.data['archived']
+            if not isinstance(archived, bool) or request.FILES:
+                return Response({'error': 'Archive status must be true or false.'}, status=status.HTTP_400_BAD_REQUEST)
+            if archived:
+                subject.archived_by.add(request.user)
+            else:
+                subject.archived_by.remove(request.user)
+            return Response({'is_archived': archived}, status=status.HTTP_200_OK)
         photo = request.FILES.get('display_photo')
         if not photo:
             return Response({'error': 'Choose a banner image.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1543,12 +1557,6 @@ def instructor_subject_detail(request, subject_id):
         subject.display_photo = photo
         subject.save(update_fields=['display_photo'])
         return Response({'display_photo': subject.display_photo.url})
-
-    emails = list({e.lower() for e in subject.student_sets.values_list('students__email', flat=True) if e})
-    subject.delete()
-    for email in emails:
-        _sync_profile_enrollment_for_email(email)
-    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['GET', 'POST'])

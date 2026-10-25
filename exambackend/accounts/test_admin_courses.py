@@ -58,6 +58,7 @@ class AdminCourseTests(TestCase):
     def test_reassignment_preserves_exams_and_moves_rosters(self):
         course = Subject.objects.create(name='Networks', code='IT201', category='IC', instructor=self.ic_instructor)
         course.additional_instructors.add(self.second_ic_instructor)
+        course.archived_by.add(self.ic_instructor)
         roster = StudentSet.objects.create(name='Section A', subject=course, created_by=self.ic_instructor)
         exam = ExamSet.objects.create(subject=course, title='Midterm')
         result = self.client.patch(f'/api/admin/courses/{course.id}/', {
@@ -68,6 +69,7 @@ class AdminCourseTests(TestCase):
         roster.refresh_from_db()
         self.assertEqual(course.instructor_id, self.second_ic_instructor.id)
         self.assertEqual(result.data['instructor_ids'], [self.second_ic_instructor.id])
+        self.assertFalse(course.archived_by.filter(pk=self.ic_instructor.pk).exists())
         self.assertEqual(roster.created_by_id, self.second_ic_instructor.id)
         self.client.force_authenticate(self.ic_instructor)
         self.assertEqual(self.client.get(f'/api/instructor/subjects/{course.id}/sets/').status_code, 404)
@@ -103,3 +105,33 @@ class AdminCourseTests(TestCase):
         self.client.force_authenticate(self.ited_instructor)
         denied = self.client.patch(f'/api/instructor/subjects/{course.id}/', {}, format='multipart')
         self.assertEqual(denied.status_code, 404)
+
+    def test_instructor_archives_only_their_own_view_and_cannot_delete_course(self):
+        course = Subject.objects.create(name='Networks', code='IT201', category='IC', instructor=self.ic_instructor)
+        course.additional_instructors.add(self.second_ic_instructor)
+        roster = StudentSet.objects.create(name='Section A', subject=course, created_by=self.ic_instructor)
+        exam = ExamSet.objects.create(subject=course, title='Midterm')
+        url = f'/api/instructor/subjects/{course.id}/'
+
+        self.client.force_authenticate(self.ic_instructor)
+        self.assertEqual(self.client.delete(url).status_code, 405)
+        self.assertEqual(self.client.patch(url, {'archived': 'yes'}, format='json').status_code, 400)
+        archived = self.client.patch(url, {'archived': True}, format='json')
+        self.assertEqual(archived.status_code, 200, archived.data)
+        self.assertTrue(archived.data['is_archived'])
+        self.assertTrue(self.client.get('/api/instructor/subjects/').data['subjects'][0]['is_archived'])
+
+        self.client.force_authenticate(self.second_ic_instructor)
+        self.assertFalse(self.client.get('/api/instructor/subjects/').data['subjects'][0]['is_archived'])
+        self.assertEqual(self.client.get(f'/api/instructor/subjects/{course.id}/exam-sets/').status_code, 200)
+
+        self.client.force_authenticate(self.ited_instructor)
+        self.assertEqual(self.client.patch(url, {'archived': True}, format='json').status_code, 404)
+
+        self.client.force_authenticate(self.ic_instructor)
+        restored = self.client.patch(url, {'archived': False}, format='json')
+        self.assertEqual(restored.status_code, 200, restored.data)
+        self.assertFalse(self.client.get('/api/instructor/subjects/').data['subjects'][0]['is_archived'])
+        self.assertTrue(Subject.objects.filter(pk=course.pk).exists())
+        self.assertTrue(StudentSet.objects.filter(pk=roster.pk).exists())
+        self.assertTrue(ExamSet.objects.filter(pk=exam.pk).exists())

@@ -47,6 +47,11 @@ const routes = [
     meta: { requiresAuth: true, role: "instructor" },
   },
   {
+    path: "/instructor/archive",
+    component: InstructorDashboardView,
+    meta: { requiresAuth: true, role: "instructor" },
+  },
+  {
     path: "/instructor/settings",
     component: InstructorDashboardView,
     meta: { requiresAuth: true, role: "instructor" },

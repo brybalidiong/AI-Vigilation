@@ -31,8 +31,10 @@ The original instructor field remains the lead instructor for legacy data and
 student-facing labels; additional instructors share access to exams and rosters.
 Existing courses inherit the lead instructor's institute during migration when
 it is known. Admin reassignment preserves the course, exams, and student sets.
-Instructors cannot create courses; they can change an assigned course banner
-and retain the course deletion action.
+Instructors cannot create or delete courses. They can change an assigned course
+banner and archive a course from their own active list. Each instructor has an
+independent archive; restoring returns the course to that instructor's list.
+Archiving does not remove exams, student records, or other instructors' access.
 
 Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
 students enrolled in the course; their open dashboards refetch the authorized exam

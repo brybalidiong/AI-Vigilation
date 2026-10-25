@@ -120,6 +120,9 @@ class Subject(models.Model):
     additional_instructors = models.ManyToManyField(
         User, blank=True, related_name='additional_subjects',
     )
+    archived_by = models.ManyToManyField(
+        User, blank=True, related_name='archived_subjects',
+    )
     announcements = models.TextField(blank=True, default="")
     display_photo = models.ImageField(upload_to='course_photos/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

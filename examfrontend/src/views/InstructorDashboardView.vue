@@ -20,6 +20,11 @@
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             Courses
           </a>
+          <a href="#" class="nav-item" :class="{ active: activeNav === 'archive' }" @click.prevent="goArchive">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/></svg>
+            Archive
+            <span v-if="archivedCourses.length" class="nav-count">{{ archivedCourses.length }}</span>
+          </a>
         </nav>
         <div class="sidebar-footer-nav">
           <div class="sidebar-user-info">
@@ -62,7 +67,8 @@
               <span class="dashboard-eyebrow">{{ currentDate }}</span>
               <h1>{{ dashboardTitle }}</h1>
               <p v-if="activeNav === 'settings'" class="header-sub">Your personal details and account information.</p>
-              <p v-else-if="activeNav === 'courses'" class="header-sub">Create a course, then open it to run exams and enroll students.</p>
+              <p v-else-if="activeNav === 'courses'" class="header-sub">Open your assigned courses to run exams and enroll students.</p>
+              <p v-else-if="activeNav === 'archive'" class="header-sub">Courses you have set aside. Restore one to return it to your active list.</p>
               <p v-else class="header-sub">See upcoming exams and jump into a course quickly.</p>
             </template>
           </div>
@@ -237,8 +243,8 @@
               <EmptyState
                 v-else-if="displayedCourses.length === 0"
                 style="grid-column: 1 / -1;"
-                title="No courses yet"
-                description="Your administrator will create a course and assign it to you."
+                title="No active courses"
+                description="Your administrator assigns courses to you. Archived courses are available on the Archive page."
                 icon='<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line>'
               />
               <template v-else>
@@ -254,6 +260,30 @@
                 />
               </template>
             </TransitionGroup>
+          </div>
+        </template>
+
+        <template v-if="activeNav === 'archive'">
+          <div class="courses-page">
+            <div class="courses-command archive-heading">
+              <div><h2>Archived courses</h2><p>Only your course list is affected. Exams and student records remain available to assigned instructors.</p></div>
+              <span>{{ archivedCourses.length }} {{ archivedCourses.length === 1 ? 'course' : 'courses' }}</span>
+            </div>
+            <div v-if="subjectsLoading" class="courses-grid"><SkeletonLoader type="card" v-for="i in 2" :key="`archive-skel-${i}`" /></div>
+            <EmptyState
+              v-else-if="!archivedCourses.length"
+              title="Your archive is empty"
+              description="Courses you archive will appear here until you restore them."
+              icon='<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>'
+            />
+            <div v-else class="archive-grid">
+              <article v-for="course in archivedCourses" :key="course.id" class="archive-course-card">
+                <span class="archive-course-card__code">{{ course.code }}</span>
+                <h3>{{ course.name }}</h3>
+                <p>{{ course.student_count }} {{ course.student_count === 1 ? 'student' : 'students' }} enrolled</p>
+                <button type="button" class="archive-course-card__restore" :disabled="archiveBusyId === course.id" @click="restoreSubject(course)">{{ archiveBusyId === course.id ? 'Restoring…' : 'Restore course' }}</button>
+              </article>
+            </div>
           </div>
         </template>
 
@@ -279,9 +309,9 @@
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
                       {{ bannerUploading ? 'Uploading…' : 'Change banner' }}
                     </button>
-                    <button type="button" id="delete-course-btn" @click="requestDeleteSubject">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-                      Delete course
+                    <button type="button" id="archive-course-btn" @click="requestArchiveSubject">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/></svg>
+                      Archive course
                     </button>
                   </div>
                 </details>
@@ -2155,6 +2185,7 @@ function showSuccess(title, detail) {
   message.value = detail;
 }
 const error = ref("");
+const archiveBusyId = ref(null);
 
 const activeCourseLabel = computed(() => {
   if (!selectedSubjectId.value) return "";
@@ -2180,6 +2211,7 @@ const sortedExamSets = computed(() =>
 
 const dashboardTitle = computed(() => {
   if (activeNav.value === 'dashboard') return 'Dashboard';
+  if (activeNav.value === 'archive') return 'Archive';
   if (activeNav.value === 'courses' && isCourseDetailRoute.value && selectedCourse.value) {
     return selectedCourse.value.name;
   }
@@ -2189,7 +2221,7 @@ const dashboardTitle = computed(() => {
 });
 
 const coursesSummary = computed(() => {
-  const all = subjects.value || [];
+  const all = subjects.value.filter((subject) => !subject.is_archived);
   return {
     total: all.length,
     students: all.reduce((sum, s) => sum + (s.student_count || 0), 0),
@@ -2256,6 +2288,7 @@ const courseHeroPhotoStyle = computed(() => {
 });
 
 const activeNav = computed(() => {
+  if (route.path.startsWith("/instructor/archive")) return "archive";
   if (route.path.startsWith("/instructor/courses")) return "courses";
   if (route.path.startsWith("/instructor/settings")) return "settings";
   return "dashboard";
@@ -2272,6 +2305,7 @@ const filteredUpcomingExams = computed(() => {
   const now = Date.now();
   const query = timelineSearch.value.toLowerCase();
   let rows = (upcomingExamRows.value || []).filter((exam) => {
+    if (subjects.value.some((subject) => subject.is_archived && Number(subject.id) === Number(exam.subject_id))) return false;
     if (!instructorExamOnDashboard(exam, { now, withinDays: 3650 })) return false;
     if (!query) return true;
     return (
@@ -2337,7 +2371,7 @@ watch([filteredUpcomingExams, upcomingLoading], ([rows, loading]) => {
 
 const displayedCourses = computed(() => {
   const query = courseSearch.value.toLowerCase();
-  let rows = [...(subjects.value || [])];
+  let rows = subjects.value.filter((subject) => !subject.is_archived);
   if (query) {
     rows = rows.filter((s) =>
       `${s.code} ${s.name}`.toLowerCase().includes(query),
@@ -2350,6 +2384,8 @@ const displayedCourses = computed(() => {
   }
   return rows;
 });
+const archivedCourses = computed(() => subjects.value.filter((subject) => subject.is_archived)
+  .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))));
 
 function progressStudentName(rawEmail) {
   const email = String(rawEmail || "").toLowerCase();
@@ -2513,6 +2549,10 @@ function goDashboard() {
 
 function goCourses() {
   router.push("/instructor/courses");
+}
+
+function goArchive() {
+  router.push("/instructor/archive");
 }
 
 function goSettings() {
@@ -3052,28 +3092,48 @@ async function removeSubjectStudentImpl(enrollmentId) {
   }
 }
 
-function requestDeleteSubject() {
+function requestArchiveSubject() {
   if (!selectedSubjectId.value) return;
   closeCourseActionsMenu();
   openConfirm({
-    title: "Delete this course?",
-    message: "This will permanently delete the course, all exams, sets, and student enrollments. This cannot be undone.",
-    confirmText: "Delete Course",
-    variant: "danger",
-    onConfirm: deleteSubjectImpl,
+    title: "Archive this course?",
+    message: "This hides the course from your active list. Students and other assigned instructors keep access, and you can restore it anytime.",
+    confirmText: "Archive course",
+    variant: "neutral",
+    onConfirm: archiveSubjectImpl,
   });
 }
 
-async function deleteSubjectImpl() {
+async function archiveSubjectImpl() {
+  const course = selectedCourse.value;
+  if (!course) return;
   error.value = "";
   message.value = "";
+  archiveBusyId.value = course.id;
   try {
-    await apiClient.delete(`/api/instructor/subjects/${selectedSubjectId.value}/`);
-    showSuccess('Course deleted', 'The course was removed.');
-    goCourses(); // Return to course list
-    await fetchSubjects(); // Refresh list
+    await apiClient.patch(`/api/instructor/subjects/${course.id}/`, { archived: true });
+    course.is_archived = true;
+    goArchive();
+    showSuccess('Course archived', 'You can restore it from your Archive page.');
   } catch (err) {
-    error.value = err?.response?.data?.error || "Unable to delete course.";
+    error.value = err?.response?.data?.error || "Unable to archive course.";
+  } finally {
+    archiveBusyId.value = null;
+  }
+}
+
+async function restoreSubject(course) {
+  error.value = "";
+  message.value = "";
+  archiveBusyId.value = course.id;
+  try {
+    await apiClient.patch(`/api/instructor/subjects/${course.id}/`, { archived: false });
+    course.is_archived = false;
+    showSuccess('Course restored', `${course.name} is back in your active courses.`);
+  } catch (err) {
+    error.value = err?.response?.data?.error || "Unable to restore course.";
+  } finally {
+    archiveBusyId.value = null;
   }
 }
 
@@ -4302,7 +4362,22 @@ onMounted(async () => {
 .stats-snapshot-img { width: 100%; height: 100%; object-fit: cover; }
 .stats-snapshot-placeholder { color: #cbd5e1; display: flex; }
 
+.archive-heading { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; }
+.archive-heading h2 { margin: 0 0 .2rem; color: #1d3461; font: 750 1.1rem 'Poppins', sans-serif; }
+.archive-heading p { margin: 0; color: #718098; font-size: .8rem; }
+.archive-heading > span { flex: none; color: #61728c; font-size: .75rem; font-weight: 700; }
+.archive-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; }
+.archive-course-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 190px; padding: 1.3rem; border: 1px solid #dce4ee; border-radius: 15px; background: #fff; box-shadow: 0 8px 24px rgba(18, 39, 73, .04); }
+.archive-course-card__code { color: #617898; font-size: .7rem; font-weight: 800; letter-spacing: .07em; }
+.archive-course-card h3 { margin: .45rem 0 .2rem; color: #1d3461; font: 750 1rem 'Poppins', sans-serif; }
+.archive-course-card p { margin: 0 0 1.2rem; color: #718098; font-size: .78rem; }
+.archive-course-card__restore { margin-top: auto; padding: .6rem .9rem; border: 1px solid #c7d5e7; border-radius: 9px; background: #f6f8fc; color: #1d3461; font: 700 .76rem 'Poppins', sans-serif; cursor: pointer; }
+.archive-course-card__restore:hover:not(:disabled) { background: #eaf0f9; }
+.archive-course-card__restore:disabled { opacity: .55; cursor: wait; }
+.archive-course-card__restore:focus-visible { outline: 3px solid #9db4d8; outline-offset: 2px; }
+
 @media (max-width: 720px) {
+  .archive-heading { align-items: flex-start; flex-direction: column; }
   .stats-backdrop { padding: 0; align-items: stretch; }
   .stats-shell { max-height: 100vh; border-radius: 0; border: none; }
   .stats-header { padding: 1.1rem 1rem; }
