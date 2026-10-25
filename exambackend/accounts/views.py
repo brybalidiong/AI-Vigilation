@@ -4049,11 +4049,11 @@ def student_verify_face(request, exam_id):
     """
     POST student/exams/<exam_id>/verify-face/
 
-    Student sends a webcam snapshot at exam start. The backend compares it
-    against the stored face encoding and returns whether they match.
+    Student sends a short webcam sequence at exam start. The backend requires
+    a blink before comparing an open-eye frame with the stored face encoding.
 
     Body (multipart/form-data):
-        webcam_image  (File) — JPEG/PNG snapshot from the student's webcam
+        blink_frames  (Files) — ordered JPEG frames from the student's webcam
 
     Returns:
         200 OK  — Always returned (check the 'verified' field in the body)
@@ -4062,26 +4062,20 @@ def student_verify_face(request, exam_id):
         404     — No face photo registered for this student
     """
     user = request.user
+    profile = getattr(user, 'profile', None)
+    if not user.is_active or not profile or profile.role != 'student' or not profile.is_enrolled:
+        return Response({'error': 'Student access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     # 1. Confirm the exam exists and the student is enrolled
     try:
-        exam_set = ExamSet.objects.get(pk=exam_id)
+        exam_set = ExamSet.objects.get(pk=exam_id, is_final=True)
     except ExamSet.DoesNotExist:
         return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    is_enrolled = EnrolledStudent.objects.filter(
-        email__iexact=user.email,
-        student_set__subject=exam_set.subject
-    ).exists()
-    if not is_enrolled:
+    if not _student_can_access_exam(user.email, exam_set):
         return Response({'error': 'You are not enrolled in this exam.'}, status=status.HTTP_403_FORBIDDEN)
 
     # 2. Get the student's stored face photo / encoding
-    try:
-        profile = UserProfile.objects.get(user=user)
-    except UserProfile.DoesNotExist:
-        return Response({'error': 'Student profile not found.'}, status=status.HTTP_404_NOT_FOUND)
-
     if _effective_face_status(profile) != UserProfile.FACE_STATUS_APPROVED:
         status_msg = 'Upload your DNSC student ID in profile settings for automatic name verification before taking the exam.'
         return Response(
@@ -4100,25 +4094,35 @@ def student_verify_face(request, exam_id):
         )
 
 
-    # 3. Get the uploaded webcam image
-    webcam_file = request.FILES.get('webcam_image')
-    if not webcam_file:
-        return Response({'error': 'No webcam_image file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    # 3. Require an ordered short capture. A single matching photo is never enough.
+    uploaded_frames = request.FILES.getlist('blink_frames')
+    if not 12 <= len(uploaded_frames) <= 32:
+        return Response({'error': 'Capture the blink again to verify your identity.'}, status=status.HTTP_400_BAD_REQUEST)
+    if any(frame.size > 250_000 for frame in uploaded_frames):
+        return Response({'error': 'Camera frames are too large. Please retry.'}, status=status.HTTP_400_BAD_REQUEST)
+    frame_bytes = [frame.read() for frame in uploaded_frames]
 
-    # 4. Run face verification
+    # 4. Check liveness on the server, then match the same capture to the ID.
+    from .face_liveness import check_blink_frames
     from .face_service import verify_face_bytes
     try:
-        result = verify_face_bytes(profile.face_encoding, webcam_file.read())
+        matching_frame = check_blink_frames(frame_bytes)
+        if matching_frame is None:
+            return Response({
+                'verified': False,
+                'message': 'Blink not detected. Keep your face in view, close both eyes briefly, then reopen them.',
+            }, status=status.HTTP_200_OK)
+        result = verify_face_bytes(profile.face_encoding, matching_frame)
         
         if result.get('error'):
             return Response({'error': result['error'], 'verified': False}, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as exc:
         import logging as _logging
-        _logging.getLogger(__name__).error("verify_face raised: %s", exc)
+        _logging.getLogger(__name__).exception('Blink or face verification failed: %s', exc)
         return Response(
-            {'error': 'Verification service error.', 'verified': False}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            {'error': 'Face verification is unavailable. Please retry.', 'verified': False},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
         )
     # 5. Log the verification attempt as a proctoring event
     try:

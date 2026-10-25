@@ -322,6 +322,7 @@
       :step="fvStep"
       :attemptsLeft="fvAttemptsLeft"
       :errorMessage="fvErrorMsg"
+      :prompt="fvPrompt"
       @retry="_onFaceVerifyRetry"
       @cancel="_onFaceVerifyCancel"
     />
@@ -2391,7 +2392,9 @@ const fvShow        = ref(false);
 const fvStep        = ref('verifying'); // 'verifying' | 'success' | 'failed' | 'no-photo'
 const fvAttemptsLeft = ref(2);
 const fvErrorMsg    = ref('');
+const fvPrompt = ref('');
 const FV_MAX_ATTEMPTS = 3;
+let _fvCaptureId = 0;
 const timelineSearch = ref("");
 const calendarWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const calendarMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -2945,45 +2948,49 @@ async function proceedFromPermissionModal() {
   await _runFaceVerification();
 }
 
-/**
- * Capture a webcam snapshot and POST it to the face verification endpoint.
- * Shows the FaceVerificationModal with animated feedback throughout.
- */
+/** Capture open, blink, and reopened webcam frames for server-side liveness. */
 async function _runFaceVerification() {
   const exam = pendingExam;
   if (!exam) return;
+  const captureId = ++_fvCaptureId;
 
-  // Show the modal in 'verifying' state.
-  fvStep.value = 'verifying';
+  fvStep.value = 'liveness';
+  fvPrompt.value = 'Keep your eyes open and look at the camera.';
   fvErrorMsg.value = '';
   fvShow.value = true;
 
   try {
-    // Grab a frame from whichever video element has pixels.
+    await nextTick();
     const video = permVideoEl.value || examVideoEl.value;
     if (!video || !video.videoWidth) {
       throw new Error('Webcam not ready. Please try again.');
     }
 
-    // Keep verification uploads small and consistent so YuNet can reuse its
-    // cached detector input size across devices and retry attempts.
     const canvas = document.createElement('canvas');
-    const captureWidth = Math.min(480, video.videoWidth);
+    const captureWidth = Math.min(400, video.videoWidth);
     canvas.width = captureWidth;
     canvas.height = Math.round((video.videoHeight / video.videoWidth) * captureWidth);
     const captureCtx = canvas.getContext('2d');
-    captureCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-    if (!blob) throw new Error('Could not capture webcam frame.');
-
     const form = new FormData();
-    form.append('webcam_image', blob, `verify_${Date.now()}.jpg`);
+    for (let index = 0; index < 24; index++) {
+      if (captureId !== _fvCaptureId || pendingExam?.id !== exam.id) return;
+      if (index === 4) fvPrompt.value = 'Blink now: close both eyes briefly, then open them.';
+      if (video.readyState < 2) throw new Error('Webcam stopped. Please try again.');
+      captureCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.74));
+      if (!blob) throw new Error('Could not capture webcam frame.');
+      form.append('blink_frames', blob, `blink_${index}.jpg`);
+      await new Promise(resolve => setTimeout(resolve, 125));
+    }
+    if (captureId !== _fvCaptureId || pendingExam?.id !== exam.id) return;
+    fvStep.value = 'verifying';
 
     const { data } = await api.post(
       `/api/student/exams/${exam.id}/verify-face/`,
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 45000 },
     );
+    if (captureId !== _fvCaptureId || pendingExam?.id !== exam.id) return;
 
     if (data.verified) {
       fvStep.value = 'success';
@@ -3010,6 +3017,7 @@ async function _runFaceVerification() {
       fvStep.value = 'failed';
     }
   } catch (err) {
+    if (captureId !== _fvCaptureId) return;
     console.error('[FV] Exception:', err, 'response:', err?.response?.data);
     const status = err?.response?.status;
     if (status === 404) {
@@ -3034,6 +3042,7 @@ function _onFaceVerifyRetry() {
 }
 
 function _onFaceVerifyCancel() {
+  _fvCaptureId++;
   _stopPrecheckFaceCheck();
   fvShow.value = false;
   pendingExam = null;

@@ -4,7 +4,18 @@
       <div class="fv-card">
 
         <!-- ── STEP 1: Verifying ── -->
-        <template v-if="step === 'verifying'">
+        <template v-if="step === 'liveness'">
+          <div class="fv-icon fv-icon--blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32">
+              <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </div>
+          <h2 id="fv-title" class="fv-title">Live face check</h2>
+          <p class="fv-sub">{{ prompt }}</p>
+          <div class="fv-spinner"></div>
+          <button class="fv-btn fv-btn--secondary" type="button" @click="$emit('cancel')">Cancel</button>
+        </template>
+        <template v-else-if="step === 'verifying'">
           <div class="fv-icon fv-icon--blue">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -82,6 +93,7 @@ defineProps({
   step:         { type: String,  default: 'verifying' }, // 'verifying' | 'success' | 'failed' | 'no-photo'
   attemptsLeft: { type: Number,  default: 2 },
   errorMessage: { type: String,  default: '' },
+  prompt:       { type: String,  default: '' },
 });
 
 defineEmits(['cancel', 'retry']);
