@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
+import cv2
 from django.core import signing
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -21,10 +22,53 @@ from accounts.models import (
     StudentSet, Subject,
 )
 from gaze_tracker.tracker import GazeResult, GazeTracker
+from gaze_tracker.iris_visibility import iris_visible
 
 
 def suspicious_result():
     return GazeResult('Looking at the left', 0.82, True, False, True)
+
+
+class IrisVisibilityTests(SimpleTestCase):
+    def _landmarks(self):
+        landmarks = [SimpleNamespace(x=0.0, y=0.0) for _ in range(478)]
+        for index, x, y in (
+            (33, 50, 50), (133, 90, 50), (159, 70, 45), (145, 70, 55), (468, 70, 50),
+            (362, 110, 50), (263, 150, 50), (386, 130, 45), (374, 130, 55), (473, 130, 50),
+        ):
+            landmarks[index] = SimpleNamespace(x=x / 200, y=y / 100)
+        return landmarks
+
+    def test_visible_iris_and_prescription_lens_glare(self):
+        frame = np.full((100, 200, 3), 30, dtype=np.uint8)
+        frame[44:57, 48:93] = 175
+        cv2.circle(frame, (70, 50), 4, (35, 35, 35), -1)
+        # A reflection over the other lens must not block the clear eye.
+        frame[44:57, 108:153] = 250
+        self.assertTrue(iris_visible(frame, self._landmarks()))
+
+    def test_dark_lenses_without_visible_iris(self):
+        frame = np.full((100, 200, 3), 30, dtype=np.uint8)
+        self.assertFalse(iris_visible(frame, self._landmarks()))
+
+    def test_closed_eyes_do_not_count(self):
+        landmarks = self._landmarks()
+        for index in (145, 374):
+            landmarks[index] = SimpleNamespace(x=landmarks[index].x, y=.47)
+        self.assertFalse(iris_visible(np.full((100, 200, 3), 180, dtype=np.uint8), landmarks))
+
+    def test_confirmation_expires_but_exam_timeout_can_submit(self):
+        from accounts.views import _iris_check_current
+
+        now = timezone.now()
+        exam = SimpleNamespace(time_limit=30)
+        submission = SimpleNamespace(started_at=now - timedelta(minutes=2), iris_verified_at=now - timedelta(seconds=11))
+        self.assertFalse(_iris_check_current(submission, exam, now))
+        submission.iris_verified_at = now - timedelta(seconds=9)
+        self.assertTrue(_iris_check_current(submission, exam, now))
+        submission.iris_verified_at = None
+        submission.started_at = now - timedelta(minutes=31)
+        self.assertTrue(_iris_check_current(submission, exam, now))
 
 
 class GazeWarmupTests(TestCase):
@@ -652,6 +696,28 @@ class GazeEvidenceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         timer.assert_not_called()
         self.assertFalse(ExamProctoringEvidence.objects.exists())
+
+    def test_submission_waits_for_recent_visible_iris(self):
+        question = ExamQuestion.objects.create(
+            exam_set=self.exam,
+            question_type=ExamQuestion.TYPE_ESSAY,
+            question_text='Explain the result.',
+        )
+        exam_url = f'/api/student/exams/{self.exam.pk}/submit/'
+        payload = {'answers': [{'question_id': question.pk, 'answer_text': 'A synthetic answer.'}]}
+        self.assertEqual(self.post_frame(observe_only='true').status_code, 200)
+        blocked = self.client.post(exam_url, payload, format='json')
+        self.assertEqual(blocked.status_code, 409)
+        self.assertIn('irises', blocked.data['error'])
+
+        visible = GazeResult('Normal', 0.95, True, True, False, iris_visible=True)
+        self.receipt = gaze_service.sign_gaze_result(self.exam.pk, self.student.email, self.raw, visible)
+        observed = self.post_frame(observe_only='true')
+        self.assertEqual(observed.status_code, 200)
+        self.assertTrue(observed.data['iris_visible'])
+        self.assertIsNotNone(ExamSubmission.objects.get(exam_set=self.exam).iris_verified_at)
+        submitted = self.client.post(exam_url, payload, format='json')
+        self.assertEqual(submitted.status_code, 200, submitted.data)
 
     def test_disabled_below_direction_cannot_record_a_strike(self):
         self.exam.detect_gaze_below = False

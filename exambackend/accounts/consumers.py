@@ -267,6 +267,7 @@ class GazeConsumer(AsyncWebsocketConsumer):
                 "label": label,
                 "confidence": result.confidence,
                 "face_detected": result.face_detected,
+                "iris_visible": result.iris_visible,
                 "is_no_face": is_no_face,
                 "is_suspicious": is_suspicious,
                 "is_normal": effective_normal,

@@ -50,7 +50,7 @@ function harness() {
       getContext: () => ({ drawImage() {} }),
       toDataURL: () => `data:image/jpeg;base64,${Buffer.from(currentImage).toString('base64')}`,
     }) },
-    _updateGazeBbox() {}, _clearGazePending() {},
+    _updateGazeBbox() {}, _clearGazePending() {}, _observeIris() {},
     gazeCurrentDirection: direction,
     gazePreviewDirection: preview,
     _isLeftRightLabel: label => /left|right/i.test(label) && !/left.*right|right.*left/i.test(label),

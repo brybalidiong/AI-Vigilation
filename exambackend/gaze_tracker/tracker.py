@@ -29,6 +29,7 @@ from .inference import (
     prepare_image_batch,
     unmirror_face_crop,
 )
+from .iris_visibility import iris_visible
 
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_ASSETS = os.path.join(_PACKAGE_DIR, "assets")
@@ -133,6 +134,7 @@ class GazeResult:
     # relative to the original (possibly mirrored) frame dimensions.
     # None when no face is detected.
     face_bbox: Optional[list[float]] = None
+    iris_visible: Optional[bool] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -145,6 +147,7 @@ class GazeResult:
         }
         if self.face_bbox is not None:
             d["face_bbox"] = self.face_bbox   # [x1, y1, x2, y2] normalised
+        d["iris_visible"] = self.iris_visible
         return d
 
 
@@ -359,6 +362,7 @@ class GazeTracker:
                 )
 
             model_face = unmirror_face_crop(processed_face) if getattr(self, 'mirror_webcam', False) else processed_face
+            visible_iris = iris_visible(frame, results.face_landmarks[0])
             batched_face = prepare_image_batch(model_face)
             geo = mirror_correct_geo(extract_geometric_features(results, h, w))
             geo_batch = np.expand_dims(geo, axis=0).astype(np.float32)
@@ -418,4 +422,5 @@ class GazeTracker:
             is_suspicious=is_suspicious,
             probabilities=probs,
             face_bbox=norm_bbox,
+            iris_visible=visible_iris,
         )

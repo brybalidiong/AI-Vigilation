@@ -210,6 +210,7 @@ class ExamSubmission(models.Model):
     attempt_count = models.PositiveIntegerField(default=1)  # Which attempt this submission represents
     question_index = models.PositiveIntegerField(default=0)
     locked_answers = models.JSONField(default=dict, blank=True)
+    iris_verified_at = models.DateTimeField(null=True, blank=True)
     latest_snapshot = models.ImageField(upload_to='snapshots/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

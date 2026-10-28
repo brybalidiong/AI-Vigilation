@@ -433,6 +433,15 @@
         </div>
       </div>
 
+      <div v-if="!examTerminated && examTimeRemaining !== 0 && !irisCanContinue" class="iris-check-overlay" role="alertdialog" aria-modal="true" aria-labelledby="iris-check-title">
+        <div class="iris-check-panel">
+          <span class="iris-check-symbol" aria-hidden="true">◉</span>
+          <h2 id="iris-check-title">{{ irisSeenResult ? 'Eyes not clearly visible' : 'Checking eye visibility' }}</h2>
+          <p>Look toward the camera so at least one iris is clearly visible. Remove dark glasses. If you wear prescription glasses, adjust their angle or the lighting to reduce glare.</p>
+          <span class="iris-check-status">The exam timer continues. Answering resumes automatically when your eyes are visible.</span>
+        </div>
+      </div>
+
       <!-- Detector and restricted-action warnings. Browser departure warnings live above the exam modal. -->
       <div v-if="proctoringWarning.show" class="proctor-overlay">
         <div class="proctor-box" :class="proctoringWarning.type">
@@ -475,7 +484,7 @@
         </div>
       </div>
 
-      <div style="width: 100%; max-width: 100%; padding: 3rem 5%; padding-bottom: 8rem;">
+      <div :inert="!irisCanContinue && examTimeRemaining !== 0" style="width: 100%; max-width: 100%; padding: 3rem 5%; padding-bottom: 8rem;">
         
         <!-- Header / Course Name -->
         <h1 style="font-size: 1.9rem; font-weight: 700; color: #37302a; margin-bottom: 2rem; border-bottom: 1px solid #d4d4d4; padding-bottom: 1rem;">
@@ -957,6 +966,19 @@ const advancingQuestion = ref(false);
 const currentQuestion = computed(() => examQuestions.value[currentQuestionIndex.value] || {});
 
 const takingExam = ref(null);
+const irisLastVisibleAt = ref(0);
+const irisSeenResult = ref(false);
+const irisClock = ref(0);
+let irisClockTimer = null;
+const irisCanContinue = computed(() => {
+  void irisClock.value;
+  return irisLastVisibleAt.value > 0 && Date.now() - irisLastVisibleAt.value <= 9000;
+});
+function _observeIris(data) {
+  if (typeof data?.iris_visible !== 'boolean') return;
+  irisSeenResult.value = true;
+  if (data.iris_visible) irisLastVisibleAt.value = Date.now();
+}
 const takingLoading = ref(false);
 const submitting = ref(false);
 const examQuestions = ref([]);
@@ -1648,6 +1670,7 @@ async function _runGazeCheck() {
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
     );
+    _observeIris(data);
 
     const conf = data.confidence ?? 0;
     const thresholds = {
@@ -2060,6 +2083,7 @@ function _startGazeWsLoop() {
       _wsLastAcceptedAt = now;
       _wsHasResult = true;
       _wsLatestFrame = { ...analyzedFrame, receipt: data.frame_receipt, receivedAt: now };
+      _observeIris(data);
 
       // ── (A) No face / Multiple faces ──────────────────────────────────
       // Check both is_no_face flag AND label directly (in case flag is missing)
@@ -3199,6 +3223,11 @@ async function _doOpenExam(exam) {
   }
   _stopPrecheckFaceCheck();
   takingExam.value = exam;
+  irisLastVisibleAt.value = 0;
+  irisSeenResult.value = false;
+  irisClock.value = Date.now();
+  if (irisClockTimer) clearInterval(irisClockTimer);
+  irisClockTimer = setInterval(() => { irisClock.value = Date.now(); }, 1000);
   takingLoading.value = true;
   examQuestions.value = [];
   studentAnswers.value = {};
@@ -3343,6 +3372,8 @@ function _attachProctoringListeners() {
 }
 
 function closeTakeExam() {
+  if (irisClockTimer) { clearInterval(irisClockTimer); irisClockTimer = null; }
+  irisLastVisibleAt.value = 0;
   takingExam.value = null;
   activeExamRestrictions.value = {
     gaze_above: true,
@@ -3780,6 +3811,7 @@ async function _timeUpSubmit() {
 
 async function advanceQuestion() {
   if (advancingQuestion.value || submitting.value || currentQuestionIndex.value >= examQuestions.value.length - 1) return;
+  if (!irisCanContinue.value) return;
   if (allowBacktracking.value) {
     currentQuestionIndex.value += 1;
     return;
@@ -3803,6 +3835,10 @@ async function advanceQuestion() {
 }
 
 async function submitExam() {
+  if (examTimeRemaining.value !== 0 && !examTerminated.value && !irisCanContinue.value) {
+    submitError.value = 'Look at the camera until your irises are visible before submitting.';
+    return;
+  }
   submitError.value = "";
   submitting.value = true;
   // Hard-stop the WebSocket BEFORE posting — prevents any in-flight gaze frame
@@ -4059,6 +4095,29 @@ async function performLogout() {
 .face-hold-panel h2 { margin: 0 0 0.75rem; font-size: 1.25rem; color: #991b1b; }
 .face-hold-panel p { margin: 0; color: #475569; line-height: 1.5; font-size: 0.95rem; }
 
+.iris-check-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.68);
+}
+.iris-check-panel {
+  width: min(430px, 100%);
+  padding: 2rem;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 65px rgba(15, 23, 42, 0.25);
+  text-align: center;
+}
+.iris-check-symbol { color: #1f3866; font-size: 2rem; }
+.iris-check-panel h2 { margin: .75rem 0; color: #1f3866; font-size: 1.35rem; }
+.iris-check-panel p { margin: 0 0 1rem; color: #475569; line-height: 1.55; }
+.iris-check-status { color: #64748b; font-size: .85rem; }
+
 /* Fullscreen exam modal */
 .fullscreen-modal {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -4100,7 +4159,7 @@ async function performLogout() {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Floating PiP */
-.cam-pip { position: fixed; top: 1.25rem; right: 1.25rem; z-index: 10000; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3)); animation: pipIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+.cam-pip { position: fixed; top: 1.25rem; right: 1.25rem; z-index: 10002; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3)); animation: pipIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
 @keyframes pipIn { from { opacity: 0; transform: scale(0.7) translateY(-20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 .cam-pip-inner { position: relative; width: 240px; border-radius: 14px; overflow: hidden; background: #0f0f0f; border: 2.5px solid #34d399; aspect-ratio: 4/3; }
 .cam-pip-video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
@@ -4179,7 +4238,7 @@ async function performLogout() {
 /* Toast */
 
 /* Proctoring overlay */
-.proctor-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.88); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; animation: proctorFadeIn 0.25s ease; }
+.proctor-overlay { position: fixed; inset: 0; z-index: 10005; background: rgba(0,0,0,0.88); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; animation: proctorFadeIn 0.25s ease; }
 .browser-leave-overlay { z-index: 10060; }
 @keyframes proctorFadeIn { from { opacity: 0; } to { opacity: 1; } }
 .proctor-box { max-width: 480px; width: 90%; background: #fff; border-radius: 24px; padding: 2.5rem 2rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.9rem; border: 1px solid #e8eaed; box-shadow: 0 32px 80px rgba(0,0,0,0.25); animation: proctorSlideUp 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }

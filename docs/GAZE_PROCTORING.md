@@ -81,6 +81,22 @@ upward, the sideways direction takes precedence.
 The below confidence gate is 0.25; the
 above gate is 0.22. The continuous look-away strike window remains four seconds.
 
+### Iris visibility during the exam
+
+The tracker also compares actual eye pixels around MediaPipe iris landmarks. A
+landmark by itself is not proof that the iris can be seen through tinted lenses.
+One open eye with a discernible iris and surrounding sclera is sufficient, so a
+reflection on one prescription lens does not block the student. Gaze direction
+selection and strike thresholds are independent of this check.
+
+The browser covers the exam controls until a recent clear-eye frame arrives and
+shows guidance to remove dark glasses or adjust prescription lenses and lighting.
+The HTTP gaze observation records the last clear-eye time on the active attempt;
+the advance and submit endpoints require that confirmation within ten seconds.
+An expired exam timer can still submit answers automatically. The exam clock does
+not pause. Pixel visibility is a practical check, not a definitive sunglasses
+classifier, and very poor lighting or heavy reflections may require adjustment.
+
 Gadget checks reuse a capture canvas and send a 640-pixel-wide JPEG at 0.7
 quality. A new frame is captured on the next event-loop turn after a clear
 response, or 100 ms while a device remains visible. Starting, disabled, and

@@ -3186,6 +3186,7 @@ def student_exam_questions(request, exam_id):
             submission.submitted_at = None
             submission.question_index = 0
             submission.locked_answers = {}
+            submission.iris_verified_at = None
             submission.save()
             _clear_proctoring_for_attempt(submission)
             # Clear gaze smoother state for the new attempt
@@ -3237,6 +3238,13 @@ def student_exam_questions(request, exam_id):
     }, status=status.HTTP_200_OK)
 
 
+def _iris_check_current(submission, exam_set, now):
+    """Allow a verified eye image or a server-confirmed expired exam timer."""
+    if submission.started_at and exam_set.time_limit and now >= submission.started_at + timedelta(minutes=exam_set.time_limit):
+        return True
+    return bool(submission.iris_verified_at and now - submission.iris_verified_at <= timedelta(seconds=10))
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def student_advance_question(request, exam_id):
@@ -3257,6 +3265,8 @@ def student_advance_question(request, exam_id):
         ).first()
         if not submission:
             return Response({'error': 'Start the exam before advancing.'}, status=status.HTTP_409_CONFLICT)
+        if not _iris_check_current(submission, exam_set, now):
+            return Response({'error': 'Your irises are not clearly visible. Remove dark glasses, or adjust prescription glasses and lighting, then look at the camera.'}, status=status.HTTP_409_CONFLICT)
         questions = _student_ordered_questions(exam_set, submission)
         index = submission.question_index
         if index >= len(questions) - 1:
@@ -3334,6 +3344,11 @@ def student_submit_answers(request, exam_id):
     gaze_violations = int(request.data.get('gaze_violations', 0))
     gaze_no_face = int(request.data.get('gaze_no_face', 0))
     termination_reason = (request.data.get('termination_reason') or '').strip()
+
+    if not terminated and not existing:
+        return Response({'error': 'Start the exam before submitting.'}, status=status.HTTP_409_CONFLICT)
+    if not terminated and not _iris_check_current(existing, exam_set, now):
+        return Response({'error': 'Your irises are not clearly visible. Remove dark glasses, or adjust prescription glasses and lighting, then look at the camera.'}, status=status.HTTP_409_CONFLICT)
 
     # Allow submission with no answers when terminated (system force-submitting)
     if not terminated:
@@ -3723,6 +3738,11 @@ def student_analyze_gaze(request, exam_id):
         return Response({'error': f'Gaze model unavailable: {exc}'}, status=503)
 
     payload = result.to_dict()
+    if result.iris_visible and (
+        not submission.iris_verified_at or timezone.now() - submission.iris_verified_at >= timedelta(seconds=3)
+    ):
+        submission.iris_verified_at = timezone.now()
+        submission.save(update_fields=['iris_verified_at', 'updated_at'])
     payload['confidence_threshold'] = GAZE_CONFIDENCE_THRESHOLD
     payload['above_confidence_threshold'] = GAZE_ABOVE_CONFIDENCE_THRESHOLD
     payload['left_confidence_threshold'] = GAZE_LEFT_CONFIDENCE_THRESHOLD
