@@ -1,12 +1,14 @@
 <template>
   <article
     class="course-display-card"
-    :class="folderClass"
-    tabindex="0"
+    :class="[folderClass, { 'is-busy': busy }]"
+    :tabindex="busy ? -1 : 0"
     role="button"
-    @click="$emit('click')"
-    @keydown.enter="$emit('click')"
-    @keydown.space.prevent="$emit('click')"
+    :aria-label="`${actionLabel} ${name}`"
+    :aria-disabled="busy"
+    @click="activate"
+    @keydown.enter="activate"
+    @keydown.space.prevent="activate"
   >
     <div class="course-banner" :style="photoStyle">
       <div class="course-badge">{{ code }}</div>
@@ -24,7 +26,7 @@
           </span>
         </div>
         <span class="course-open-link">
-          Open
+          {{ busy ? busyLabel : actionLabel }}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="15" height="15"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
         </span>
       </div>
@@ -43,8 +45,15 @@ const props = defineProps({
   photo: { type: String, default: "" },
   // legacy prop — kept for backwards compatibility
   meta: { type: String, default: "" },
+  actionLabel: { type: String, default: "Open" },
+  busyLabel: { type: String, default: "Working…" },
+  busy: { type: Boolean, default: false },
 });
-defineEmits(["click"]);
+const emit = defineEmits(["click"]);
+
+function activate() {
+  if (!props.busy) emit('click');
+}
 
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -82,6 +91,8 @@ const photoStyle = computed(() => {
   box-shadow: 0 18px 38px rgba(var(--dash-accent-rgb, 29, 52, 97), 0.14);
   border-color: rgba(var(--dash-accent-rgb, 29, 52, 97), 0.22);
 }
+.course-display-card.is-busy { cursor: wait; opacity: .65; }
+.course-display-card.is-busy:hover { transform: none; }
 
 .course-display-card:focus-visible {
   box-shadow: 0 0 0 3px rgba(29, 52, 97, 0.15), 0 18px 36px rgba(29, 52, 97, 0.13);

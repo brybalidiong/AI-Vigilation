@@ -265,25 +265,67 @@
 
         <template v-if="activeNav === 'archive'">
           <div class="courses-page">
-            <div class="courses-command archive-heading">
-              <div><h2>Archived courses</h2><p>Only your course list is affected. Exams and student records remain available to assigned instructors.</p></div>
-              <span>{{ archivedCourses.length }} {{ archivedCourses.length === 1 ? 'course' : 'courses' }}</span>
+            <div class="courses-command">
+              <p class="courses-command__meta">
+                <strong>{{ archivedCourses.length }}</strong>
+                {{ archivedCourses.length === 1 ? 'course' : 'courses' }} archived
+                <span aria-hidden="true">·</span>
+                <strong>{{ archivedStudentCount }}</strong> enrolled
+                <template v-if="archiveSearch">
+                  <span aria-hidden="true">·</span>
+                  {{ displayedArchivedCourses.length }} matching “{{ archiveSearch }}”
+                </template>
+              </p>
+              <div class="courses-command__controls">
+                <div class="courses-search-wrap">
+                  <svg class="courses-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input v-model.trim="archiveSearch" type="search" class="courses-search-input" placeholder="Search by name or code" aria-label="Search archived courses" />
+                </div>
+                <label class="courses-sort-label">
+                  <span class="visually-hidden">Sort archived courses</span>
+                  <select v-model="archiveSort" class="courses-sort-select" aria-label="Sort archived courses">
+                    <option value="name_asc">A → Z</option>
+                    <option value="name_desc">Z → A</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <div v-if="subjectsLoading" class="courses-grid"><SkeletonLoader type="card" v-for="i in 2" :key="`archive-skel-${i}`" /></div>
-            <EmptyState
-              v-else-if="!archivedCourses.length"
-              title="Your archive is empty"
-              description="Courses you archive will appear here until you restore them."
-              icon='<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>'
-            />
-            <div v-else class="archive-grid">
-              <article v-for="course in archivedCourses" :key="course.id" class="archive-course-card">
-                <span class="archive-course-card__code">{{ course.code }}</span>
-                <h3>{{ course.name }}</h3>
-                <p>{{ course.student_count }} {{ course.student_count === 1 ? 'student' : 'students' }} enrolled</p>
-                <button type="button" class="archive-course-card__restore" :disabled="archiveBusyId === course.id" @click="restoreSubject(course)">{{ archiveBusyId === course.id ? 'Restoring…' : 'Restore course' }}</button>
-              </article>
-            </div>
+            <TransitionGroup name="list" tag="div" class="courses-grid">
+              <template v-if="subjectsLoading">
+                <SkeletonLoader type="card" v-for="i in 3" :key="`archive-skel-${i}`" />
+              </template>
+              <EmptyState
+                v-else-if="!displayedArchivedCourses.length && archiveSearch"
+                style="grid-column: 1 / -1;"
+                title="No matching courses"
+                description="Try another name or code."
+                icon='<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>'
+              >
+                <template #actions><button type="button" class="ghost-btn" @click="archiveSearch = ''">Clear search</button></template>
+              </EmptyState>
+              <EmptyState
+                v-else-if="!displayedArchivedCourses.length"
+                style="grid-column: 1 / -1;"
+                title="Your archive is empty"
+                description="Courses you archive will appear here until you restore them."
+                icon='<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>'
+              />
+              <template v-else>
+                <CourseCard
+                  v-for="(course, index) in displayedArchivedCourses"
+                  :key="course.id"
+                  :folderClass="['folder-1','folder-2','folder-3','folder-4','folder-5'][index % 5]"
+                  :code="course.code"
+                  :name="course.name"
+                  :students="course.student_count"
+                  :photo="course.display_photo"
+                  action-label="Restore"
+                  busy-label="Restoring…"
+                  :busy="archiveBusyId === course.id"
+                  @click="restoreSubject(course)"
+                />
+              </template>
+            </TransitionGroup>
           </div>
         </template>
 
@@ -2132,6 +2174,8 @@ const todayCalendarKey = ref(calendarDayKey(new Date()));
 const courseFilter = ref("all");
 const courseSearch = ref("");
 const courseSort = ref("name_asc");
+const archiveSearch = ref("");
+const archiveSort = ref("name_asc");
 const courseView = ref("card");
 const examSearch = ref("");
 const examStatusFilter = ref("all");
@@ -2447,8 +2491,18 @@ const displayedCourses = computed(() => {
   }
   return rows;
 });
-const archivedCourses = computed(() => subjects.value.filter((subject) => subject.is_archived)
-  .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))));
+const archivedCourses = computed(() => subjects.value.filter((subject) => subject.is_archived));
+const archivedStudentCount = computed(() => archivedCourses.value.reduce((sum, course) => sum + (course.student_count || 0), 0));
+const displayedArchivedCourses = computed(() => {
+  const query = archiveSearch.value.toLowerCase();
+  const rows = archivedCourses.value.filter((course) =>
+    !query || `${course.code} ${course.name}`.toLowerCase().includes(query),
+  );
+  rows.sort((a, b) => archiveSort.value === 'name_desc'
+    ? String(b.name || '').localeCompare(String(a.name || ''))
+    : String(a.name || '').localeCompare(String(b.name || '')));
+  return rows;
+});
 
 function progressStudentName(rawEmail) {
   const email = String(rawEmail || "").toLowerCase();
@@ -4566,19 +4620,6 @@ onMounted(async () => {
 .stats-snapshot-img { width: 100%; height: 100%; object-fit: cover; }
 .stats-snapshot-placeholder { color: #cbd5e1; display: flex; }
 
-.archive-heading { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; }
-.archive-heading h2 { margin: 0 0 .2rem; color: #1d3461; font: 750 1.1rem 'Poppins', sans-serif; }
-.archive-heading p { margin: 0; color: #718098; font-size: .8rem; }
-.archive-heading > span { flex: none; color: #61728c; font-size: .75rem; font-weight: 700; }
-.archive-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; }
-.archive-course-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 190px; padding: 1.3rem; border: 1px solid #dce4ee; border-radius: 15px; background: #fff; box-shadow: 0 8px 24px rgba(18, 39, 73, .04); }
-.archive-course-card__code { color: #617898; font-size: .7rem; font-weight: 800; letter-spacing: .07em; }
-.archive-course-card h3 { margin: .45rem 0 .2rem; color: #1d3461; font: 750 1rem 'Poppins', sans-serif; }
-.archive-course-card p { margin: 0 0 1.2rem; color: #718098; font-size: .78rem; }
-.archive-course-card__restore { margin-top: auto; padding: .6rem .9rem; border: 1px solid #c7d5e7; border-radius: 9px; background: #f6f8fc; color: #1d3461; font: 700 .76rem 'Poppins', sans-serif; cursor: pointer; }
-.archive-course-card__restore:hover:not(:disabled) { background: #eaf0f9; }
-.archive-course-card__restore:disabled { opacity: .55; cursor: wait; }
-.archive-course-card__restore:focus-visible { outline: 3px solid #9db4d8; outline-offset: 2px; }
 
 .bank-workspace { padding: 1.5rem; }
 .bank-heading { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: 1.7rem 2rem; margin-bottom: 1.25rem; border-radius: 18px; background: #1d3461; box-shadow: 0 14px 30px rgba(24, 48, 88, .14); }
@@ -4690,7 +4731,6 @@ onMounted(async () => {
 @media (max-width: 700px) { .bank-heading { flex-direction: column; align-items: flex-start; padding: 1.3rem; } .bank-filter-row { grid-template-columns: 1fr; } .bank-workspace { padding: 1rem; } .bank-heading__stats { gap: 2rem; } }
 
 @media (max-width: 720px) {
-  .archive-heading { align-items: flex-start; flex-direction: column; }
   .stats-backdrop { padding: 0; align-items: stretch; }
   .stats-shell { max-height: 100vh; border-radius: 0; border: none; }
   .stats-header { padding: 1.1rem 1rem; }
