@@ -84,8 +84,11 @@ above gate is 0.22. The continuous look-away strike window remains four seconds.
 Brief look-away detections above 90% confidence also enter one shared tally
 across left, right, above, and below. A sustained direction counts once per
 episode; two neutral frames rearm the same direction, while a different
-direction begins a new episode. On the tenth detection the server records one
-`gaze_violation` event and resets the brief-gaze tally. This uses the same
+direction begins a new episode. The configured exam time limit sets the shared
+threshold: 5 detections below 30 minutes, 10 detections from 30 minutes to under
+2 hours, and 15 detections for 2 hours or longer. An unlimited exam (time limit
+0) also uses 15. At the threshold, the server records one `gaze_violation`
+event and resets the brief-gaze tally. This uses the same
 eight-violation termination limit as the existing four-second look-away rule.
 The browser sends the exact signed WebSocket frame when an episode begins;
 HTTP fallback counts episodes on its own. Duplicate uploads of one frame are

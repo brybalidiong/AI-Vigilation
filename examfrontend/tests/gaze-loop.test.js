@@ -41,7 +41,7 @@ function harness() {
     takingExam: { value: { id: 7 } }, examTerminated: { value: false }, submitting: { value: false },
     currentQuestion: { value: { id: 11, question_type: 'multiple_choice' } },
     gazeDetectionStatus: { value: '' }, gazeViolationCount: { value: 0 }, gazeNoFaceCount: { value: 0 },
-    gazeGlanceCount: { value: 0 },
+    gazeGlanceCount: { value: 0 }, gazeGlanceThreshold: { value: 10 },
     proctoringWarning: { value: { show: false } }, terminateReason: { value: '' },
     examVideoEl: { value: { readyState: 2, videoWidth: 640, videoHeight: 480 } },
     GAZE_WS_INTERVAL_MS: 0, GAZE_WS_BUSY_RETRY_MS: 100,
@@ -99,7 +99,7 @@ test('brief high-confidence gaze counts once per episode across directions', asy
 test('the tenth gaze count shows a direction-neutral violation warning', async () => {
   const h = harness();
   h.setPostResponse({
-    gaze_glance_count: 0, gaze_violation_count: 1,
+    gaze_glance_count: 0, gaze_glance_threshold: 5, gaze_violation_count: 1,
     logged_event: { id: 1 }, limits: { gaze_violation: 8 },
   });
   h.sockets[0].reply({ confidence: 0.95 });
@@ -108,6 +108,7 @@ test('the tenth gaze count shows a direction-neutral violation warning', async (
   assert.match(h.context.proctoringWarning.value.message, /Repeated gaze away/);
   assert.doesNotMatch(h.context.proctoringWarning.value.message, /left|right|above|below/i);
   assert.equal(h.context.gazeGlanceCount.value, 0);
+  assert.equal(h.context.gazeGlanceThreshold.value, 5);
 });
 
 test('a slow stale reply is discarded without reconnecting or recording a violation', async () => {

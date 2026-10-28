@@ -716,6 +716,40 @@ class GazeEvidenceTests(TestCase):
         self.assertFalse(replayed.data['glance_counted'])
         self.assertEqual(replayed.data['gaze_glance_count'], 0)
 
+    def test_brief_gaze_threshold_follows_exam_duration(self):
+        from accounts.views import _gaze_glances_per_violation
+
+        for minutes, expected in ((1, 5), (29, 5), (30, 10), (60, 10),
+                                  (119, 10), (120, 15), (180, 15), (0, 15)):
+            with self.subTest(minutes=minutes):
+                self.exam.time_limit = minutes
+                self.assertEqual(_gaze_glances_per_violation(self.exam), expected)
+
+        for minutes, expected in ((25, 5), (120, 15)):
+            with self.subTest(duration=minutes):
+                self.exam.time_limit = minutes
+                self.exam.save(update_fields=['time_limit'])
+                submission = ExamSubmission.objects.filter(exam_set=self.exam).first()
+                if submission:
+                    submission.gaze_glance_count = 0
+                    submission.save(update_fields=['gaze_glance_count'])
+                for index in range(expected):
+                    self.raw = f'{minutes}-minute synthetic frame {index}'.encode()
+                    label = 'Looking at the left' if index % 2 == 0 else 'Looking above the screen'
+                    self.receipt = gaze_service.sign_gaze_result(
+                        self.exam.pk, self.student.email, self.raw,
+                        GazeResult(label, 0.95, True, False, True),
+                    )
+                    response = self.post_frame(record_glance='true')
+                    self.assertEqual(response.status_code, 200, response.data)
+                    self.assertEqual(response.data['gaze_glance_threshold'], expected)
+                    self.assertEqual(response.data['gaze_glance_count'], (index + 1) % expected)
+                    self.assertEqual(bool(response.data.get('logged_event')), index == expected - 1)
+                event = ExamProctoringEvent.objects.filter(
+                    event_type=ExamProctoringEvent.EVENT_GAZE_VIOLATION,
+                ).latest('id')
+                self.assertEqual(event.metadata['detections'], expected)
+
     def test_ninety_percent_and_disabled_direction_do_not_enter_glance_tally(self):
         self.receipt = gaze_service.sign_gaze_result(
             self.exam.pk, self.student.email, self.raw,

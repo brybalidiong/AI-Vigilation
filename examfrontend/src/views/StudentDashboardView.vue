@@ -401,7 +401,7 @@
           <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gadgetWarningCount > 0 || gazeDisplayDirection }">
             away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }} · gadget {{ gadgetWarningCount }}/{{ GADGET_WARNING_LIMIT }}
           </span>
-          <span class="cam-pip-gaze-stats">Brief gazes {{ gazeGlanceCount }}/{{ GAZE_GLANCES_PER_VIOLATION }}</span>
+          <span class="cam-pip-gaze-stats">Brief gazes {{ gazeGlanceCount }}/{{ gazeGlanceThreshold }}</span>
         </div>
       </div>
 
@@ -1013,7 +1013,6 @@ const activeExamRestrictions = ref({
 // â”€â”€â”€ Proctoring state â”€â”€â”€
 const TAB_SWITCH_LIMIT = 5;
 const GAZE_VIOLATION_LIMIT = 8;
-const GAZE_GLANCES_PER_VIOLATION = 10;
 const GAZE_NO_FACE_LIMIT = 5;
 const GADGET_WARNING_LIMIT = 3;
 const SPLIT_SCREEN_THRESHOLD = 0.98; // flag if window is not completely maximized
@@ -1021,6 +1020,7 @@ const browserWarningCount = ref(0);
 const tabSwitchCount = ref(0);
 const gazeViolationCount = ref(0);
 const gazeGlanceCount = ref(0);
+const gazeGlanceThreshold = ref(10);
 const gazeNoFaceCount = ref(0);
 const gadgetWarningCount = ref(0);
 const gadgetDetectionStatus = ref('starting');
@@ -1677,6 +1677,9 @@ async function _runGazeCheck() {
     if (!_gazeWsActive && typeof data.gaze_glance_count === 'number') {
       gazeGlanceCount.value = data.gaze_glance_count;
     }
+    if (typeof data.gaze_glance_threshold === 'number') {
+      gazeGlanceThreshold.value = data.gaze_glance_threshold;
+    }
 
     const conf = data.confidence ?? 0;
     const thresholds = {
@@ -2035,6 +2038,7 @@ async function _recordWsGlance(frame) {
     });
     if (takingExam.value?.id !== examId || examTerminated.value) return;
     if (typeof data.gaze_glance_count === 'number') gazeGlanceCount.value = data.gaze_glance_count;
+    if (typeof data.gaze_glance_threshold === 'number') gazeGlanceThreshold.value = data.gaze_glance_threshold;
     if (typeof data.gaze_violation_count === 'number') gazeViolationCount.value = data.gaze_violation_count;
     if (!data.logged_event) return;
     _wsViolationStartTime = null;
@@ -3313,6 +3317,7 @@ async function _doOpenExam(exam) {
   tabSwitchCount.value = 0;
   gazeViolationCount.value = 0;
   gazeGlanceCount.value = 0;
+  gazeGlanceThreshold.value = 10;
   gazeNoFaceCount.value = 0;
   gadgetWarningCount.value = 0;
   _clearGazePending();
@@ -3333,6 +3338,7 @@ async function _doOpenExam(exam) {
   try {
     const qRes = await getWithRetry(`/api/student/exams/${exam.id}/questions/`);
     gazeGlanceCount.value = Number(qRes.data.gaze_glance_count) || 0;
+    gazeGlanceThreshold.value = Number(qRes.data.gaze_glance_threshold) || 10;
     examQuestions.value = qRes.data.questions || [];
     allowBacktracking.value = qRes.data.allow_backtracking ?? true;
     currentQuestionIndex.value = allowBacktracking.value ? 0 : Math.min(

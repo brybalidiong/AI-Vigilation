@@ -96,7 +96,16 @@ GAZE_BELOW_CONTINUOUS_SECONDS = 4.0        # raised: flag at ~4-5s real-world
 GAZE_CONTINUOUS_SECONDS = 4.0              # raised: flag at ~4-5s real-world
 GAZE_NO_FACE_HOLD_SECONDS = 10
 GAZE_GLANCE_CONFIDENCE = 0.90
-GAZE_GLANCES_PER_VIOLATION = 10
+
+
+def _gaze_glances_per_violation(exam_set) -> int:
+    """Use the configured exam duration for the shared brief-gaze limit."""
+    minutes = exam_set.time_limit
+    if minutes == 0 or minutes >= 120:
+        return 15
+    if minutes < 30:
+        return 5
+    return 10
 
 # In-memory: (submission_id, attempt) -> {label, at} for continuous gaze strikes.
 _GAZE_PENDING_STRIKES: dict[tuple[int, int], dict] = {}
@@ -334,7 +343,7 @@ def _new_gaze_glance_episode(submission, direction: str, *, from_websocket: bool
     return True
 
 
-def _increment_gaze_glance_count(submission, raw: bytes) -> tuple[bool, bool]:
+def _increment_gaze_glance_count(submission, raw: bytes, threshold: int) -> tuple[bool, bool]:
     """Persist the shared tally, ignoring repeat uploads of the same signed frame."""
     frame_hash = hashlib.sha256(raw).hexdigest()
     with transaction.atomic():
@@ -343,7 +352,7 @@ def _increment_gaze_glance_count(submission, raw: bytes) -> tuple[bool, bool]:
             submission.gaze_glance_count = locked.gaze_glance_count
             return False, False
         next_count = locked.gaze_glance_count + 1
-        completed = next_count >= GAZE_GLANCES_PER_VIOLATION
+        completed = next_count >= threshold
         locked.gaze_glance_count = 0 if completed else next_count
         locked.gaze_glance_last_frame_hash = frame_hash
         locked.save(update_fields=['gaze_glance_count', 'gaze_glance_last_frame_hash', 'updated_at'])
@@ -3302,6 +3311,7 @@ def student_exam_questions(request, exam_id):
         'question_index': min(submission.question_index, max(len(qs) - 1, 0)),
         'locked_answers': submission.locked_answers if not exam_set.allow_backtracking else {},
         'gaze_glance_count': submission.gaze_glance_count,
+        'gaze_glance_threshold': _gaze_glances_per_violation(exam_set),
         'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
     }, status=status.HTTP_200_OK)
 
@@ -3841,15 +3851,16 @@ def student_analyze_gaze(request, exam_id):
         payload['is_normal'] = True
     payload['direction_enabled'] = direction_enabled
     glance_direction = _high_confidence_gaze_direction(result, direction_enabled) if not is_no_face else ''
+    glance_threshold = _gaze_glances_per_violation(exam_set)
     glance_counted = False
     glance_completed = False
     if record_glance or (not receipt and not record_strike):
         if _new_gaze_glance_episode(submission, glance_direction, from_websocket=record_glance):
-            glance_counted, glance_completed = _increment_gaze_glance_count(submission, raw)
+            glance_counted, glance_completed = _increment_gaze_glance_count(submission, raw, glance_threshold)
     elif not record_strike and not glance_direction:
         _new_gaze_glance_episode(submission, '', from_websocket=False)
     payload['gaze_glance_count'] = submission.gaze_glance_count
-    payload['gaze_glance_threshold'] = GAZE_GLANCES_PER_VIOLATION
+    payload['gaze_glance_threshold'] = glance_threshold
     payload['glance_counted'] = glance_counted
     payload['glance_violation'] = glance_completed
     gaze_conf_ok = direction_enabled and result.is_suspicious and _gaze_violation_confidence_ok(
@@ -3905,7 +3916,7 @@ def student_analyze_gaze(request, exam_id):
             severity=ExamProctoringEvent.SEVERITY_WARNING,
             message='Repeated gaze away from the screen',
             source='gaze_ai',
-            metadata={**gaze_meta, 'trigger': 'ten_high_confidence_glances', 'detections': GAZE_GLANCES_PER_VIOLATION},
+            metadata={**gaze_meta, 'trigger': 'high_confidence_glances', 'detections': glance_threshold},
         )
         _clear_gaze_pending(submission)
         _gaze_mark_violation_logged(submission, now_dt)
