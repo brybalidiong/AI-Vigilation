@@ -2882,6 +2882,10 @@ def subject_question_bank(request, subject_id):
                 if fields['question_type'] == ExamQuestion.TYPE_ESSAY:
                     fields['points'] = essay_settings['points']
                     fields['max_words'] = essay_settings['max_words']
+        try:
+            parsed = [_question_fields_from_payload(fields) for fields in parsed]
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         batch_id = request.data.get('batch_id')
         if batch_id not in (None, ''):
             try:

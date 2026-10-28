@@ -42,8 +42,12 @@ students enrolled in the course; their open dashboards refetch the authorized ex
 list. The local in-memory channel layer supports one backend process. Deployments
 with multiple processes set `REDIS_URL` for a shared Redis channel layer.
 Each course has a reusable Question Bank organized into named batches. Instructors
-create questions or import Aiken multiple-choice and blank-line-separated essay
-prompts only on the course Question Bank page. For each question or import, they
+create questions or bulk upload UTF-8 `.txt`, `.iken`, or `.csv` files directly on
+the course Question Bank page. Aiken multiple-choice uses an `ANSWER:` letter;
+blank-line-separated text can hold essay prompts; CSV supports mixed question
+types, with a downloadable sample format in the UI. Pasted text remains available.
+The server validates every imported question before saving any of the batch.
+For each question or import, instructors
 choose an existing course batch or create a named batch. A new exam draft starts empty;
 the instructor selects questions from the available bank batches before
 publishing. Exam questions are independent copies linked to their bank source.

@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from django.apps import apps
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 from importlib import import_module
 
@@ -59,6 +61,44 @@ class CourseQuestionBankTests(TestCase):
         self.assertEqual(QuestionBankItem.objects.get(subject=self.subject).correct_answer, 'Four')
         self.assertEqual(QuestionBankBatch.objects.get(subject=self.subject).name, 'Chapter one')
         self.assertEqual(self.exam.questions.count(), 0)
+
+    def test_uploaded_csv_imports_all_question_types_into_one_batch(self):
+        csv_bytes = (
+            'question_text,question_type,correct_answer,choice_1,choice_2\n'
+            'What is 2 + 2?,multiple_choice,Four,Three,Four\n'
+            'Name the largest ocean.,identification,Pacific Ocean,,\n'
+            'List two primary colors.,enumeration,Red; Blue,,\n'
+            'Explain your reasoning.,essay,,,\n'
+        ).encode('utf-8')
+        response = self.client.post(self.bank_url, {
+            'question_file': SimpleUploadedFile('question-bank.csv', csv_bytes, content_type='text/csv'),
+            'question_file_format': 'auto', 'batch_name': 'Uploaded questions',
+            'points': '5', 'max_words': '200',
+        }, format='multipart')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['created_count'], 4)
+        self.assertEqual(QuestionBankBatch.objects.get(subject=self.subject).name, 'Uploaded questions')
+        self.assertEqual(set(QuestionBankItem.objects.filter(subject=self.subject).values_list('question_type', flat=True)), {
+            'multiple_choice', 'identification', 'enumeration', 'essay',
+        })
+        self.assertEqual(QuestionBankItem.objects.get(question_type='multiple_choice').correct_answer, 'Four')
+        essay = QuestionBankItem.objects.get(question_type='essay')
+        self.assertEqual((essay.points, essay.max_words), (5, 200))
+        self.assertEqual(self.exam.questions.count(), 0)
+
+    def test_invalid_uploaded_csv_does_not_create_a_partial_batch(self):
+        csv_bytes = (
+            'question_text,question_type,correct_answer,choice_1,choice_2\n'
+            'Valid?,multiple_choice,Yes,No,Yes\n'
+            'Missing answer?,multiple_choice,,No,Yes\n'
+        ).encode('utf-8')
+        response = self.client.post(self.bank_url, {
+            'question_file': SimpleUploadedFile('questions.csv', csv_bytes, content_type='text/csv'),
+            'question_file_format': 'auto', 'batch_name': 'Rejected batch',
+        }, format='multipart')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertFalse(QuestionBankBatch.objects.filter(subject=self.subject).exists())
+        self.assertFalse(QuestionBankItem.objects.filter(subject=self.subject).exists())
 
     def test_essay_points_and_word_limit_copy_from_bank_to_exam(self):
         response = self.client.post(self.bank_url, {
@@ -184,6 +224,7 @@ class StudentEssayWordLimitTests(TestCase):
     def test_student_sees_limit_and_overlong_submission_is_rejected(self):
         questions = self.client.get(self.questions_url)
         self.assertEqual(questions.status_code, 200, questions.data)
+        ExamSubmission.objects.filter(exam_set=self.exam).update(iris_verified_at=timezone.now())
         self.assertEqual((questions.data['questions'][0]['points'], questions.data['questions'][0]['max_words']), (5, 2))
         answer = {'question_id': self.question.id, 'answer_text': 'one two three'}
         rejected = self.client.post(self.submit_url, {'answers': [answer]}, format='json')
@@ -204,6 +245,7 @@ class StudentEssayWordLimitTests(TestCase):
         )
         questions = self.client.get(self.questions_url)
         self.assertEqual(questions.status_code, 200, questions.data)
+        ExamSubmission.objects.filter(exam_set=self.exam).update(iris_verified_at=timezone.now())
         first_id = questions.data['questions'][0]['id']
         advance_url = f'/api/student/exams/{self.exam.id}/advance/'
         rejected = self.client.post(advance_url, {

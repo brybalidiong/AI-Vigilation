@@ -541,6 +541,7 @@
                 <span><strong>{{ bankBatches.length }}</strong> {{ bankBatches.length === 1 ? 'batch' : 'batches' }}</span>
                 <span><strong>{{ bankQuestions.length }}</strong> {{ bankQuestions.length === 1 ? 'question' : 'questions' }}</span>
               </div>
+              <button type="button" class="new-course-btn bank-upload-action" @click="openQuestionBankImport">Upload questions</button>
             </div>
             <div class="bank-layout">
               <section class="bank-list-panel">
@@ -585,7 +586,7 @@
               <div class="bank-editor">
                 <div class="bank-editor-switch" role="tablist" aria-label="Question bank actions">
                   <button type="button" role="tab" :aria-selected="bankEditorMode === 'create'" :class="{ active: bankEditorMode === 'create' }" @click="bankEditorMode = 'create'">Create question</button>
-                  <button type="button" role="tab" :aria-selected="bankEditorMode === 'import'" :class="{ active: bankEditorMode === 'import' }" @click="bankEditorMode = 'import'">Import batch</button>
+                  <button type="button" role="tab" :aria-selected="bankEditorMode === 'import'" :class="{ active: bankEditorMode === 'import' }" @click="bankEditorMode = 'import'">Upload questions</button>
                 </div>
                 <section v-if="bankEditorMode === 'create'" class="bank-editor-card">
                   <div class="bank-panel-heading"><span class="bank-panel-heading__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2 2 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span><div><span class="bank-eyebrow">QUESTION EDITOR</span><h3>Create a question</h3></div></div>
@@ -655,9 +656,10 @@
                     <button type="submit" class="primary-btn" :disabled="bankSaving">{{ bankSaving ? 'Saving…' : 'Save to bank' }}</button>
                   </form>
                 </section>
-                <section v-else class="bank-editor-card">
+                <section v-else id="question-bank-import" class="bank-editor-card">
                   <div class="bank-panel-heading"><span class="bank-panel-heading__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m0 0-4 4m4-4 4 4M4 16v4h16v-4"/></svg></span><div><span class="bank-eyebrow">BULK UPLOAD</span><h3>Import a batch</h3></div></div>
-                  <p>Upload a text file or paste questions. Aiken multiple choice uses an ANSWER letter; essay prompts are separated by blank lines.</p>
+                  <p>Add every question from one file to this course bank at once. Choose an existing batch or create a new one.</p>
+                  <button type="button" class="bank-text-button bank-template-link" @click="downloadQuestionBankTemplate">Download sample CSV format</button>
                   <form @submit.prevent="processBulkQuestions" class="bank-form">
                     <div class="bank-target">
                       <span class="bank-target__label">Import into</span>
@@ -675,25 +677,34 @@
                         <input v-model.trim="bankImportBatchName" class="create-panel__input" maxlength="160" required placeholder="e.g. Midterm question set" />
                       </label>
                     </div>
-                    <label>Format
-                      <select v-model="bankImportFormat" class="create-panel__input bank-select"><option value="aiken">Multiple choice (Aiken)</option><option value="essay">Essay prompts</option></select>
+                    <div class="bank-target__switch" role="group" aria-label="Question import source">
+                      <button type="button" :class="{ active: bankImportSource === 'file' }" :aria-pressed="bankImportSource === 'file'" @click="bankImportSource = 'file'">Upload file</button>
+                      <button type="button" :class="{ active: bankImportSource === 'text' }" :aria-pressed="bankImportSource === 'text'" @click="bankImportSource = 'text'">Paste text</button>
+                    </div>
+                    <label>Question format
+                      <select v-model="bankImportFormat" class="create-panel__input bank-select">
+                        <option value="auto">Detect from file or text</option>
+                        <option value="aiken">Multiple choice (Aiken)</option>
+                        <option value="essay">Essay prompts</option>
+                      </select>
                     </label>
-                    <div v-if="bankImportFormat === 'essay'" class="bank-essay-settings">
-                      <label>Points per essay
-                        <input v-model.number="bankImportPoints" type="number" min="1" step="1" class="create-panel__input" required placeholder="e.g. 10" />
+                    <p class="bank-help">Aiken uses an <strong>ANSWER: A</strong> line for each multiple choice question. Separate essay prompts with blank lines. CSV files can contain multiple question types.</p>
+                    <div v-if="bankImportFormat !== 'aiken'" class="bank-essay-settings">
+                      <label>Points per essay <small v-if="bankImportFormat !== 'essay'">(if the file has essays)</small>
+                        <input v-model.number="bankImportPoints" type="number" min="1" step="1" class="create-panel__input" :required="bankImportFormat === 'essay'" placeholder="e.g. 10" />
                       </label>
-                      <label>Maximum words per essay
-                        <input v-model.number="bankImportMaxWords" type="number" min="1" max="10000" step="1" class="create-panel__input" required placeholder="e.g. 500" />
+                      <label>Maximum words per essay <small v-if="bankImportFormat !== 'essay'">(if the file has essays)</small>
+                        <input v-model.number="bankImportMaxWords" type="number" min="1" max="10000" step="1" class="create-panel__input" :required="bankImportFormat === 'essay'" placeholder="e.g. 500" />
                       </label>
                     </div>
-                    <label>Question file (.txt)
-                      <input type="file" accept=".txt" class="create-panel__input" @change="onAikenFileUpload" />
+                    <label v-if="bankImportSource === 'file'">Question file (.txt, .iken, or .csv)
+                      <input :key="bankFileInputKey" type="file" accept=".txt,.iken,.csv" class="create-panel__input" required @change="onQuestionBankFileSelected" />
                     </label>
-                    <span v-if="aikenFileName" class="bank-help">Loaded {{ aikenFileName }}</span>
-                    <label>Questions to import
+                    <span v-if="bankImportSource === 'file' && bankImportFile" class="bank-help">Selected: {{ bankImportFile.name }} · {{ Math.ceil(bankImportFile.size / 1024) }} KB</span>
+                    <label v-if="bankImportSource === 'text'">Questions to import
                       <textarea v-model="bulkText" class="create-panel__input bank-textarea" placeholder="Paste questions here" required></textarea>
                     </label>
-                    <button type="submit" class="primary-btn" :disabled="bankSaving || !bulkText.trim()">{{ bankSaving ? 'Importing…' : 'Import to bank' }}</button>
+                    <button type="submit" class="primary-btn" :disabled="bankSaving || (bankImportSource === 'file' ? !bankImportFile : !bulkText.trim())">{{ bankSaving ? 'Uploading…' : 'Add all questions to bank' }}</button>
                   </form>
                 </section>
               </div>
@@ -1796,7 +1807,7 @@
   </div>
 </template>
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
@@ -2139,7 +2150,10 @@ const bankSearch = ref("");
 const bankTypeFilter = ref('all');
 const bankSelectSearch = ref("");
 const bankSelectType = ref('all');
-const bankImportFormat = ref('aiken');
+const bankImportFormat = ref('auto');
+const bankImportSource = ref('file');
+const bankImportFile = ref(null);
+const bankFileInputKey = ref(0);
 const selectedBankQuestionIds = ref([]);
 const filteredBankBatches = computed(() => bankBatches.value.map(batch => ({
   ...batch,
@@ -2181,7 +2195,6 @@ const examRequiresAllRestrictions = computed(() =>
 );
 const newQ = ref({ type: 'multiple_choice', text: '', choices: ['', '', '', ''], correctIdx: 0, enumerationItems: ['', '', ''], points: '', maxWords: '', correctAnswer: '', caseSensitive: false });
 const bulkText = ref("");
-const aikenFileName = ref("");
 const bankImportPoints = ref('');
 const bankImportMaxWords = ref('');
 
@@ -3531,19 +3544,52 @@ async function deleteExamQuestion(questionId) {
   }
 }
 
-function onAikenFileUpload(event) {
+function openQuestionBankImport() {
+  bankEditorMode.value = 'import';
+  nextTick(() => document.getElementById('question-bank-import')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+}
+
+function downloadQuestionBankTemplate() {
+  const rows = [
+    ['question_text', 'question_type', 'correct_answer', 'choice_1', 'choice_2', 'choice_3', 'choice_4'],
+    ['What is 2 + 2?', 'multiple_choice', 'Four', 'Three', 'Four', 'Five', 'Six'],
+    ['Name the largest ocean.', 'identification', 'Pacific Ocean', '', '', '', ''],
+    ['List two primary colors.', 'enumeration', 'Red; Blue', '', '', '', ''],
+    ['Explain your reasoning.', 'essay', '', '', '', '', ''],
+  ];
+  const csv = rows.map(row => row.map(value => `"${value.replaceAll('"', '""')}"`).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'question-bank-template.csv';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function onQuestionBankFileSelected(event) {
   const file = event.target?.files?.[0];
+  bankImportFile.value = null;
   if (!file) return;
-  aikenFileName.value = file.name;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    bulkText.value = e.target.result;
-  };
-  reader.readAsText(file);
+  if (!/\.(txt|iken|csv)$/i.test(file.name)) {
+    error.value = 'Choose a .txt, .iken, or .csv question file.';
+    event.target.value = '';
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    error.value = 'Question files must be 5 MB or smaller.';
+    event.target.value = '';
+    return;
+  }
+  error.value = '';
+  bankImportFile.value = file;
+  if (!bankImportBatchName.value.trim()) {
+    bankImportBatchName.value = file.name.replace(/\.(txt|iken|csv)$/i, '').slice(0, 160);
+  }
+  bankImportFormat.value = /\.iken$/i.test(file.name) ? 'aiken' : 'auto';
 }
 
 async function processBulkQuestions() {
-  if (!bulkText.value.trim() || !selectedSubjectId.value) return;
+  if (!selectedSubjectId.value || (bankImportSource.value === 'file' ? !bankImportFile.value : !bulkText.value.trim())) return;
   if (bankImportChoice.value === 'existing' && !bankImportSelectedBatchId.value) {
     error.value = 'Select a batch for these questions.';
     return;
@@ -3556,16 +3602,24 @@ async function processBulkQuestions() {
   message.value = "";
   error.value = "";
   try {
-    const response = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, {
-      bulk_text: bulkText.value,
+    const fields = {
       question_file_format: bankImportFormat.value,
-      ...(bankImportFormat.value === 'essay' ? { points: bankImportPoints.value, max_words: bankImportMaxWords.value } : {}),
-      ...(bankImportChoice.value === 'existing'
-        ? { batch_id: bankImportSelectedBatchId.value }
-        : { batch_name: bankImportBatchName.value.trim() }),
-    });
+      ...(bankImportPoints.value ? { points: bankImportPoints.value } : {}),
+      ...(bankImportMaxWords.value ? { max_words: bankImportMaxWords.value } : {}),
+      ...(bankImportChoice.value === 'existing' ? { batch_id: bankImportSelectedBatchId.value } : { batch_name: bankImportBatchName.value.trim() }),
+    };
+    let payload;
+    if (bankImportSource.value === 'file') {
+      payload = new FormData();
+      payload.append('question_file', bankImportFile.value);
+      Object.entries(fields).forEach(([key, value]) => payload.append(key, String(value)));
+    } else {
+      payload = { ...fields, bulk_text: bulkText.value };
+    }
+    const response = await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/question-bank/`, payload);
     bulkText.value = "";
-    aikenFileName.value = "";
+    bankImportFile.value = null;
+    bankFileInputKey.value += 1;
     bankImportBatchName.value = '';
     bankImportPoints.value = '';
     bankImportMaxWords.value = '';
@@ -4577,6 +4631,10 @@ onMounted(async () => {
 .bank-editor-switch button { padding: .72rem .5rem; border: 0; border-radius: 9px; background: transparent; color: #5a6e88; font: 700 .78rem 'Poppins', sans-serif; cursor: pointer; }
 .bank-editor-switch button.active { background: #fff; color: #1d3461; box-shadow: 0 2px 8px rgba(24, 48, 88, .11); }
 .bank-editor-switch button:focus-visible, .bank-batch > summary:focus-visible, .bank-type-pills label:focus-within, .bank-select-item:focus-within { outline: 3px solid #94b8e9; outline-offset: 2px; }
+.bank-heading { flex-wrap: wrap; }
+.bank-upload-action { flex: none; white-space: nowrap; background: #fff; color: #1d3461; border: 1px solid #fff; }
+.bank-upload-action:hover { background: #eaf0f8; }
+.bank-template-link { padding: 0; font-size: .76rem; text-align: left; }
 .bank-target { display: grid; gap: .7rem; padding: .85rem; border: 1px solid #e1e7f0; border-radius: 10px; background: #f8fafc; }
 .bank-target__label { color: #314b6d; font-size: .76rem; font-weight: 750; }
 .bank-target__switch { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; padding: .25rem; border-radius: 9px; background: #eaf0f7; }
