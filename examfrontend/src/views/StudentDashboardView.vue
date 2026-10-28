@@ -401,6 +401,7 @@
           <span class="cam-pip-gaze-stats" :class="{ 'cam-pip-gaze-warn': gazeViolationCount > 0 || gazeNoFaceCount > 0 || gadgetWarningCount > 0 || gazeDisplayDirection }">
             away {{ gazeViolationCount }}/{{ GAZE_VIOLATION_LIMIT }} · face {{ gazeNoFaceCount }}/{{ GAZE_NO_FACE_LIMIT }} · gadget {{ gadgetWarningCount }}/{{ GADGET_WARNING_LIMIT }}
           </span>
+          <span class="cam-pip-gaze-stats">Brief gazes {{ gazeGlanceCount }}/{{ GAZE_GLANCES_PER_VIOLATION }}</span>
         </div>
       </div>
 
@@ -1012,12 +1013,14 @@ const activeExamRestrictions = ref({
 // â”€â”€â”€ Proctoring state â”€â”€â”€
 const TAB_SWITCH_LIMIT = 5;
 const GAZE_VIOLATION_LIMIT = 8;
+const GAZE_GLANCES_PER_VIOLATION = 10;
 const GAZE_NO_FACE_LIMIT = 5;
 const GADGET_WARNING_LIMIT = 3;
 const SPLIT_SCREEN_THRESHOLD = 0.98; // flag if window is not completely maximized
 const browserWarningCount = ref(0);
 const tabSwitchCount = ref(0);
 const gazeViolationCount = ref(0);
+const gazeGlanceCount = ref(0);
 const gazeNoFaceCount = ref(0);
 const gadgetWarningCount = ref(0);
 const gadgetDetectionStatus = ref('starting');
@@ -1671,6 +1674,9 @@ async function _runGazeCheck() {
       { headers: { 'Content-Type': 'multipart/form-data' } },
     );
     _observeIris(data);
+    if (!_gazeWsActive && typeof data.gaze_glance_count === 'number') {
+      gazeGlanceCount.value = data.gaze_glance_count;
+    }
 
     const conf = data.confidence ?? 0;
     const thresholds = {
@@ -1815,26 +1821,24 @@ async function _runGazeCheck() {
       return;
     }
 
-    if (Date.now() - _lastGazeWarningAt < GAZE_WARNING_COOLDOWN_MS) return;
+    if (!data.glance_violation && Date.now() - _lastGazeWarningAt < GAZE_WARNING_COOLDOWN_MS) return;
 
     // When the WebSocket loop is active, it already shows the gaze violation popup.
     // Skip the HTTP popup for direction violations to prevent duplicate notifications.
     // (No-face violations are handled by the absence alert path, not here.)
-    if (_gazeWsActive && data.logged_event && !data.is_no_face) {
+    if (_gazeWsActive && data.logged_event && !data.is_no_face && !data.glance_violation) {
       _lastGazeWarningAt = Date.now(); // mark as warned so cooldown is respected
       return;
     }
 
     _lastGazeWarningAt = Date.now();
-    const label = data.label || 'Away from screen';
-    const pct = Math.round(conf * 100);
     const vLimit = data.limits?.gaze_violation ?? GAZE_VIOLATION_LIMIT;
 
     proctoringWarning.value = {
       show: true,
       type: 'gaze',
-      title: 'Look at Your Screen',
-      message: `Gaze: ${label}. Warning ${gazeViolationCount.value} of ${vLimit} (${vLimit - gazeViolationCount.value} remaining before termination).`,
+      title: 'Gaze Violation Detected',
+      message: `Gaze away from the screen. Warning ${gazeViolationCount.value} of ${vLimit} (${vLimit - gazeViolationCount.value} remaining before termination).`,
     };
 
     // Keep detection running while the warning is visible. The server-side
@@ -1985,10 +1989,76 @@ let _wsSuspiciousFrame = null;
 let _wsViolationCooldownEnd = 0;     // timestamp before which a new timer cannot start
 let _wsNeedNormalReset     = false;  // student must look at camera before next timer
 let _wsMultipleFacesStartTime = null; // timer for multiple-people detection
+let _wsGlanceDirection = '';
+let _wsGlanceNeutralFrames = 0;
 const WS_VIOLATION_MS         = 4000;  // 4s of suspicious frames ≈ 4-5s real-world look-away
 const WS_MULTIPLE_FACES_MS    = 3000;  // 3s of multiple faces before flagging
 const WS_NORMAL_CLEAR_MS      = 600;   // require ~600ms of sustained Normal before fully resetting timer
 const WS_NORMAL_GRACE_FRAMES  = 2;     // consecutive Normal frames before resetting violation timer (was 3)
+const GAZE_GLANCE_CONFIDENCE = 0.90;
+
+function _gazeGlanceDirection(label) {
+  const value = String(label || '').toLowerCase();
+  if (value.includes('above')) return 'above';
+  if (value.includes('below')) return 'below';
+  if (value.includes('left') && !value.includes('right')) return 'left';
+  if (value.includes('right') && !value.includes('left')) return 'right';
+  return '';
+}
+
+function _observeWsGlance(data, analyzedFrame) {
+  const direction = data.face_detected && data.direction_enabled !== false
+    && Number(data.confidence) > GAZE_GLANCE_CONFIDENCE
+    ? _gazeGlanceDirection(data.label) : '';
+  if (!direction) {
+    _wsGlanceNeutralFrames += 1;
+    if (_wsGlanceNeutralFrames >= 2) _wsGlanceDirection = '';
+    return;
+  }
+  _wsGlanceNeutralFrames = 0;
+  if (_wsGlanceDirection === direction) return;
+  _wsGlanceDirection = direction;
+  void _recordWsGlance(analyzedFrame);
+}
+
+async function _recordWsGlance(frame) {
+  const examId = takingExam.value?.id;
+  if (!examId || examTerminated.value || !frame?.receipt) return;
+  try {
+    const form = new FormData();
+    form.append('image', _gazeFrameBlob(frame.image), `gaze_glance_${frame.id}.jpg`);
+    form.append('frame_receipt', frame.receipt);
+    form.append('record_glance', 'true');
+    form.append('question_id', String(frame.questionId || currentQuestion.value?.id || ''));
+    const { data } = await api.post(`/api/student/exams/${examId}/proctoring/gaze/`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    if (takingExam.value?.id !== examId || examTerminated.value) return;
+    if (typeof data.gaze_glance_count === 'number') gazeGlanceCount.value = data.gaze_glance_count;
+    if (typeof data.gaze_violation_count === 'number') gazeViolationCount.value = data.gaze_violation_count;
+    if (!data.logged_event) return;
+    _wsViolationStartTime = null;
+    _wsViolationCooldownEnd = Date.now() + WS_VIOLATION_COOLDOWN_MS;
+    _wsNeedNormalReset = true;
+    _clearGazeViolationTimer(true);
+    const limit = data.limits?.gaze_violation ?? GAZE_VIOLATION_LIMIT;
+    if (data.should_terminate) {
+      proctoringWarning.value = {
+        show: true, type: 'gaze', title: 'Exam Terminated',
+        message: 'Your exam was terminated after too many gaze violations.',
+      };
+      terminateReason.value = 'gaze';
+      _terminateExam();
+      return;
+    }
+    proctoringWarning.value = {
+      show: true, type: 'gaze', title: 'Gaze Violation Detected',
+      message: `Repeated gaze away from the screen. Warning ${gazeViolationCount.value} of ${limit} — keep your eyes on the exam.`,
+    };
+  } catch (err) {
+    console.warn('Short gaze count failed:', err?.response?.data || err);
+  }
+}
 const WS_VIOLATION_COOLDOWN_MS = 3000; // hard cooldown after firing before timer can restart
 
 function _startGazeWsLoop() {
@@ -2094,6 +2164,7 @@ function _startGazeWsLoop() {
         || wsLabel.includes('multiple_people');
       const directionEnabled = data.direction_enabled !== false
         && _isGazeDirectionEnabled(data.label);
+      _observeWsGlance({ ...data, direction_enabled: directionEnabled }, _wsLatestFrame);
       gazePreviewDirection.value = !isAbsenceFrame && directionEnabled
         && data.stabilizing && _isLeftRightLabel(data.label)
         ? data.label : '';
@@ -2186,7 +2257,7 @@ function _startGazeWsLoop() {
               show: true,
               type: 'gaze',
               title: 'Gaze Violation Detected',
-              message: `You looked away from your screen (${_formalGazeLabel(labelToRecord)}). Warning ${estimatedCount} of ${GAZE_VIOLATION_LIMIT} — please keep your eyes on the monitor.`,
+              message: `Gaze away from the screen. Warning ${estimatedCount} of ${GAZE_VIOLATION_LIMIT} — please keep your eyes on the exam.`,
             };
             // HTTP call logs the strike and updates exact count
             _recordWsViolation(labelToRecord);
@@ -2313,7 +2384,7 @@ async function _recordWsViolation(label) {
           show: true,
           type: 'gaze',
           title: 'Gaze Violation Detected',
-          message: `You looked away from your screen (${_formalGazeLabel(label)}). Warning ${gazeViolationCount.value} of ${vLimit} — ${remaining} remaining before exam termination.`,
+          message: `Gaze away from the screen. Warning ${gazeViolationCount.value} of ${vLimit} — ${remaining} remaining before exam termination.`,
         };
       }
       if (!data.evidence) {
@@ -2394,6 +2465,8 @@ function _stopGazeWsLoop() {
   _wsNormalStartTime = null;
   _wsNormalConsecutive = 0;
   _wsSuspiciousFrame = null;
+  _wsGlanceDirection = '';
+  _wsGlanceNeutralFrames = 0;
   if (_gazeWs) {
     const socket = _gazeWs;
     _gazeWs = null;
@@ -3239,6 +3312,7 @@ async function _doOpenExam(exam) {
   browserWarningCount.value = 0;
   tabSwitchCount.value = 0;
   gazeViolationCount.value = 0;
+  gazeGlanceCount.value = 0;
   gazeNoFaceCount.value = 0;
   gadgetWarningCount.value = 0;
   _clearGazePending();
@@ -3258,6 +3332,7 @@ async function _doOpenExam(exam) {
 
   try {
     const qRes = await getWithRetry(`/api/student/exams/${exam.id}/questions/`);
+    gazeGlanceCount.value = Number(qRes.data.gaze_glance_count) || 0;
     examQuestions.value = qRes.data.questions || [];
     allowBacktracking.value = qRes.data.allow_backtracking ?? true;
     currentQuestionIndex.value = allowBacktracking.value ? 0 : Math.min(

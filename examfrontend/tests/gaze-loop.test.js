@@ -13,6 +13,7 @@ function harness() {
   const sockets = [];
   const timers = new Map();
   const uploads = [];
+  let postResponse = {};
   const direction = { value: '' };
   const preview = { value: '' };
   const display = { get direction() { return preview.value || direction.value; } };
@@ -40,6 +41,7 @@ function harness() {
     takingExam: { value: { id: 7 } }, examTerminated: { value: false }, submitting: { value: false },
     currentQuestion: { value: { id: 11, question_type: 'multiple_choice' } },
     gazeDetectionStatus: { value: '' }, gazeViolationCount: { value: 0 }, gazeNoFaceCount: { value: 0 },
+    gazeGlanceCount: { value: 0 },
     proctoringWarning: { value: { show: false } }, terminateReason: { value: '' },
     examVideoEl: { value: { readyState: 2, videoWidth: 640, videoHeight: 480 } },
     GAZE_WS_INTERVAL_MS: 0, GAZE_WS_BUSY_RETRY_MS: 100,
@@ -51,6 +53,7 @@ function harness() {
       toDataURL: () => `data:image/jpeg;base64,${Buffer.from(currentImage).toString('base64')}`,
     }) },
     _updateGazeBbox() {}, _clearGazePending() {}, _observeIris() {},
+    _gazeFrameBlob: image => new Blob([Buffer.from(image.split(',')[1], 'base64')], { type: 'image/jpeg' }),
     gazeCurrentDirection: direction,
     gazePreviewDirection: preview,
     _isLeftRightLabel: label => /left|right/i.test(label) && !/left.*right|right.*left/i.test(label),
@@ -58,7 +61,7 @@ function harness() {
     _startGazeViolationTimer: label => { direction.value = label; },
     _clearGazeViolationTimer: () => { direction.value = ''; },
     _formalGazeLabel: label => label, _terminateExam() {},
-    api: { post: async (url, form) => { uploads.push({ url, form }); return { data: {} }; } },
+    api: { post: async (url, form) => { uploads.push({ url, form }); return { data: postResponse }; } },
   });
   vm.runInContext(loop, context);
   const run = code => vm.runInContext(code, context);
@@ -66,8 +69,46 @@ function harness() {
   sockets[0].open();
   return { run, context, sockets, timers, uploads, display,
     advance: ms => { now += ms; }, image: value => { currentImage = value; },
+    setPostResponse: value => { postResponse = value; },
     setDirectionEnabled: enabled => { directionEnabled = enabled; } };
 }
+
+test('brief high-confidence gaze counts once per episode across directions', async () => {
+  const h = harness();
+  h.sockets[0].reply({ confidence: 0.95, stabilizing: true, is_suspicious: false });
+  assert.equal(h.uploads.length, 1);
+  assert.equal(h.uploads[0].form.get('record_glance'), 'true');
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply({ confidence: 0.95 });
+  assert.equal(h.uploads.length, 1);
+  for (let i = 0; i < 2; i += 1) {
+    await h.run('_sendWsFrame()');
+    h.sockets[0].reply({ label: 'Normal', confidence: 0.99, is_normal: true, is_suspicious: false });
+  }
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply({ confidence: 0.95 });
+  assert.equal(h.uploads.length, 2);
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply({ label: 'Looking above', confidence: 0.96 });
+  assert.equal(h.uploads.length, 3);
+  await h.run('_sendWsFrame()');
+  h.sockets[0].reply({ label: 'Looking below', confidence: 0.90 });
+  assert.equal(h.uploads.length, 3);
+});
+
+test('the tenth gaze count shows a direction-neutral violation warning', async () => {
+  const h = harness();
+  h.setPostResponse({
+    gaze_glance_count: 0, gaze_violation_count: 1,
+    logged_event: { id: 1 }, limits: { gaze_violation: 8 },
+  });
+  h.sockets[0].reply({ confidence: 0.95 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.context.proctoringWarning.value.title, 'Gaze Violation Detected');
+  assert.match(h.context.proctoringWarning.value.message, /Repeated gaze away/);
+  assert.doesNotMatch(h.context.proctoringWarning.value.message, /left|right|above|below/i);
+  assert.equal(h.context.gazeGlanceCount.value, 0);
+});
 
 test('a slow stale reply is discarded without reconnecting or recording a violation', async () => {
   const h = harness();

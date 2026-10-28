@@ -20,6 +20,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 import copy
 import csv
 import io
+import hashlib
 from zipfile import BadZipFile
 
 from openpyxl import load_workbook
@@ -94,6 +95,8 @@ GAZE_ABOVE_CONTINUOUS_SECONDS = 4.0        # raised: flag at ~4-5s real-world
 GAZE_BELOW_CONTINUOUS_SECONDS = 4.0        # raised: flag at ~4-5s real-world
 GAZE_CONTINUOUS_SECONDS = 4.0              # raised: flag at ~4-5s real-world
 GAZE_NO_FACE_HOLD_SECONDS = 10
+GAZE_GLANCE_CONFIDENCE = 0.90
+GAZE_GLANCES_PER_VIOLATION = 10
 
 # In-memory: (submission_id, attempt) -> {label, at} for continuous gaze strikes.
 _GAZE_PENDING_STRIKES: dict[tuple[int, int], dict] = {}
@@ -103,6 +106,8 @@ _GAZE_NO_FACE_ABSENCE: dict[tuple[int, int], dict] = {}
 _GAZE_STRIKE_CACHE: dict[tuple[int, int], dict] = {}
 # Tracks when we last saw a suspicious frame — used for grace-period-based clearing.
 _GAZE_LAST_SUSPICIOUS: dict[tuple[int, int], object] = {}
+# One high-confidence count per gaze episode; persisted tally lives on the submission.
+_GAZE_GLANCE_EPISODES: dict[tuple[int, int], dict] = {}
 # Immediate gadget warnings; terminate after this many logged detections.
 GADGET_WARNING_TERMINATE_LIMIT = 3
 # Ignore back-to-back frames so one continuous hold is one warning.
@@ -292,6 +297,60 @@ def _gaze_violation_confidence_ok(label: str, confidence: float) -> bool:
     return confidence >= GAZE_CONFIDENCE_THRESHOLD
 
 
+def _high_confidence_gaze_direction(result, enabled: bool) -> str:
+    """Only a visible, enabled look-away above 90% can enter the shared tally."""
+    if not enabled or not result.face_detected or result.confidence <= GAZE_GLANCE_CONFIDENCE:
+        return ''
+    label = str(result.label or '').lower()
+    if 'above' in label:
+        return 'above'
+    if 'below' in label:
+        return 'below'
+    if 'left' in label and 'right' not in label:
+        return 'left'
+    if 'right' in label and 'left' not in label:
+        return 'right'
+    return ''
+
+
+def _new_gaze_glance_episode(submission, direction: str, *, from_websocket: bool) -> bool:
+    """Deduplicate a held gaze; two neutral observations rearm the same direction."""
+    key = _gaze_pending_key(submission)
+    state = _GAZE_GLANCE_EPISODES.setdefault(key, {'direction': '', 'neutral': 0})
+    if not direction:
+        state['neutral'] += 1
+        if state['neutral'] >= 2:
+            state['direction'] = ''
+        return False
+    state['neutral'] = 0
+    if from_websocket:
+        # The WebSocket client reports only a new episode, including the first
+        # high-confidence horizontal frame before its normal timer stabilizes.
+        state['direction'] = direction
+        return True
+    if state['direction'] == direction:
+        return False
+    state['direction'] = direction
+    return True
+
+
+def _increment_gaze_glance_count(submission, raw: bytes) -> tuple[bool, bool]:
+    """Persist the shared tally, ignoring repeat uploads of the same signed frame."""
+    frame_hash = hashlib.sha256(raw).hexdigest()
+    with transaction.atomic():
+        locked = ExamSubmission.objects.select_for_update().get(pk=submission.pk)
+        if locked.gaze_glance_last_frame_hash == frame_hash:
+            submission.gaze_glance_count = locked.gaze_glance_count
+            return False, False
+        next_count = locked.gaze_glance_count + 1
+        completed = next_count >= GAZE_GLANCES_PER_VIOLATION
+        locked.gaze_glance_count = 0 if completed else next_count
+        locked.gaze_glance_last_frame_hash = frame_hash
+        locked.save(update_fields=['gaze_glance_count', 'gaze_glance_last_frame_hash', 'updated_at'])
+        submission.gaze_glance_count = locked.gaze_glance_count
+        return True, completed
+
+
 def _gaze_strike_counts(submission, force_refresh: bool = False):
     """Return gaze strike counts, using an in-memory cache to avoid a DB query
     on every 100ms polling frame. Cache is invalidated whenever a strike is logged."""
@@ -363,6 +422,7 @@ def _clear_proctoring_for_attempt(submission):
     ExamIntegrityReport.objects.filter(submission=submission, attempt_number=attempt).delete()
     # Clear strike count cache for this attempt
     _GAZE_STRIKE_CACHE.pop((submission.pk, attempt), None)
+    _GAZE_GLANCE_EPISODES.pop((submission.pk, attempt), None)
     _GADGET_DETECTION_STATE.pop((submission.pk, attempt), None)
 
 
@@ -382,6 +442,7 @@ def _purge_exam_set_student_records(exam_set):
             _GAZE_PENDING_STRIKES,
             _GAZE_NO_FACE_ABSENCE,
             _GAZE_LAST_SUSPICIOUS,
+            _GAZE_GLANCE_EPISODES,
             _GADGET_DETECTION_STATE,
         ):
             for key in list(cache.keys()):
@@ -3191,6 +3252,8 @@ def student_exam_questions(request, exam_id):
             submission.question_index = 0
             submission.locked_answers = {}
             submission.iris_verified_at = None
+            submission.gaze_glance_count = 0
+            submission.gaze_glance_last_frame_hash = ''
             submission.save()
             _clear_proctoring_for_attempt(submission)
             # Clear gaze smoother state for the new attempt
@@ -3238,6 +3301,7 @@ def student_exam_questions(request, exam_id):
         'allow_backtracking': exam_set.allow_backtracking,
         'question_index': min(submission.question_index, max(len(qs) - 1, 0)),
         'locked_answers': submission.locked_answers if not exam_set.allow_backtracking else {},
+        'gaze_glance_count': submission.gaze_glance_count,
         'proctoring_restrictions': _serialize_proctoring_restrictions(exam_set),
     }, status=status.HTTP_200_OK)
 
@@ -3760,6 +3824,9 @@ def student_analyze_gaze(request, exam_id):
     payload['continuous_seconds_required'] = GAZE_CONTINUOUS_SECONDS
 
     record_strike = str(request.data.get('record_strike', 'false')).lower() in ('1', 'true', 'yes')
+    record_glance = str(request.data.get('record_glance', 'false')).lower() in ('1', 'true', 'yes')
+    if record_glance and not receipt:
+        return Response({'error': 'A signed gaze frame is required for a glance count.'}, status=status.HTTP_400_BAD_REQUEST)
     forced_label = _resolve_forced_gaze_label(
         request.data.get('forced_label', '').strip(),
         [result.label],
@@ -3773,6 +3840,18 @@ def student_analyze_gaze(request, exam_id):
         payload['is_suspicious'] = False
         payload['is_normal'] = True
     payload['direction_enabled'] = direction_enabled
+    glance_direction = _high_confidence_gaze_direction(result, direction_enabled) if not is_no_face else ''
+    glance_counted = False
+    glance_completed = False
+    if record_glance or (not receipt and not record_strike):
+        if _new_gaze_glance_episode(submission, glance_direction, from_websocket=record_glance):
+            glance_counted, glance_completed = _increment_gaze_glance_count(submission, raw)
+    elif not record_strike and not glance_direction:
+        _new_gaze_glance_episode(submission, '', from_websocket=False)
+    payload['gaze_glance_count'] = submission.gaze_glance_count
+    payload['gaze_glance_threshold'] = GAZE_GLANCES_PER_VIOLATION
+    payload['glance_counted'] = glance_counted
+    payload['glance_violation'] = glance_completed
     gaze_conf_ok = direction_enabled and result.is_suspicious and _gaze_violation_confidence_ok(
         result.label, result.confidence
     )
@@ -3787,7 +3866,9 @@ def student_analyze_gaze(request, exam_id):
 
     # The WS timer requests a strike using a server-verified frame result.
     # Preserve its real confidence and label in the evidence metadata.
-    if record_strike and forced_label and gaze_conf_ok and not is_no_face:
+    if record_glance:
+        pass  # The signed frame is used only for the shared short-gaze tally.
+    elif record_strike and forced_label and gaze_conf_ok and not is_no_face:
         _gaze_mark_suspicious(submission, now_dt)
         _clear_gaze_pending(submission)
         should_log = not _gaze_in_violation_cooldown(submission, now_dt)
@@ -3817,7 +3898,18 @@ def student_analyze_gaze(request, exam_id):
         below_continuous_seconds=GAZE_BELOW_CONTINUOUS_SECONDS,
     )
 
-    if should_log and is_no_face:
+    if glance_completed:
+        logged_event = _log_proctoring_event(
+            submission,
+            ExamProctoringEvent.EVENT_GAZE_VIOLATION,
+            severity=ExamProctoringEvent.SEVERITY_WARNING,
+            message='Repeated gaze away from the screen',
+            source='gaze_ai',
+            metadata={**gaze_meta, 'trigger': 'ten_high_confidence_glances', 'detections': GAZE_GLANCES_PER_VIOLATION},
+        )
+        _clear_gaze_pending(submission)
+        _gaze_mark_violation_logged(submission, now_dt)
+    elif should_log and is_no_face:
         logged_event = _log_proctoring_event(
             submission,
             ExamProctoringEvent.EVENT_GAZE_NO_FACE,
@@ -3851,7 +3943,7 @@ def student_analyze_gaze(request, exam_id):
             event=logged_event,
             evidence_type=ExamProctoringEvidence.TYPE_WEBCAM,
             image=ContentFile(raw, name=f'gaze_{logged_event.id}.jpg'),
-            caption=f'Gaze AI: {result.label}',
+            caption='Gaze away from screen' if glance_completed else f'Gaze AI: {result.label}',
         )
         payload['evidence'] = _serialize_proctoring_evidence(evidence, request)
 

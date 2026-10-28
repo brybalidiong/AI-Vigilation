@@ -81,6 +81,17 @@ upward, the sideways direction takes precedence.
 The below confidence gate is 0.25; the
 above gate is 0.22. The continuous look-away strike window remains four seconds.
 
+Brief look-away detections above 90% confidence also enter one shared tally
+across left, right, above, and below. A sustained direction counts once per
+episode; two neutral frames rearm the same direction, while a different
+direction begins a new episode. On the tenth detection the server records one
+`gaze_violation` event and resets the brief-gaze tally. This uses the same
+eight-violation termination limit as the existing four-second look-away rule.
+The browser sends the exact signed WebSocket frame when an episode begins;
+HTTP fallback counts episodes on its own. Duplicate uploads of one frame are
+ignored. The warning names the general gaze violation rather than a specific
+direction. No-face violations remain a separate counter.
+
 ### Iris visibility during the exam
 
 The tracker also compares actual eye pixels around MediaPipe iris landmarks. A

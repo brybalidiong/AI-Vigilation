@@ -669,7 +669,7 @@ class GazeEvidenceTests(TestCase):
         from accounts import views
         for cache in (views._GAZE_STRIKE_CACHE, views._GAZE_LAST_LOGGED,
                       views._GAZE_PENDING_STRIKES, views._GAZE_NO_FACE_ABSENCE,
-                      views._GADGET_DETECTION_STATE):
+                      views._GADGET_DETECTION_STATE, views._GAZE_GLANCE_EPISODES):
             cache.clear()
 
     def post_frame(self, **fields):
@@ -696,6 +696,53 @@ class GazeEvidenceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         timer.assert_not_called()
         self.assertFalse(ExamProctoringEvidence.objects.exists())
+
+    def test_ten_signed_high_confidence_gazes_share_one_violation(self):
+        for index in range(10):
+            label = 'Looking at the left' if index % 2 == 0 else 'Looking above the screen'
+            self.raw = f'synthetic gaze frame {index}'.encode()
+            self.receipt = gaze_service.sign_gaze_result(
+                self.exam.pk, self.student.email, self.raw,
+                GazeResult(label, 0.95, True, False, True),
+            )
+            response = self.post_frame(record_glance='true')
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data['gaze_glance_count'], (index + 1) % 10)
+            self.assertEqual(response.data['gaze_violation_count'], 1 if index == 9 else 0)
+            self.assertEqual(bool(response.data.get('logged_event')), index == 9)
+        self.assertEqual(ExamProctoringEvent.objects.filter(event_type=ExamProctoringEvent.EVENT_GAZE_VIOLATION).count(), 1)
+        self.assertEqual(ExamProctoringEvidence.objects.count(), 1)
+        replayed = self.post_frame(record_glance='true')
+        self.assertFalse(replayed.data['glance_counted'])
+        self.assertEqual(replayed.data['gaze_glance_count'], 0)
+
+    def test_ninety_percent_and_disabled_direction_do_not_enter_glance_tally(self):
+        self.receipt = gaze_service.sign_gaze_result(
+            self.exam.pk, self.student.email, self.raw,
+            GazeResult('Looking at the left', 0.90, True, False, True),
+        )
+        self.assertEqual(self.post_frame(record_glance='true').data['gaze_glance_count'], 0)
+        essay = ExamQuestion.objects.create(exam_set=self.exam, question_type='essay', question_text='Explain.')
+        self.exam.detect_gaze_left = False
+        self.exam.save(update_fields=['detect_gaze_left'])
+        self.raw = b'another synthetic frame'
+        self.receipt = gaze_service.sign_gaze_result(
+            self.exam.pk, self.student.email, self.raw,
+            GazeResult('Looking at the left', 0.95, True, False, True),
+        )
+        response = self.post_frame(record_glance='true', question_id=essay.pk)
+        self.assertEqual(response.data['gaze_glance_count'], 0)
+
+    def test_http_fallback_counts_one_sustained_episode(self):
+        labels = ['Looking at the left', 'Looking at the left', 'Normal', 'Normal', 'Looking at the left']
+        with patch.object(gaze_service, 'schedule_live_snapshot'), patch('accounts.gaze_service.analyze_frame_bytes') as analyze:
+            for index, label in enumerate(labels):
+                analyze.return_value = GazeResult(label, 0.95, True, label == 'Normal', label != 'Normal')
+                response = self.client.post(f'/api/student/exams/{self.exam.pk}/proctoring/gaze/', {
+                    'image': SimpleUploadedFile('gaze.jpg', f'frame {index}'.encode(), content_type='image/jpeg'),
+                })
+                self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['gaze_glance_count'], 2)
 
     def test_submission_waits_for_recent_visible_iris(self):
         question = ExamQuestion.objects.create(

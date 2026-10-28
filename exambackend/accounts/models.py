@@ -211,6 +211,8 @@ class ExamSubmission(models.Model):
     question_index = models.PositiveIntegerField(default=0)
     locked_answers = models.JSONField(default=dict, blank=True)
     iris_verified_at = models.DateTimeField(null=True, blank=True)
+    gaze_glance_count = models.PositiveSmallIntegerField(default=0)
+    gaze_glance_last_frame_hash = models.CharField(max_length=64, blank=True, default='')
     latest_snapshot = models.ImageField(upload_to='snapshots/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

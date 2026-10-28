@@ -103,6 +103,7 @@ During an exam, `StudentDashboardView.vue` sends webcam frames through the gaze 
 - Inference receives unmirrored pixels even when the preview is mirrored.
 - Instructor settings control which gaze directions are restricted.
 - Current default termination limits are eight look-away strikes and five no-face strikes.
+- A look-away above 90% confidence adds one detection per distinct gaze episode to a shared left/right/above/below tally, even when it lasts less than the four-second strike window. Ten such detections log one gaze violation, reset the tally, and show a direction-neutral warning. The existing sustained-look and no-face rules remain separate.
 - During an exam, a separate iris-visibility check uses the same analyzed gaze frame. The exam controls remain covered until a recent visible-iris result is confirmed; ordinary prescription glasses can pass when at least one iris is clear. The HTTP observation stores the latest confirmation for server-side answer and submission checks. The timer continues while visibility is being restored.
 
 See [gaze documentation](docs/GAZE_PROCTORING.md) and the custom [gaze-proctoring skill](.agents/skills/gaze-proctoring/SKILL.md).
