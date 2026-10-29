@@ -47,6 +47,7 @@ from .models import (
     StudentAnswer,
     StudentSet,
     Subject,
+    SubjectEnrollment,
     UserProfile,
 )
 
@@ -1224,10 +1225,10 @@ def admin_students(request):
     )
 
 
-@api_view(['GET', 'PATCH'])
+@api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def admin_student_detail(request, student_id):
-    """Admin: view a student, manage enrollment, and review face photos."""
+    """Admin: manage a student account, access, and identity review."""
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -1236,6 +1237,27 @@ def admin_student_detail(request, student_id):
         return Response({'error': 'Student not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     profile = student.profile
+
+    if request.method == 'DELETE':
+        email = student.email
+        stored_photos = [
+            (field.storage, field.name)
+            for field in (profile.face_photo, profile.face_pending_photo, profile.custom_photo)
+            if field and field.name
+        ]
+        with transaction.atomic():
+            EnrolledStudent.objects.filter(email__iexact=email).delete()
+            SubjectEnrollment.objects.filter(email__iexact=email).delete()
+            student.delete()
+            # Exam submissions and evidence are retained for integrity review.
+            def remove_identity_photos():
+                for storage, name in stored_photos:
+                    try:
+                        storage.delete(name)
+                    except Exception:
+                        pass
+            transaction.on_commit(remove_identity_photos)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     if request.method == 'GET':
         face_photo_url = request.build_absolute_uri(profile.face_photo.url) if profile.face_photo and profile.id_verified_at else None

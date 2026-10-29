@@ -511,7 +511,10 @@
                     </div>
                   </td>
                   <td style="text-align: right;">
-                    <button class="row-action" :class="st.is_enrolled ? 'row-action--danger' : 'row-action--restore'" :disabled="st._saving" @click="setStudentEnrollment(st)" :id="`remove-student-${st.id}`">{{ st._saving ? 'Saving…' : st.is_enrolled ? 'Disable access' : 'Restore access' }}</button>
+                    <div class="instructor-row-actions">
+                      <button type="button" class="row-action" :class="st.is_enrolled ? 'row-action--danger' : 'row-action--restore'" :disabled="st._saving" @click="setStudentEnrollment(st)" :id="`remove-student-${st.id}`">{{ st._saving ? 'Saving…' : st.is_enrolled ? 'Disable access' : 'Restore access' }}</button>
+                      <button type="button" class="row-action row-action--danger" :disabled="st._saving" @click="confirmDeleteStudent(st)">Delete</button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -1145,6 +1148,29 @@ function setStudentEnrollment(st) {
     confirmText: 'Disable access',
     onConfirm: () => updateStudentEnrollment(st, false),
   });
+}
+
+function confirmDeleteStudent(st) {
+  openConfirm({
+    title: 'Delete student account?',
+    message: `${st.full_name || st.email} will lose access and be removed from student lists and course rosters. Past exam submissions and integrity evidence will remain available for review.`,
+    confirmText: 'Delete student',
+    onConfirm: () => deleteStudent(st),
+  });
+}
+
+async function deleteStudent(st) {
+  st._saving = true;
+  try {
+    await axios.delete(`${backendBaseUrl}/api/admin/students/${st.id}/`, { headers: getHeaders() });
+    students.value = students.value.filter((item) => item.id !== st.id);
+    if (reviewStudent.value?.id === st.id) reviewStudent.value = null;
+    showActionSuccess('Student deleted', `${st.full_name || st.email} was removed.`);
+  } catch (e) {
+    showActionError(e?.response?.data?.error || 'Could not delete student.');
+  } finally {
+    st._saving = false;
+  }
 }
 
 async function updateStudentEnrollment(st, enrolled) {

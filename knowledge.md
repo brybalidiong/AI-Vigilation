@@ -40,6 +40,9 @@ Admins can edit an instructor's school email or delete an instructor account.
 Email edits update the Django login username as well as the email, so the new
 school Google address is used on the next sign-in. Deletion requires all course
 assignments to be reassigned first; standalone rosters remain after removal.
+Admins can also delete a student account. This removes the login account, profile
+photos, and course enrollment rows; past exam submissions and integrity evidence
+remain available to instructors for review.
 
 Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
 students enrolled in the course; their open dashboards refetch the authorized exam

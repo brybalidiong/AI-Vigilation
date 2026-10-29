@@ -19,7 +19,7 @@ from django.utils import timezone
 from accounts.grading import grade_question
 from accounts.models import (
     EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, QuestionBankItem, StudentAnswer,
-    StudentSet, Subject, UserProfile,
+    StudentSet, Subject, SubjectEnrollment, UserProfile,
 )
 from accounts.student_id_service import StudentIdError, _name_matches, verify_student_id
 
@@ -220,6 +220,33 @@ class AdminAccessWorkflowTests(TestCase):
             self.student.refresh_from_db()
             self.assertEqual(self.student.profile.is_enrolled, enabled)
             self.assertEqual(self.student.is_active, enabled)
+
+    def test_admin_deletes_student_access_but_retains_exam_history(self):
+        roster = StudentSet.objects.create(name='Synthetic section', subject=self.subject)
+        EnrolledStudent.objects.create(email=self.student.email, student_set=roster)
+        SubjectEnrollment.objects.create(email=self.student.email, subject=self.subject)
+        submission = ExamSubmission.objects.create(
+            exam_set=self.exam, student_email=self.student.email, is_done=True,
+        )
+        response = self.client.delete(f'/api/admin/students/{self.student.pk}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.student.pk).exists())
+        self.assertFalse(EnrolledStudent.objects.filter(email=self.student.email).exists())
+        self.assertFalse(SubjectEnrollment.objects.filter(email=self.student.email).exists())
+        self.assertTrue(ExamSubmission.objects.filter(pk=submission.pk).exists())
+        self.assertFalse(any(
+            row['id'] == self.student.pk
+            for row in self.client.get('/api/admin/students/').data['students']
+        ))
+
+    def test_only_admin_can_delete_student_account(self):
+        url = f'/api/admin/students/{self.student.pk}/'
+        self.client.force_authenticate(self.instructor)
+        self.assertEqual(self.client.delete(url).status_code, 403)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.delete(
+            f'/api/admin/students/{self.instructor.pk}/',
+        ).status_code, 404)
 
     def test_face_reupload_can_be_turned_off_again(self):
         profile = self.student.profile
