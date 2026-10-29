@@ -366,7 +366,11 @@
                   </td>
                   <td><span class="status-badge" :class="ins.is_active ? 'badge-done' : 'badge-neutral'">{{ ins.is_active ? 'Active' : 'Inactive' }}</span></td>
                   <td style="text-align: right;">
-                    <button class="row-action" :class="ins.is_active ? 'row-action--danger' : 'row-action--restore'" :disabled="ins._saving" @click="setInstructorActive(ins)" :id="`remove-instructor-${ins.id}`">{{ ins._saving ? 'Saving…' : ins.is_active ? 'Deactivate' : 'Restore access' }}</button>
+                    <div class="instructor-row-actions">
+                      <button type="button" class="row-action" :disabled="ins._saving" @click="openInstructorEmailEdit(ins)">Edit email</button>
+                      <button type="button" class="row-action" :class="ins.is_active ? 'row-action--danger' : 'row-action--restore'" :disabled="ins._saving" @click="setInstructorActive(ins)" :id="`remove-instructor-${ins.id}`">{{ ins._saving ? 'Saving…' : ins.is_active ? 'Deactivate' : 'Restore access' }}</button>
+                      <button type="button" class="row-action row-action--danger" :disabled="ins._saving" @click="confirmDeleteInstructor(ins)">Delete</button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -552,6 +556,23 @@
         @confirm="onConfirmDialog"
         @cancel="clearPendingConfirm"
       />
+      <div v-if="editingInstructor" class="review-backdrop" @click.self="closeInstructorEmailEdit">
+        <form class="review-dialog instructor-email-dialog" role="dialog" aria-modal="true" aria-labelledby="instructor-email-title" @submit.prevent="saveInstructorEmail" @keydown.esc="closeInstructorEmailEdit">
+          <div class="review-heading">
+            <div><p class="review-eyebrow">INSTRUCTOR ACCOUNT</p><h2 id="instructor-email-title">Edit email</h2><p>{{ editingInstructor.full_name || editingInstructor.email }}</p></div>
+            <button type="button" class="entry-close" aria-label="Close email editor" :disabled="emailEditSaving" @click="closeInstructorEmailEdit">×</button>
+          </div>
+          <label class="entry-field" for="edit-instructor-email">School email
+            <input id="edit-instructor-email" v-model.trim="editedInstructorEmail" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required :disabled="emailEditSaving" />
+          </label>
+          <p class="instructor-email-help">The instructor will use this email for their next Google sign-in.</p>
+          <p v-if="emailEditError" class="form-error" role="alert">{{ emailEditError }}</p>
+          <div class="review-actions">
+            <button type="button" class="ghost-btn" :disabled="emailEditSaving" @click="closeInstructorEmailEdit">Cancel</button>
+            <button type="submit" class="primary-btn" :disabled="emailEditSaving || !editedInstructorEmail.trim() || editedInstructorEmail.trim().toLowerCase() === editingInstructor.email.toLowerCase()">{{ emailEditSaving ? 'Saving…' : 'Save email' }}</button>
+          </div>
+        </form>
+      </div>
       <div v-if="reviewStudent" class="review-backdrop" @click.self="reviewStudent = null">
         <section class="review-dialog" role="dialog" aria-modal="true" aria-labelledby="review-title" @keydown.esc="reviewStudent = null">
           <div class="review-heading">
@@ -636,6 +657,10 @@ const instructorError = ref("");
 const instructorSearch = ref("");
 const instructorStatusFilter = ref('all');
 const instructorInstituteFilter = ref('all');
+const editingInstructor = ref(null);
+const editedInstructorEmail = ref('');
+const emailEditError = ref('');
+const emailEditSaving = ref(false);
 const hasInstructorFilters = computed(() => Boolean(instructorSearch.value) || instructorStatusFilter.value !== 'all' || instructorInstituteFilter.value !== 'all');
 const newInstructor = ref({ email: "", first_name: "", last_name: "", institute: "" });
 
@@ -1007,6 +1032,64 @@ async function updateInstructorActive(ins, active) {
     showActionSuccess(active ? 'Instructor access restored' : 'Instructor access deactivated', active ? 'Instructor access restored.' : 'Instructor access deactivated.');
   } catch (e) {
     showActionError(e?.response?.data?.error || 'Could not update instructor access.');
+  } finally {
+    ins._saving = false;
+  }
+}
+
+function openInstructorEmailEdit(ins) {
+  editingInstructor.value = ins;
+  editedInstructorEmail.value = ins.email;
+  emailEditError.value = '';
+  nextTick(() => document.getElementById('edit-instructor-email')?.focus());
+}
+
+function closeInstructorEmailEdit() {
+  if (emailEditSaving.value) return;
+  editingInstructor.value = null;
+  editedInstructorEmail.value = '';
+  emailEditError.value = '';
+}
+
+async function saveInstructorEmail() {
+  const ins = editingInstructor.value;
+  if (!ins) return;
+  const email = editedInstructorEmail.value.trim().toLowerCase();
+  if (!email.endsWith(`@${schoolDomain}`)) {
+    emailEditError.value = `Use a @${schoolDomain} email address.`;
+    return;
+  }
+  emailEditSaving.value = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { action: 'set_email', email }, { headers: getHeaders() });
+    ins.email = data.email;
+    ins.username = data.username;
+    editingInstructor.value = null;
+    showActionSuccess('Instructor email updated', `${ins.full_name || data.email} can now sign in with ${data.email}.`);
+  } catch (e) {
+    emailEditError.value = e?.response?.data?.error || 'Could not update instructor email.';
+  } finally {
+    emailEditSaving.value = false;
+  }
+}
+
+function confirmDeleteInstructor(ins) {
+  openConfirm({
+    title: 'Delete instructor account?',
+    message: `${ins.full_name || ins.email} will be removed permanently. Reassign all of their courses first to keep courses, exams, and student records.`,
+    confirmText: 'Delete instructor',
+    onConfirm: () => deleteInstructor(ins),
+  });
+}
+
+async function deleteInstructor(ins) {
+  ins._saving = true;
+  try {
+    await axios.delete(`${backendBaseUrl}/api/admin/instructors/${ins.id}/`, { headers: getHeaders() });
+    instructors.value = instructors.value.filter((item) => item.id !== ins.id);
+    showActionSuccess('Instructor deleted', `${ins.full_name || ins.email} was removed.`);
+  } catch (e) {
+    showActionError(e?.response?.data?.error || 'Could not delete instructor.');
   } finally {
     ins._saving = false;
   }
@@ -1465,6 +1548,9 @@ onMounted(() => {
 .institute-picker { max-width: 200px; width: 100%; font-size: .76rem; }
 .form-error { margin: .8rem 0 0; color: #b91c1c; font-size: .82rem; }
 .row-action { border: 1px solid #cbd5e1; border-radius: 8px; padding: .45rem .7rem; background: white; color: #334155; font: inherit; font-size: .76rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.instructor-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+.instructor-email-dialog { display: grid; gap: 1rem; width: min(100%, 490px); }
+.instructor-email-help { margin: -.35rem 0 0; color: #64748b; font-size: .84rem; }
 .row-action--danger { border-color: #fecaca; color: #b91c1c; }
 .row-action--restore { border-color: #bbdfc8; color: #166534; }
 .row-action:disabled { opacity: .55; cursor: wait; }

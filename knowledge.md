@@ -36,6 +36,10 @@ Instructors cannot create or delete courses. They can change an assigned course
 banner and archive a course from their own active list. Each instructor has an
 independent archive; restoring returns the course to that instructor's list.
 Archiving does not remove exams, student records, or other instructors' access.
+Admins can edit an instructor's school email or delete an instructor account.
+Email edits update the Django login username as well as the email, so the new
+school Google address is used on the next sign-in. Deletion requires all course
+assignments to be reassigned first; standalone rosters remain after removal.
 
 Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
 students enrolled in the course; their open dashboards refetch the authorized exam

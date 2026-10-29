@@ -157,6 +157,58 @@ class AdminAccessWorkflowTests(TestCase):
         self.assertTrue(self.instructor.is_active)
         self.assertTrue(self.instructor.is_staff)
 
+    @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+    def test_admin_edits_instructor_email_without_changing_courses(self):
+        url = f'/api/admin/instructors/{self.instructor.pk}/'
+        for email, expected_status in (
+            ('not-an-email', 400),
+            ('other@example.com', 400),
+            (self.student.email, 409),
+        ):
+            response = self.client.patch(url, {'action': 'set_email', 'email': email}, format='json')
+            self.assertEqual(response.status_code, expected_status, response.data)
+        response = self.client.patch(url, {
+            'action': 'set_email', 'email': 'New.Instructor@dnsc.edu.ph',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.instructor.refresh_from_db()
+        self.assertEqual(self.instructor.email, 'new.instructor@dnsc.edu.ph')
+        self.assertEqual(self.instructor.username, self.instructor.email)
+        self.assertTrue(Subject.objects.filter(pk=self.subject.pk, instructor=self.instructor).exists())
+
+    def test_deleting_instructor_requires_course_reassignment_and_preserves_roster(self):
+        url = f'/api/admin/instructors/{self.instructor.pk}/'
+        roster = StudentSet.objects.create(name='Synthetic roster', created_by=self.instructor)
+        blocked = self.client.delete(url)
+        self.assertEqual(blocked.status_code, 409, blocked.data)
+        self.assertTrue(User.objects.filter(pk=self.instructor.pk).exists())
+        self.assertTrue(ExamSet.objects.filter(pk=self.exam.pk).exists())
+        replacement = User.objects.create_user(username='replacement@dnsc.edu.ph', is_staff=True)
+        self.subject.instructor = replacement
+        self.subject.save(update_fields=['instructor'])
+        deleted = self.client.delete(url)
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.instructor.pk).exists())
+        self.assertTrue(ExamSet.objects.filter(pk=self.exam.pk).exists())
+        roster.refresh_from_db()
+        self.assertIsNone(roster.created_by_id)
+
+    def test_deleting_additional_instructor_requires_reassignment(self):
+        additional = User.objects.create_user(username='additional@dnsc.edu.ph', is_staff=True)
+        UserProfile.objects.create(user=additional, role='instructor')
+        self.subject.additional_instructors.add(additional)
+        response = self.client.delete(f'/api/admin/instructors/{additional.pk}/')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertTrue(User.objects.filter(pk=additional.pk).exists())
+
+    def test_non_admin_cannot_edit_or_delete_instructor(self):
+        self.client.force_authenticate(self.student)
+        url = f'/api/admin/instructors/{self.instructor.pk}/'
+        self.assertEqual(self.client.patch(url, {
+            'action': 'set_email', 'email': 'changed@dnsc.edu.ph',
+        }, format='json').status_code, 403)
+        self.assertEqual(self.client.delete(url).status_code, 403)
+
     def test_student_enrollment_can_be_disabled_and_restored(self):
         url = f'/api/admin/students/{self.student.pk}/'
         for enabled in (False, True):

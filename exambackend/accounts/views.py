@@ -2,6 +2,8 @@ from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, Q
 from django.http import FileResponse
@@ -1034,10 +1036,10 @@ def admin_instructors(request):
     )
 
 
-@api_view(['PATCH'])
+@api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def admin_instructor_detail(request, instructor_id):
-    """Admin: manage an instructor's access and institute."""
+    """Admin: manage or remove an instructor account."""
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -1046,6 +1048,38 @@ def admin_instructor_detail(request, instructor_id):
     ).first()
     if not instructor:
         return Response({'error': 'Instructor not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if request.method == 'DELETE':
+        with transaction.atomic():
+            if Subject.objects.filter(Q(instructor=instructor) | Q(additional_instructors=instructor)).exists():
+                return Response(
+                    {'error': 'Reassign this instructor’s courses before deleting their account.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            # Standalone rosters may still reference their creator. Keep those
+            # rosters and enrollments when the instructor account is removed.
+            StudentSet.objects.filter(created_by=instructor).update(created_by=None)
+            instructor.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    if request.data.get('action') == 'set_email':
+        email = str(request.data.get('email') or '').strip().lower()
+        try:
+            validate_email(email)
+        except ValidationError:
+            return Response({'error': 'Enter a valid school email address.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not email.endswith(f"@{settings.ALLOWED_SCHOOL_DOMAIN}"):
+            return Response(
+                {'error': f"Only @{settings.ALLOWED_SCHOOL_DOMAIN} emails are allowed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).exclude(pk=instructor.pk).exists():
+            return Response({'error': 'This email is already used by another account.'}, status=status.HTTP_409_CONFLICT)
+        instructor.username = email
+        instructor.email = email
+        try:
+            instructor.save(update_fields=['username', 'email'])
+        except IntegrityError:
+            return Response({'error': 'This email is already used by another account.'}, status=status.HTTP_409_CONFLICT)
+        return Response({'id': instructor.id, 'email': email, 'username': email})
     if request.data.get('action') == 'set_institute':
         institute = request.data.get('institute')
         if not _valid_institute(institute):
