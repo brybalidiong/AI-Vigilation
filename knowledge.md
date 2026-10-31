@@ -24,6 +24,9 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
   The admin can select one database-backed gaze classifier for all exams. The
   existing EfficientNet export is recommended; MobileNetV2 and ResNet50V2 require
   compatible TFLite exports installed in the backend gaze assets directory.
+  Admin analytics groups completed attempt integrity scores by the gaze model
+  selected when each attempt began. This is an overall proctoring outcome, not
+  a measured classifier accuracy; earlier attempts have no model attribution.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.
 

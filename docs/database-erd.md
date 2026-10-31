@@ -104,6 +104,7 @@ erDiagram
         bigint exam_set_id FK
         varchar student_email
         numeric score
+        varchar gaze_model_code
     }
 
     accounts_examquestion {

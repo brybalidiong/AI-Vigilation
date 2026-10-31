@@ -203,6 +203,18 @@
                   </div>
                 </div>
               </article>
+              <article class="analytics-panel model-integrity-panel">
+                <div class="analytics-panel__heading"><div><h3>Integrity by gaze model</h3><p>Average exam integrity for attempts started with each model</p></div><span class="analytics-panel__index">04</span></div>
+                <div class="model-integrity-list">
+                  <div v-for="model in analytics.gaze_models || []" :key="model.code" class="model-integrity-row">
+                    <div class="model-integrity-row__title"><strong>{{ model.name }}</strong><span v-if="model.code === analytics.active_gaze_model">Currently selected</span></div>
+                    <div class="model-integrity-row__measure"><div class="analytics-bar-track"><span :style="{ width: barWidth(model.average_integrity || 0, 100) }"></span></div><strong>{{ formatIntegrity(model.average_integrity) }}</strong></div>
+                    <small>{{ model.attempts }} {{ model.attempts === 1 ? 'attempt' : 'attempts' }}</small>
+                  </div>
+                </div>
+                <p class="model-integrity-note">Integrity includes all recorded proctoring signals. It is not a measured model accuracy rate. The model is recorded when an attempt begins.</p>
+                <p v-if="analytics.unattributed_attempts" class="model-integrity-note">{{ analytics.unattributed_attempts }} earlier {{ analytics.unattributed_attempts === 1 ? 'attempt has' : 'attempts have' }} no recorded model.</p>
+              </article>
             </template>
           </section>
 
@@ -1470,6 +1482,15 @@ onMounted(() => {
 .institute-measure { display: grid; gap: .25rem; }
 .institute-measure small { color: #8b98a9; font-size: .67rem; }
 .institute-score { color: #1d3461; font-size: .85rem; text-align: right; }
+.model-integrity-list { display: grid; }
+.model-integrity-row { display: grid; gap: .45rem; padding: .85rem 0; border-top: 1px solid #edf0f5; }
+.model-integrity-row__title, .model-integrity-row__measure { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.model-integrity-row__title strong { color: #1b3157; font-size: .83rem; }
+.model-integrity-row__title span { color: #527099; font-size: .7rem; font-weight: 700; }
+.model-integrity-row__measure .analytics-bar-track { flex: 1; }
+.model-integrity-row__measure strong { min-width: 3.8rem; color: #1d3461; font-size: .85rem; text-align: right; }
+.model-integrity-row small, .model-integrity-note { margin: 0; color: #8492a6; font-size: .72rem; }
+.model-integrity-note { padding-top: .5rem; }
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

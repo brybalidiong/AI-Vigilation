@@ -658,6 +658,7 @@ def _build_integrity_report(submission):
         narrative_parts.append('Exam was auto-terminated due to proctoring violations.')
 
     summary = {
+        'gaze_model_code': submission.gaze_model_code,
         'event_counts': counts,
         'terminated': submission.terminated,
         'tab_switches': submission.tab_switches,
@@ -892,6 +893,9 @@ def admin_analytics(request):
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
+    from .gaze_service import GAZE_MODEL_NAMES, selected_gaze_model_code
+    model_scores = {code: [] for code in GAZE_MODEL_NAMES}
+
     institute_names = dict(UserProfile.INSTITUTE_CHOICES)
     institute_by_email = {
         email.lower(): institute
@@ -907,6 +911,9 @@ def admin_analytics(request):
     for report in reports.iterator():
         report_count += 1
         score_total += report.integrity_score
+        model_code = (report.summary or {}).get('gaze_model_code')
+        if model_code in model_scores:
+            model_scores[model_code].append(report.integrity_score)
         if report.integrity_score < 100:
             flagged_attempts += 1
         if (report.summary or {}).get('terminated'):
@@ -927,6 +934,16 @@ def admin_analytics(request):
     ]
     scored_institutes = [row for row in institute_rows if row['attempts']]
     lowest_institute = min(scored_institutes, key=lambda row: row['average_integrity']) if scored_institutes else None
+    gaze_model_rows = [
+        {
+            'code': code,
+            'name': name,
+            'average_integrity': round(float(sum(model_scores[code]) / len(model_scores[code])), 1)
+                if model_scores[code] else None,
+            'attempts': len(model_scores[code]),
+        }
+        for code, name in GAZE_MODEL_NAMES.items()
+    ]
 
     violation_types = {
         key: label for key, label in ExamProctoringEvent.EVENT_TYPES
@@ -976,6 +993,9 @@ def admin_analytics(request):
         'devices': devices,
         'institutes': institute_rows,
         'lowest_institute': lowest_institute,
+        'gaze_models': gaze_model_rows,
+        'active_gaze_model': selected_gaze_model_code(),
+        'unattributed_attempts': report_count - sum(row['attempts'] for row in gaze_model_rows),
     })
 
 
@@ -3357,10 +3377,11 @@ def student_exam_questions(request, exam_id):
         return Response({'error': 'Exam is closed and cannot be taken.'}, status=status.HTTP_403_FORBIDDEN)
 
     # Handle tracking of submission/attempts
+    from .gaze_service import selected_gaze_model_code
     submission, created = ExamSubmission.objects.get_or_create(
         exam_set=exam_set,
         student_email=request.user.email.lower(),
-        defaults={'started_at': now}
+        defaults={'started_at': now, 'gaze_model_code': selected_gaze_model_code()}
     )
     if not created:
         if submission.is_done:
@@ -3374,6 +3395,7 @@ def student_exam_questions(request, exam_id):
             submission.terminated = False
             submission.attempt_count += 1
             submission.started_at = now
+            submission.gaze_model_code = selected_gaze_model_code()
             submission.submitted_at = None
             submission.question_index = 0
             submission.locked_answers = {}
@@ -3389,7 +3411,8 @@ def student_exam_questions(request, exam_id):
             StudentAnswer.objects.filter(exam_set=exam_set, student_email=request.user.email.lower()).delete()
         elif not submission.started_at:
             submission.started_at = now
-            submission.save(update_fields=['started_at'])
+            submission.gaze_model_code = selected_gaze_model_code()
+            submission.save(update_fields=['started_at', 'gaze_model_code'])
 
     if not submission.is_done:
         already_started = ExamProctoringEvent.objects.filter(
@@ -3800,7 +3823,12 @@ def student_log_proctoring_events(request, exam_id):
         return Response({'error': 'No active exam attempt.'}, status=status.HTTP_400_BAD_REQUEST)
     if created or not submission.started_at:
         submission.started_at = submission.started_at or timezone.now()
-        submission.save(update_fields=['started_at'])
+        update_fields = ['started_at']
+        if created:
+            from .gaze_service import selected_gaze_model_code
+            submission.gaze_model_code = selected_gaze_model_code()
+            update_fields.append('gaze_model_code')
+        submission.save(update_fields=update_fields)
 
     events_payload = request.data.get('events')
     if not isinstance(events_payload, list) or not events_payload:
@@ -3850,7 +3878,12 @@ def student_upload_proctoring_evidence(request, exam_id):
         return Response({'error': 'No active exam attempt.'}, status=status.HTTP_400_BAD_REQUEST)
     if created or not submission.started_at:
         submission.started_at = submission.started_at or timezone.now()
-        submission.save(update_fields=['started_at'])
+        update_fields = ['started_at']
+        if created:
+            from .gaze_service import selected_gaze_model_code
+            submission.gaze_model_code = selected_gaze_model_code()
+            update_fields.append('gaze_model_code')
+        submission.save(update_fields=update_fields)
 
     image = request.FILES.get('image')
     if not image:
@@ -3906,7 +3939,12 @@ def student_analyze_gaze(request, exam_id):
         return Response({'error': 'No active exam attempt.'}, status=status.HTTP_400_BAD_REQUEST)
     if created or not submission.started_at:
         submission.started_at = submission.started_at or timezone.now()
-        submission.save(update_fields=['started_at'])
+        update_fields = ['started_at']
+        if created:
+            from .gaze_service import selected_gaze_model_code
+            submission.gaze_model_code = selected_gaze_model_code()
+            update_fields.append('gaze_model_code')
+        submission.save(update_fields=update_fields)
 
     image = request.FILES.get('image')
     if not image:
@@ -4128,13 +4166,17 @@ def student_detect_gadgets(request, exam_id):
         }, status=status.HTTP_200_OK)
 
     now_dt = timezone.now()
-    submission, _ = ExamSubmission.objects.get_or_create(
+    submission, created = ExamSubmission.objects.get_or_create(
         exam_set=exam_set,
         student_email=student_email,
         defaults={'started_at': now_dt},
     )
     if submission.is_done:
         return Response({'error': 'No active exam attempt.'}, status=status.HTTP_400_BAD_REQUEST)
+    if created:
+        from .gaze_service import selected_gaze_model_code
+        submission.gaze_model_code = selected_gaze_model_code()
+        submission.save(update_fields=['gaze_model_code'])
 
     image = request.FILES.get('image')
     if not image:
