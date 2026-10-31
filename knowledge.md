@@ -44,6 +44,10 @@ Students can belong to only one roster for a given course, even when different
 assigned instructors manage the rosters. Enrollment into another roster in the
 same course is rejected or skipped during bulk import; remove the old enrollment
 before moving the student.
+Instructor `.xlsx` attendance imports search every worksheet and column for email
+addresses, including multiple addresses in one cell. Only school addresses that
+match an admin-enrolled student account are added. The import response lists
+duplicates and rejected addresses with their sheet and cell when available.
 Existing courses inherit the lead instructor's institute during migration when
 it is known. Admin reassignment preserves the course, exams, and student sets.
 Instructors cannot create or delete courses. They can change an assigned course

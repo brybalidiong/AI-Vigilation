@@ -848,16 +848,25 @@
                           </label>
                           <button type="submit" class="primary-btn" :disabled="bulkEnrollLoading">{{ bulkEnrollLoading ? 'Processing…' : 'Enroll list' }}</button>
                         </div>
-                        <p class="enroll-upload-hint">Excel files need an <strong>Email</strong> or <strong>Student Email</strong> column. Uploading starts enrollment immediately.</p>
+                        <p class="enroll-upload-hint">Upload a .xlsx attendance file. Emails can appear in any column or worksheet, including cells with more than one address. Only students already enrolled by the admin will be added.</p>
                       </form>
                       <p class="enroll-result" v-if="bulkEnrollResult">
                         <span class="result-ok">&#10003; {{ bulkEnrollResult.added?.length || 0 }} added</span>
                         <span class="result-skip">{{ bulkEnrollResult.skipped_duplicates?.length || 0 }} skipped</span>
                         <span class="result-err" v-if="bulkEnrollResult.errors?.length">{{ bulkEnrollResult.errors.length }} errors</span>
                       </p>
+                      <ul v-if="bulkEnrollResult?.skipped_details?.length" class="enroll-import-errors">
+                        <li v-for="item in bulkEnrollResult.skipped_details.slice(0, 5)" :key="`skipped-${item.email}-${item.cell || ''}`">
+                          <strong v-if="item.cell">{{ item.sheet }} · {{ item.cell }}:</strong>
+                          {{ item.email }} — {{ item.reason }}
+                        </li>
+                        <li v-if="bulkEnrollResult.skipped_details.length > 5">
+                          …and {{ bulkEnrollResult.skipped_details.length - 5 }} more skipped address(es).
+                        </li>
+                      </ul>
                       <ul v-if="bulkEnrollResult?.errors?.length" class="enroll-import-errors">
                         <li v-for="item in bulkEnrollResult.errors.slice(0, 5)" :key="`${item.row || 'manual'}-${item.email}`">
-                          <strong v-if="item.row">Row {{ item.row }}:</strong>
+                          <strong v-if="item.cell">{{ item.sheet }} · {{ item.cell }}:</strong>
                           {{ item.email }} — {{ item.error }}
                         </li>
                         <li v-if="bulkEnrollResult.errors.length > 5">

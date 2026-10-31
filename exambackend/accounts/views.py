@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, Q
+from django.db.models.functions import Lower
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
@@ -26,6 +27,7 @@ import hashlib
 from zipfile import BadZipFile
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException
 from PIL import Image, UnidentifiedImageError
 
@@ -1487,6 +1489,11 @@ def enrolled_students(request):
     )
 
 
+_SPREADSHEET_EMAIL_RE = re.compile(
+    r'(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9._%+-])'
+)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def bulk_enroll_students(request, set_id):
@@ -1520,37 +1527,28 @@ def bulk_enroll_students(request, set_id):
             )
         try:
             workbook = load_workbook(upload, read_only=True, data_only=True)
-            worksheet = workbook.active
-            if worksheet is None:
+            if not workbook.worksheets:
                 raise ValueError('The Excel file does not contain a worksheet.')
-            if worksheet.max_row > 5001:
-                raise ValueError('The Excel file can contain at most 5,000 students.')
-            rows = worksheet.iter_rows(values_only=True)
-            headers = next(rows, None)
-            if not headers:
-                raise ValueError('The Excel file is empty.')
-
-            normalized_headers = [
-                re.sub(r'[^a-z]', '', str(value or '').strip().lower())
-                for value in headers
-            ]
-            accepted_headers = {'email', 'emailaddress', 'studentemail', 'studentemailaddress'}
-            email_column = next(
-                (index for index, header in enumerate(normalized_headers) if header in accepted_headers),
-                None,
-            )
-            if email_column is None:
-                raise ValueError(
-                    'No email column was found. Name the column "Email" or "Student Email".'
-                )
-
-            for row_number, row in enumerate(rows, start=2):
-                value = row[email_column] if email_column < len(row) else None
-                if value is None or not str(value).strip():
-                    continue
-                source_rows.append((row_number, str(value).strip().lower()))
-                if len(source_rows) > 5000:
-                    raise ValueError('The Excel file can contain at most 5,000 students.')
+            rows_scanned = 0
+            for worksheet in workbook.worksheets:
+                for row_number, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+                    rows_scanned += 1
+                    if rows_scanned > 10000:
+                        raise ValueError('The Excel file can contain at most 10,000 rows across all sheets.')
+                    for column_number, value in enumerate(row, start=1):
+                        if value is None:
+                            continue
+                        for match in _SPREADSHEET_EMAIL_RE.finditer(str(value)):
+                            source_rows.append({
+                                'row': row_number,
+                                'cell': f'{get_column_letter(column_number)}{row_number}',
+                                'sheet': worksheet.title,
+                                'email': match.group().lower(),
+                            })
+                            if len(source_rows) > 5000:
+                                raise ValueError('The Excel file can contain at most 5,000 email addresses.')
+            if not source_rows:
+                raise ValueError('No email addresses were found in the Excel file.')
         except (InvalidFileException, BadZipFile, OSError, EOFError):
             return Response(
                 {'error': 'The uploaded file is not a valid .xlsx workbook.'},
@@ -1562,7 +1560,7 @@ def bulk_enroll_students(request, set_id):
             if 'workbook' in locals():
                 workbook.close()
 
-        lines = [email for _, email in source_rows]
+        lines = [item['email'] for item in source_rows]
     else:
         raw = request.data.get('emails')
         if isinstance(raw, list):
@@ -1579,40 +1577,60 @@ def bulk_enroll_students(request, set_id):
 
     added = []
     skipped = []
+    skipped_details = []
     errors = []
     domain = f"@{settings.ALLOWED_SCHOOL_DOMAIN}"
+    candidate_emails = {line for line in lines if line.endswith(domain)}
+    admin_enrolled_emails = set(
+        UserProfile.objects.filter(role='student', is_enrolled=True)
+        .annotate(normalized_email=Lower('user__email'))
+        .filter(normalized_email__in=candidate_emails)
+        .values_list('normalized_email', flat=True)
+    )
 
     for index, line in enumerate(lines):
         email = line.strip().lower()
-        row_number = source_rows[index][0] if source_rows else None
+        source = source_rows[index] if source_rows else None
         if not email.endswith(domain):
             item = {'email': email, 'error': f'Not a {domain} address.'}
-            if row_number:
-                item['row'] = row_number
+            if source:
+                item.update({key: source[key] for key in ('row', 'cell', 'sheet')})
             errors.append(item)
             continue
-        if not UserProfile.objects.filter(user__email__iexact=email, role='student', is_enrolled=True).exists():
+        if email not in admin_enrolled_emails:
             item = {'email': email, 'error': 'Not enrolled by admin.'}
-            if row_number:
-                item['row'] = row_number
+            if source:
+                item.update({key: source[key] for key in ('row', 'cell', 'sheet')})
             errors.append(item)
             continue
         try:
             s, existing = _enroll_student_in_set_once(email, roster)
             if existing:
                 skipped.append(email)
+                detail = {
+                    'email': email,
+                    'reason': (
+                        f'Already enrolled in this course through {existing.student_set.name}.'
+                        if roster.subject_id and existing.student_set_id != roster.id
+                        else 'Already in this section.'
+                    ),
+                }
+                if source:
+                    detail.update({key: source[key] for key in ('row', 'cell', 'sheet')})
+                skipped_details.append(detail)
                 continue
             added.append({'id': s.id, 'email': s.email})
             _sync_profile_enrollment_for_email(email)
         except IntegrityError:
             skipped.append(email)
+            skipped_details.append({'email': email, 'reason': 'Already enrolled.'})
         except Exception as exc:
             item = {'email': email, 'error': str(exc)}
-            if row_number:
-                item['row'] = row_number
+            if source:
+                item.update({key: source[key] for key in ('row', 'cell', 'sheet')})
             errors.append(item)
 
-    result = {'added': added, 'skipped_duplicates': skipped, 'errors': errors}
+    result = {'added': added, 'skipped_duplicates': skipped, 'skipped_details': skipped_details, 'errors': errors}
     if upload:
         result.update({'file_name': upload.name, 'rows_processed': len(lines)})
     return Response(result, status=status.HTTP_200_OK)

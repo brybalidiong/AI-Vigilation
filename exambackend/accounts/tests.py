@@ -523,15 +523,52 @@ class ExcelEnrollmentImportTests(TestCase):
             response.data['skipped_duplicates'],
             ['existing.student@dnsc.edu.ph'],
         )
+        self.assertEqual(response.data['skipped_details'][0]['reason'], 'Already in this section.')
         self.assertEqual([item['row'] for item in response.data['errors']], [4, 5])
 
-    def test_rejects_workbook_without_email_header(self):
+    def test_rejects_workbook_without_email_addresses(self):
         upload = self.workbook_upload([['Name', 'Student Number'], ['Test', '123']])
 
         response = self.client.post(self.url, {'file': upload}, format='multipart')
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('No email column', response.data['error'])
+        self.assertIn('No email addresses', response.data['error'])
+
+    def test_imports_scattered_emails_from_multiple_worksheets(self):
+        workbook = Workbook()
+        first = workbook.active
+        first.title = 'Attendance'
+        first.append(['Weekly attendance', None, None])
+        first.append(['New Student', None, 'NEW.STUDENT@DNSC.EDU.PH'])
+        second = workbook.create_sheet('Additional students')
+        second.append(['Notes'])
+        second.append(['Present: existing.student@dnsc.edu.ph; unknown@dnsc.edu.ph'])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        upload = SimpleUploadedFile('attendance.xlsx', output.getvalue())
+
+        response = self.client.post(self.url, {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['rows_processed'], 3)
+        self.assertEqual([item['email'] for item in response.data['added']], ['new.student@dnsc.edu.ph'])
+        self.assertEqual(response.data['skipped_duplicates'], ['existing.student@dnsc.edu.ph'])
+        self.assertEqual(response.data['errors'][0]['email'], 'unknown@dnsc.edu.ph')
+        self.assertEqual(response.data['errors'][0]['sheet'], 'Additional students')
+        self.assertEqual(response.data['errors'][0]['cell'], 'A2')
+
+    def test_registered_but_not_admin_enrolled_student_is_rejected(self):
+        pending = User.objects.create_user('pending-student', email='pending@dnsc.edu.ph')
+        UserProfile.objects.create(user=pending, role='student', is_enrolled=False)
+        upload = self.workbook_upload([['Attendance'], ['pending@dnsc.edu.ph']])
+
+        response = self.client.post(self.url, {'file': upload}, format='multipart')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['added'], [])
+        self.assertEqual(response.data['errors'][0]['error'], 'Not enrolled by admin.')
+        self.assertFalse(EnrolledStudent.objects.filter(email='pending@dnsc.edu.ph').exists())
 
     def test_rejects_non_xlsx_upload(self):
         upload = SimpleUploadedFile('students.csv', b'Email\nstudent@dnsc.edu.ph')
