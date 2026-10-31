@@ -55,10 +55,12 @@
             <h1 v-if="activeTab === 'courses'">Courses</h1>
             <h1 v-if="activeTab === 'instructors'">Instructors</h1>
             <h1 v-if="activeTab === 'students'">Students</h1>
+            <h1 v-if="activeTab === 'ai-model'">Gaze model</h1>
             <p class="header-sub" v-if="activeTab === 'overview'">Exam integrity and campus activity at a glance.</p>
             <p class="header-sub" v-if="activeTab === 'courses'">Create courses, organize them by institute, and assign instructors.</p>
             <p class="header-sub" v-if="activeTab === 'instructors'">Register instructors and manage access without losing their course records.</p>
             <p class="header-sub" v-if="activeTab === 'students'">Manage enrollment and review exam identity photos.</p>
+            <p class="header-sub" v-if="activeTab === 'ai-model'">Select the gaze classifier used for every exam.</p>
           </div>
           <div class="header-actions">
             <div class="role-pill">Administrator</div>
@@ -546,6 +548,29 @@
             <p v-if="studentError" class="form-error" role="alert">{{ studentError }}</p>
           </form>
         </section>
+        <section v-if="activeTab === 'ai-model'" class="admin-people-page">
+          <div class="admin-section-heading"><div>
+            <span class="admin-section-kicker">System settings</span>
+            <h2>Gaze detection model</h2>
+            <p>One model serves all student exams. EfficientNet is recommended while the other exports are being prepared.</p>
+          </div></div>
+          <div class="gaze-model-panel">
+            <p v-if="loadingGazeModels">Checking available models…</p>
+            <p v-else-if="gazeModelError" class="form-error" role="alert">{{ gazeModelError }} <button type="button" class="row-action" @click="fetchGazeModels">Retry</button></p>
+            <template v-else>
+              <p class="gaze-model-current">Currently used: <strong>{{ gazeModels.find(model => model.code === selectedGazeModel)?.name || 'EfficientNet' }}</strong></p>
+              <div class="gaze-model-options">
+                <label v-for="model in gazeModels" :key="model.code" class="gaze-model-option" :class="{ 'gaze-model-option--selected': pendingGazeModel === model.code, 'gaze-model-option--disabled': !model.installed }">
+                  <input v-model="pendingGazeModel" type="radio" name="gaze-model" :value="model.code" :disabled="!model.installed || savingGazeModel" />
+                  <span class="gaze-model-option__copy"><strong>{{ model.name }}</strong><small>{{ model.installed ? (model.code === selectedGazeModel ? 'Active' : 'Ready to select') : 'Model file not installed' }}</small></span>
+                  <span v-if="model.recommended" class="gaze-model-recommended">Recommended</span>
+                </label>
+              </div>
+              <div class="entry-actions"><button type="button" class="primary-btn shrink-btn" :disabled="savingGazeModel || pendingGazeModel === selectedGazeModel" @click="saveGazeModel">{{ savingGazeModel ? 'Applying…' : 'Apply model' }}</button></div>
+              <p class="gaze-model-note">New models must be exported as compatible TFLite files and installed on the backend before they can be selected.</p>
+            </template>
+          </div>
+        </section>
       </main>
 
       <!-- Confirm Dialog -->
@@ -649,7 +674,17 @@ const tabs = computed(() => [
     count: students.value.length,
     icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
   },
+  {
+    key: 'ai-model', label: 'Gaze model',
+    icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/>',
+  },
 ]);
+const gazeModels = ref([]);
+const selectedGazeModel = ref('efficientnet');
+const pendingGazeModel = ref('efficientnet');
+const loadingGazeModels = ref(true);
+const savingGazeModel = ref(false);
+const gazeModelError = ref('');
 
 // Instructors
 const instructors = ref([]);
@@ -992,6 +1027,37 @@ async function fetchAnalytics() {
   }
 }
 
+async function fetchGazeModels() {
+  loadingGazeModels.value = true;
+  gazeModelError.value = '';
+  try {
+    const { data } = await axios.get(`${backendBaseUrl}/api/admin/gaze-model/`, { headers: getHeaders() });
+    gazeModels.value = data.models || [];
+    selectedGazeModel.value = data.selected_model;
+    pendingGazeModel.value = data.selected_model;
+  } catch (error) {
+    gazeModelError.value = error?.response?.data?.error || 'Could not load gaze models.';
+  } finally {
+    loadingGazeModels.value = false;
+  }
+}
+
+async function saveGazeModel() {
+  savingGazeModel.value = true;
+  try {
+    const { data } = await axios.patch(`${backendBaseUrl}/api/admin/gaze-model/`, { model_code: pendingGazeModel.value }, { headers: getHeaders() });
+    gazeModels.value = data.models || [];
+    selectedGazeModel.value = data.selected_model;
+    pendingGazeModel.value = data.selected_model;
+    showActionSuccess('Gaze model updated', 'The selected gaze model will be used for all exams.');
+  } catch (error) {
+    pendingGazeModel.value = selectedGazeModel.value;
+    showActionError(error?.response?.data?.error || 'Could not switch gaze models.');
+  } finally {
+    savingGazeModel.value = false;
+  }
+}
+
 async function registerInstructor() {
   instructorError.value = "";
   newInstructor.value.email = newInstructor.value.email.trim().toLowerCase();
@@ -1320,6 +1386,7 @@ onMounted(() => {
   fetchStudents();
   fetchCourses();
   fetchAnalytics();
+  fetchGazeModels();
 });
 </script>
 
@@ -1577,6 +1644,18 @@ onMounted(() => {
 .instructor-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 .instructor-email-dialog { display: grid; gap: 1rem; width: min(100%, 490px); }
 .instructor-email-help { margin: -.35rem 0 0; color: #64748b; font-size: .84rem; }
+.gaze-model-panel { max-width: 760px; padding: 1.5rem; border: 1px solid #dce5f0; border-radius: 16px; background: #fff; box-shadow: 0 10px 30px rgba(15,23,42,.055); }
+.gaze-model-current { margin: 0 0 1rem; color: #52647e; }
+.gaze-model-current strong { color: #172b4a; }
+.gaze-model-options { display: grid; gap: .65rem; }
+.gaze-model-option { display: flex; align-items: center; gap: .85rem; padding: .9rem 1rem; border: 1px solid #dce5f0; border-radius: 11px; cursor: pointer; }
+.gaze-model-option--selected { border-color: #365588; background: #f5f8fc; }
+.gaze-model-option--disabled { opacity: .55; cursor: not-allowed; }
+.gaze-model-option input { accent-color: #1d3461; }
+.gaze-model-option__copy { display: grid; gap: .15rem; flex: 1; color: #172b4a; }
+.gaze-model-option__copy small, .gaze-model-note { color: #68778d; font-size: .8rem; }
+.gaze-model-recommended { color: #1d3461; font-size: .72rem; font-weight: 700; }
+.gaze-model-note { margin: .9rem 0 0; }
 .row-action--danger { border-color: #fecaca; color: #b91c1c; }
 .row-action--restore { border-color: #bbdfc8; color: #166534; }
 .row-action:disabled { opacity: .55; cursor: wait; }

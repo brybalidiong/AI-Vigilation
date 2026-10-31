@@ -36,6 +36,7 @@ from .grading import grade_question
 from .exam_updates import notify_exam_published
 from .models import (
     ExamIntegrityReport,
+    GazeModelSelection,
     ExamProctoringEvent,
     ExamProctoringEvidence,
     ExamQuestion,
@@ -955,6 +956,32 @@ def admin_analytics(request):
         'devices': devices,
         'institutes': institute_rows,
         'lowest_institute': lowest_institute,
+    })
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_gaze_model(request):
+    """Admin: select one compatible gaze model for all exam inference."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    from .gaze_service import (
+        GAZE_MODEL_FILES, gaze_model_options, prepare_gaze_model,
+        selected_gaze_model_code, set_selected_gaze_model_code,
+    )
+    if request.method == 'PATCH':
+        code = request.data.get('model_code')
+        if code not in GAZE_MODEL_FILES:
+            return Response({'error': 'Choose a supported gaze model.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            prepare_gaze_model(code)
+        except (ValueError, OSError, RuntimeError, KeyError) as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_409_CONFLICT)
+        GazeModelSelection.objects.update_or_create(pk=1, defaults={'model_code': code})
+        set_selected_gaze_model_code(code)
+    return Response({
+        'selected_model': selected_gaze_model_code(),
+        'models': gaze_model_options(),
     })
 
 

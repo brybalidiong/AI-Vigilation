@@ -520,3 +520,10 @@ class ExamIntegrityReport(models.Model):
 
     def __str__(self):
         return f'Report {self.submission_id} attempt {self.attempt_number} — {self.integrity_score}%'
+
+
+class GazeModelSelection(models.Model):
+    """One database-backed gaze model choice shared by all backend workers."""
+
+    model_code = models.CharField(max_length=20, default='efficientnet')
+    updated_at = models.DateTimeField(auto_now=True)

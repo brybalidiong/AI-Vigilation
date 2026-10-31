@@ -18,7 +18,7 @@ from rest_framework.test import APIClient
 
 from accounts import gaze_service
 from accounts.models import (
-    EnrolledStudent, ExamProctoringEvent, ExamProctoringEvidence, ExamQuestion, ExamSet, ExamSubmission,
+    EnrolledStudent, ExamProctoringEvent, ExamProctoringEvidence, ExamQuestion, ExamSet, ExamSubmission, GazeModelSelection,
     StudentSet, Subject,
 )
 from gaze_tracker.tracker import GazeResult, GazeTracker
@@ -27,6 +27,37 @@ from gaze_tracker.iris_visibility import iris_visible
 
 def suspicious_result():
     return GazeResult('Looking at the left', 0.82, True, False, True)
+
+
+class AdminGazeModelTests(TestCase):
+    def setUp(self):
+        from accounts.gaze_service import set_selected_gaze_model_code
+        self.addCleanup(set_selected_gaze_model_code, 'efficientnet')
+        self.admin = User.objects.create_superuser('gaze-admin', 'admin@example.com', 'password')
+        self.student = User.objects.create_user('ordinary-student', 'student@example.com')
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.url = '/api/admin/gaze-model/'
+
+    def test_only_admin_can_select_a_model(self):
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertEqual(self.client.patch(self.url, {'model_code': 'mobilenetv2'}, format='json').status_code, 403)
+
+    def test_missing_or_unknown_model_does_not_change_selection(self):
+        self.assertEqual(self.client.patch(self.url, {'model_code': 'unknown'}, format='json').status_code, 400)
+        with patch('accounts.gaze_service.resolve_gaze_assets_dir', return_value='missing-assets'):
+            self.assertEqual(self.client.patch(self.url, {'model_code': 'mobilenetv2'}, format='json').status_code, 409)
+        self.assertFalse(GazeModelSelection.objects.exists())
+
+    def test_admin_selection_is_stored_and_returned(self):
+        with patch('accounts.gaze_service.prepare_gaze_model') as prepare:
+            response = self.client.patch(self.url, {'model_code': 'mobilenetv2'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        prepare.assert_called_once_with('mobilenetv2')
+        self.assertEqual(GazeModelSelection.objects.get(pk=1).model_code, 'mobilenetv2')
+        self.assertEqual(response.data['selected_model'], 'mobilenetv2')
+        self.assertEqual(self.client.get(self.url).data['selected_model'], 'mobilenetv2')
 
 
 class IrisVisibilityTests(SimpleTestCase):

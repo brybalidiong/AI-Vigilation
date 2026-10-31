@@ -10,6 +10,8 @@ DST = REPO_ROOT / "exambackend" / "gaze_tracker" / "assets"
 
 FILES = (
     "EfficientNetB0_gaze_float32.tflite",
+    "MobileNetV2_gaze_float32.tflite",
+    "ResNet50_gaze_float32.tflite",
     "class_names.json",
     "face_landmarker.task",
     "gaze_model_float32.tflite",

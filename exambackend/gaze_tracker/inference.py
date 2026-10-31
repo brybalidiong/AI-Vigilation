@@ -62,8 +62,8 @@ _ABOVE_HEAD_ONLY_PITCH = -0.16
 def prepare_image_batch(face_bgr: np.ndarray) -> np.ndarray:
     """
     Convert a BGR face crop to a float32 batch.
-    EfficientNet handles its own normalisation internally, so we just
-    pass it raw RGB values in the [0, 255] range as float32.
+    Each selected model handles its own normalisation internally, so we
+    pass raw RGB values in the [0, 255] range as float32.
     """
     rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
     face_float = rgb.astype(np.float32)

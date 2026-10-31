@@ -21,6 +21,9 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 - **Identity:** Firebase integration, DNSC student ID OCR in `exambackend/accounts/student_id_service.py`, and OpenCV YuNet/SFace models in `exambackend/accounts/face_service.py`. Students upload the front of their DNSC ID; the backend reads the school header, STUDENT label, and printed first/last name, compares the name with the admin-managed account name, and stores an embedding from the ID portrait. The exam precheck compares the webcam face with that portrait. A failed or unreadable ID is rejected without changing verification state. Previously approved face photos require a new ID upload. OCR/name matching does not establish that an ID card is genuine.
 - **Exam face liveness:** The verification dialog first confirms a clearly visible face and shows the live camera preview. It then prompts the student to blink before the ID portrait comparison. A short webcam sequence is analyzed on the backend for both eyes open, closed, then reopened; a single still photo cannot pass. The matching face is taken from the reopened frame. This basic motion check does not establish camera authenticity and may still be defeated by a replayed video or a manipulated client.
 - **Proctoring:** Gaze tracking uses MediaPipe and TensorFlow Lite; gadget detection lives in `exambackend/accounts/gadget_service.py`.
+  The admin can select one database-backed gaze classifier for all exams. The
+  existing EfficientNet export is recommended; MobileNetV2 and ResNet50 require
+  compatible TFLite exports installed in the backend gaze assets directory.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.
 

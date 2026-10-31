@@ -6,6 +6,8 @@ import sys
 import threading
 import hashlib
 import logging
+import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from django.core import signing
 from django.db import close_old_connections
@@ -13,6 +15,7 @@ from collections import deque
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+from django.conf import settings
 
 import numpy as np
 
@@ -26,6 +29,108 @@ _tracker_init_lock = threading.Lock()
 _tracker_warmup_lock = threading.Lock()
 _tracker_warmup_future = None
 _GAZE_MODEL_FILENAMES = ('EfficientNetB0_gaze_float32.tflite', 'gaze_model_float32.tflite')
+GAZE_MODEL_FILES = {
+    'efficientnet': 'EfficientNetB0_gaze_float32.tflite',
+    'mobilenetv2': 'MobileNetV2_gaze_float32.tflite',
+    'resnet50': 'ResNet50_gaze_float32.tflite',
+}
+GAZE_MODEL_NAMES = {
+    'efficientnet': 'EfficientNet (recommended)',
+    'mobilenetv2': 'MobileNetV2',
+    'resnet50': 'ResNet50',
+}
+EXPECTED_GAZE_LABELS = [
+    'Looking above the screen', 'Looking at the left', 'Looking at the right',
+    'Looking at the screen (Normal)', 'Looking below',
+]
+_selected_model_code = 'efficientnet'
+_selection_initialized = False
+_selection_lock = threading.Lock()
+_selection_init_lock = threading.Lock()
+
+
+def _refresh_selected_model() -> None:
+    global _selected_model_code
+    try:
+        from accounts.models import GazeModelSelection
+        code = GazeModelSelection.objects.filter(pk=1).values_list('model_code', flat=True).first()
+        with _selection_lock:
+            _selected_model_code = code if code in GAZE_MODEL_FILES else 'efficientnet'
+    except Exception as exc:
+        # During first migration/bootstrap the legacy model remains usable.
+        logger.warning('Could not read selected gaze model: %s', exc)
+    finally:
+        close_old_connections()
+
+
+def _poll_selected_model() -> None:
+    while True:
+        time.sleep(2)
+        _refresh_selected_model()
+
+
+def selected_gaze_model_code() -> str:
+    """Keep model selection current without querying Supabase on camera frames."""
+    global _selection_initialized
+    if not _selection_initialized:
+        with _selection_init_lock:
+            if not _selection_initialized:
+                _refresh_selected_model()
+                _selection_initialized = True
+                if not settings.USE_LOCAL_SQLITE:
+                    threading.Thread(target=_poll_selected_model, name='gaze-model-selection', daemon=True).start()
+    return _selected_model_code
+
+
+def set_selected_gaze_model_code(code: str) -> None:
+    global _selected_model_code
+    with _selection_lock:
+        _selected_model_code = code
+
+
+def gaze_model_options() -> list[dict]:
+    assets = Path(resolve_gaze_assets_dir())
+    return [
+        {'code': code, 'name': GAZE_MODEL_NAMES[code], 'recommended': code == 'efficientnet',
+         'installed': (assets / filename).is_file()}
+        for code, filename in GAZE_MODEL_FILES.items()
+    ]
+
+
+def validate_gaze_model_file(code: str) -> None:
+    """Reject missing or incompatible exports before changing the live model."""
+    if code not in GAZE_MODEL_FILES:
+        raise ValueError('Unknown gaze model.')
+    assets = Path(resolve_gaze_assets_dir())
+    path = assets / GAZE_MODEL_FILES[code]
+    if not path.is_file():
+        raise ValueError(f'{GAZE_MODEL_FILES[code]} is not installed on the backend.')
+    labels_path = assets / 'class_names.json'
+    if not labels_path.is_file():
+        raise ValueError('The shared class_names.json is missing.')
+    labels = json.loads(labels_path.read_text(encoding='utf-8'))
+    if labels != EXPECTED_GAZE_LABELS:
+        raise ValueError('class_names.json must contain the five existing gaze labels in their current order.')
+    import tensorflow as tf
+    interpreter = tf.lite.Interpreter(model_path=str(path))
+    inputs = interpreter.get_input_details()
+    outputs = interpreter.get_output_details()
+    image_inputs = [item for item in inputs if len(item['shape']) == 4 and int(item['shape'][-1]) == 3]
+    geometry_inputs = [item for item in inputs if list(item['shape']) == [1, 14]]
+    if len(image_inputs) != 1 or len(inputs) != 1 + len(geometry_inputs) or len(geometry_inputs) > 1:
+        raise ValueError('The model needs one RGB image input and may have one 14-value geometry input.')
+    if any(item['dtype'] != np.float32 for item in inputs):
+        raise ValueError('Model inputs must be float32.')
+    if len(outputs) != 1 or list(outputs[0]['shape']) != [1, 5] or outputs[0]['dtype'] != np.float32:
+        raise ValueError('The model needs one float32 output with five gaze scores.')
+    interpreter.allocate_tensors()
+    for item in inputs:
+        interpreter.set_tensor(item['index'], np.zeros(item['shape'], dtype=np.float32))
+    interpreter.invoke()
+    scores = interpreter.get_tensor(outputs[0]['index'])[0]
+    if (not np.isfinite(scores).all() or np.any(scores < 0) or np.any(scores > 1)
+            or not np.isclose(float(scores.sum()), 1.0, atol=0.05)):
+        raise ValueError('The model must output five softmax probabilities.')
 
 
 def _has_gaze_model(path: Path) -> bool:
@@ -61,11 +166,7 @@ def submit_gaze_inference(analyzer, raw):
 def warm_gaze_tracker() -> bool:
     """Queue model initialization after Django is running, without blocking HTTP."""
     global _tracker_warmup_future
-    if get_gaze_tracker.cache_info().currsize:
-        return False
     with _tracker_warmup_lock:
-        if get_gaze_tracker.cache_info().currsize:
-            return False
         if _tracker_warmup_future and not _tracker_warmup_future.done():
             return False
 
@@ -148,8 +249,8 @@ def resolve_gaze_assets_dir() -> str:
     return str(backend_assets)
 
 
-@lru_cache(maxsize=1)
-def get_gaze_tracker():
+@lru_cache(maxsize=2)
+def _tracker_for_model(code: str):
     """
     Returns the shared GazeTracker instance (model + MediaPipe loaded once).
 
@@ -161,9 +262,23 @@ def get_gaze_tracker():
 
     return GazeTracker(
         assets_dir=resolve_gaze_assets_dir(),
+        model_filename=GAZE_MODEL_FILES[code],
         smoothing_window=1,   # Disable built-in smoother — we smooth per-submission below
         use_hysteresis=False,  # Disable built-in hysteresis — handled per-submission
     )
+
+
+def get_gaze_tracker():
+    """Use the model selected by the admin across WebSocket and HTTP inference."""
+    return _tracker_for_model(selected_gaze_model_code())
+
+
+def prepare_gaze_model(code: str) -> None:
+    validate_gaze_model_file(code)
+    with _tracker_init_lock:
+        tracker = _tracker_for_model(code)
+    if not tracker.ready:
+        raise ValueError(tracker.error or 'Gaze model could not be loaded.')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -265,10 +380,12 @@ def gaze_tracker_status() -> dict:
             "ready": tracker.ready,
             "error": tracker.error,
             "assets_dir": resolve_gaze_assets_dir(),
+            "selected_model": selected_gaze_model_code(),
         }
     except Exception as exc:
         return {
             "ready": False,
             "error": str(exc),
             "assets_dir": resolve_gaze_assets_dir(),
+            "selected_model": selected_gaze_model_code(),
         }

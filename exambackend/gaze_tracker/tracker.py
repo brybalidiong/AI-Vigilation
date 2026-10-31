@@ -161,7 +161,7 @@ class GazeTracker:
 
     Parameters
     ----------
-    assets_dir       : folder with gaze_model_float32.tflite, class_names.json,
+    assets_dir       : folder with the selected gaze TFLite model, class_names.json,
                        face_landmarker.task (auto-downloaded if missing).
     mirror_webcam    : True if the frame is already mirrored (typical browser webcam).
     smoothing_window : frames to average over for temporal smoothing (0 = off).
@@ -174,6 +174,7 @@ class GazeTracker:
         mirror_webcam: bool = False,
         smoothing_window: int = 0,
         use_hysteresis: bool = False,
+        model_filename: str = "EfficientNetB0_gaze_float32.tflite",
     ):
         self.assets_dir = assets_dir or _DEFAULT_ASSETS
         self.mirror_webcam = mirror_webcam
@@ -182,7 +183,7 @@ class GazeTracker:
         self._lock = threading.Lock()
 
         class_path = os.path.join(self.assets_dir, "class_names.json")
-        tflite_path = os.path.join(self.assets_dir, "EfficientNetB0_gaze_float32.tflite")
+        tflite_path = os.path.join(self.assets_dir, model_filename)
         landmarker_path = os.path.join(self.assets_dir, "face_landmarker.task")
 
         if not os.path.isfile(class_path):
@@ -215,8 +216,8 @@ class GazeTracker:
         outputs = self._interpreter.get_output_details()
 
         # Resolve tensor indices by name, fall back to position
-        img_inputs = [i for i in inputs if "image" in i["name"]]
-        geo_inputs = [i for i in inputs if "geo" in i["name"]]
+        img_inputs = [i for i in inputs if len(i["shape"]) == 4 and int(i["shape"][-1]) == 3]
+        geo_inputs = [i for i in inputs if list(i["shape"]) == [1, 14]]
         self._img_idx = img_inputs[0]["index"] if img_inputs else inputs[0]["index"]
         self._geo_idx = geo_inputs[0]["index"] if geo_inputs else (inputs[1]["index"] if len(inputs) > 1 else None)
         self._has_geo_input = self._geo_idx is not None

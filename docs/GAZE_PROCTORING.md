@@ -12,6 +12,41 @@ exambackend/
 
 ## API
 
+### Switching the gaze classifier
+
+The admin Gaze model page stores one selection for the entire backend. EfficientNet
+is the recommended default. MobileNetV2 and ResNet50 appear as unavailable until
+their runtime exports are placed beside the current model in `GAZE_ASSETS_DIR`
+(`exambackend/gaze_tracker/assets/` locally and on the Azure host). The selection
+is shared through the database and each worker refreshes it within two seconds.
+Changing models does not change face detection, iris visibility, gaze direction
+rules, warnings, evidence, or strike thresholds. Test and calibrate each new
+model before using it in a real exam.
+
+Required runtime files:
+
+| Model | TFLite filename |
+| --- | --- |
+| Existing EfficientNet | `EfficientNetB0_gaze_float32.tflite` |
+| MobileNetV2 | `MobileNetV2_gaze_float32.tflite` |
+| ResNet50 | `ResNet50_gaze_float32.tflite` |
+
+The three models share the existing `class_names.json` and
+`face_landmarker.task`; do not replace the five labels or change their order.
+Each TFLite model must accept one float32 RGB image tensor of shape
+`[1, height, width, 3]` containing raw pixel values in `[0, 255]`. Include any
+MobileNetV2 or ResNet50 normalization *inside the exported model*. An optional
+second float32 geometry input must be `[1, 14]`. The sole output must be
+`[1, 5]` float32 softmax probabilities in the shared label order: above, left,
+right, normal, below. The admin endpoint validates these requirements and refuses
+to switch to a missing or incompatible export. Training datasets, `.keras` or
+`.h5` checkpoints, and notebooks are not runtime inputs.
+
+The backend reads the model files from its host-mounted, Git-ignored assets
+folder. Copy the new `.tflite` files to that folder on every deployed backend
+host; Vercel does not host or run these models. Keep the existing EfficientNet
+file for a reliable fallback.
+
 `POST /api/student/exams/<exam_id>/proctoring/gaze/`
 
 - Auth: student JWT (same as other exam routes)
