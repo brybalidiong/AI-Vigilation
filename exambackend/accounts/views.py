@@ -58,6 +58,26 @@ def _sync_profile_enrollment_for_email(email: str):
     pass
 
 
+def _enroll_student_in_set_once(email: str, roster: StudentSet):
+    """Keep one course enrollment even when instructors use different rosters."""
+    with transaction.atomic():
+        if roster.subject_id:
+            # Serialize enrollments for this course across its instructors.
+            Subject.objects.select_for_update().get(pk=roster.subject_id)
+            existing = EnrolledStudent.objects.filter(
+                email__iexact=email,
+                student_set__subject_id=roster.subject_id,
+            ).select_related('student_set').first()
+        else:
+            existing = EnrolledStudent.objects.filter(
+                email__iexact=email,
+                student_set=roster,
+            ).first()
+        if existing:
+            return None, existing
+        return EnrolledStudent.objects.create(email=email, student_set=roster), None
+
+
 
 def _is_instructor(user):
     return bool(user and user.is_authenticated and user.is_active and user.is_staff and not user.is_superuser)
@@ -1419,12 +1439,19 @@ def enrolled_students(request):
         )
 
     try:
-        student = EnrolledStudent.objects.create(email=email, student_set=roster)
+        student, existing = _enroll_student_in_set_once(email, roster)
     except IntegrityError:
         return Response(
             {'error': 'This email is already in this set.'},
             status=status.HTTP_409_CONFLICT,
         )
+    if existing:
+        message = (
+            f'This student is already enrolled in this course through {existing.student_set.name}.'
+            if roster.subject_id and existing.student_set_id != roster.id
+            else 'This email is already in this set.'
+        )
+        return Response({'error': message}, status=status.HTTP_409_CONFLICT)
 
     _sync_profile_enrollment_for_email(email)
 
@@ -1550,11 +1577,11 @@ def bulk_enroll_students(request, set_id):
                 item['row'] = row_number
             errors.append(item)
             continue
-        if EnrolledStudent.objects.filter(email__iexact=email, student_set=roster).exists():
-            skipped.append(email)
-            continue
         try:
-            s = EnrolledStudent.objects.create(email=email, student_set=roster)
+            s, existing = _enroll_student_in_set_once(email, roster)
+            if existing:
+                skipped.append(email)
+                continue
             added.append({'id': s.id, 'email': s.email})
             _sync_profile_enrollment_for_email(email)
         except IntegrityError:
@@ -1771,9 +1798,16 @@ def subject_students(request, subject_id):
         )
 
     try:
-        enrollment = EnrolledStudent.objects.create(student_set=roster, email=email)
+        enrollment, existing = _enroll_student_in_set_once(email, roster)
     except IntegrityError:
         return Response({'error': 'Student already enrolled in this set.'}, status=status.HTTP_409_CONFLICT)
+    if existing:
+        message = (
+            f'Student already enrolled in this course through {existing.student_set.name}.'
+            if existing.student_set_id != roster.id
+            else 'Student already enrolled in this set.'
+        )
+        return Response({'error': message}, status=status.HTTP_409_CONFLICT)
 
     _sync_profile_enrollment_for_email(email)
     return Response(

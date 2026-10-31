@@ -33,6 +33,10 @@ Minor courses group. Institute courses can be assigned only to instructors in
 that institute; minor courses can be assigned to instructors from any institute.
 The original instructor field remains the lead instructor for legacy data and
 student-facing labels; additional instructors share access to exams and rosters.
+Students can belong to only one roster for a given course, even when different
+assigned instructors manage the rosters. Enrollment into another roster in the
+same course is rejected or skipped during bulk import; remove the old enrollment
+before moving the student.
 Existing courses inherit the lead instructor's institute during migration when
 it is known. Admin reassignment preserves the course, exams, and student sets.
 Instructors cannot create or delete courses. They can change an assigned course

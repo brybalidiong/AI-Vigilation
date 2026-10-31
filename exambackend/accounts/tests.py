@@ -542,6 +542,85 @@ class ExcelEnrollmentImportTests(TestCase):
         self.assertEqual(response.data['error'], 'Only .xlsx Excel files are supported.')
 
 
+@override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+class CourseEnrollmentUniquenessTests(TestCase):
+    def setUp(self):
+        self.lead = User.objects.create_user('lead-instructor', is_staff=True)
+        self.other = User.objects.create_user('other-instructor', is_staff=True)
+        self.subject = Subject.objects.create(name='Shared Course', code='SHARED', instructor=self.lead)
+        self.subject.additional_instructors.add(self.other)
+        self.first_set = StudentSet.objects.create(
+            name='Section A', subject=self.subject, created_by=self.lead,
+        )
+        self.second_set = StudentSet.objects.create(
+            name='Section B', subject=self.subject, created_by=self.other,
+        )
+        student = User.objects.create_user('shared-student', email='shared.student@dnsc.edu.ph')
+        UserProfile.objects.create(user=student, role='student', is_enrolled=True)
+        self.email = student.email
+        self.client = APIClient()
+        self.client.force_authenticate(self.lead)
+
+    def test_other_instructor_cannot_add_student_to_second_course_roster(self):
+        url = f'/api/instructor/subjects/{self.subject.pk}/students/'
+        first = self.client.post(url, {
+            'email': self.email, 'student_set_id': self.first_set.pk,
+        }, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+
+        self.client.force_authenticate(self.other)
+        duplicate = self.client.post(url, {
+            'email': self.email.upper(), 'student_set_id': self.second_set.pk,
+        }, format='json')
+        self.assertEqual(duplicate.status_code, 409, duplicate.data)
+        self.assertIn('Section A', duplicate.data['error'])
+        self.assertEqual(EnrolledStudent.objects.filter(student_set__subject=self.subject).count(), 1)
+
+    def test_bulk_and_general_enrollment_skip_second_course_roster(self):
+        EnrolledStudent.objects.create(email=self.email, student_set=self.first_set)
+        self.client.force_authenticate(self.other)
+        bulk = self.client.post(
+            f'/api/instructor/sets/{self.second_set.pk}/enroll-bulk/',
+            {'emails': [self.email]}, format='json',
+        )
+        self.assertEqual(bulk.status_code, 200, bulk.data)
+        self.assertEqual(bulk.data['added'], [])
+        self.assertEqual(bulk.data['skipped_duplicates'], [self.email])
+
+        general = self.client.post('/api/instructor/students/', {
+            'email': self.email, 'student_set_id': self.second_set.pk,
+        }, format='json')
+        self.assertEqual(general.status_code, 409, general.data)
+        self.assertEqual(EnrolledStudent.objects.filter(student_set__subject=self.subject).count(), 1)
+
+    def test_student_can_move_to_another_roster_after_removal(self):
+        enrollment = EnrolledStudent.objects.create(email=self.email, student_set=self.first_set)
+        self.client.force_authenticate(self.other)
+        remove = self.client.delete(
+            f'/api/instructor/subjects/{self.subject.pk}/students/{enrollment.pk}/',
+        )
+        self.assertEqual(remove.status_code, 204)
+        add = self.client.post(f'/api/instructor/subjects/{self.subject.pk}/students/', {
+            'email': self.email, 'student_set_id': self.second_set.pk,
+        }, format='json')
+        self.assertEqual(add.status_code, 201, add.data)
+
+    def test_student_can_join_a_different_course(self):
+        EnrolledStudent.objects.create(email=self.email, student_set=self.first_set)
+        other_subject = Subject.objects.create(
+            name='Another Course', code='OTHER', instructor=self.other,
+        )
+        other_set = StudentSet.objects.create(
+            name='Other Section', subject=other_subject, created_by=self.other,
+        )
+        self.client.force_authenticate(self.other)
+        response = self.client.post(f'/api/instructor/subjects/{other_subject.pk}/students/', {
+            'email': self.email, 'student_set_id': other_set.pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(EnrolledStudent.objects.filter(email=self.email).count(), 2)
+
+
 class ExamListOrderingTests(TestCase):
     @classmethod
     def setUpTestData(cls):
