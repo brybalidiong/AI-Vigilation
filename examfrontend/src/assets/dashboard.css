@@ -86,7 +86,7 @@
   font-weight: 600;
   font-size: 0.95rem;
   border-radius: 12px;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
   background: transparent;
   border: none;
   width: 100%;
@@ -332,7 +332,7 @@
   color: var(--text-primary);
   outline: none;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
   box-shadow: var(--shadow-sm);
 }
 .moodle-select {
@@ -447,7 +447,7 @@
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: color 0.3s ease, background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
   font-family: inherit;
   text-decoration: none;
   display: inline-flex;

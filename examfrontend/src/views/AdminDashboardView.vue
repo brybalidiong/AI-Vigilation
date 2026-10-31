@@ -671,7 +671,7 @@ const tabs = computed(() => [
   {
     key: "courses",
     label: "Courses",
-    count: courses.value.length,
+    count: coursesLoaded.value ? courses.value.length : undefined,
     icon: '<path d="M4 5.5C6.5 4 9 4 12 5.5c3-1.5 5.5-1.5 8 0V19c-2.5-1.5-5-1.5-8 0-3-1.5-5.5-1.5-8 0z"/><path d="M12 5.5V19"/>',
   },
   {
@@ -835,6 +835,8 @@ const newStudent = ref({ email: "", first_name: "", last_name: "", institute: ""
 
 function selectAdminSection(section) {
   activeTab.value = section;
+  if (section === 'courses' && !coursesLoaded.value) fetchCourses();
+  if (section === 'ai-model' && !gazeModelsLoaded) fetchGazeModels();
   if (section === 'courses') closeCourseForm();
   if (section === 'instructors') closeInstructorForm();
   if (section === 'students') closeStudentForm();
@@ -842,6 +844,7 @@ function selectAdminSection(section) {
 
 function openCourseForm() {
   activeTab.value = 'courses';
+  if (!coursesLoaded.value) fetchCourses();
   showCreateCourse.value = true;
   courseFormError.value = '';
   nextTick(() => document.getElementById('course-name')?.focus());
@@ -973,6 +976,7 @@ async function fetchStudents() {
   }
 }
 
+const coursesLoaded = ref(false);
 async function fetchCourses() {
   loadingCourses.value = true;
   courseLoadError.value = '';
@@ -981,6 +985,7 @@ async function fetchCourses() {
     courses.value = (data.courses || []).map((course) => ({
         ...course, _category: course.category, _instructor_ids: [...course.instructor_ids],
     }));
+    coursesLoaded.value = true;
   } catch (e) {
     courseLoadError.value = e?.response?.data?.error || 'Could not load courses.';
   } finally {
@@ -1039,6 +1044,7 @@ async function fetchAnalytics() {
   }
 }
 
+let gazeModelsLoaded = false;
 async function fetchGazeModels() {
   loadingGazeModels.value = true;
   gazeModelError.value = '';
@@ -1047,6 +1053,7 @@ async function fetchGazeModels() {
     gazeModels.value = data.models || [];
     selectedGazeModel.value = data.selected_model;
     pendingGazeModel.value = data.selected_model;
+    gazeModelsLoaded = true;
   } catch (error) {
     gazeModelError.value = error?.response?.data?.error || 'Could not load gaze models.';
   } finally {
@@ -1396,9 +1403,7 @@ function logout() {
 onMounted(() => {
   fetchInstructors();
   fetchStudents();
-  fetchCourses();
   fetchAnalytics();
-  fetchGazeModels();
 });
 </script>
 

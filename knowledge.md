@@ -29,6 +29,10 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
   a measured classifier accuracy; earlier attempts have no model attribution.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.
+The instructor dashboard loads its exam calendar through one assignment-scoped
+`GET /api/instructor/upcoming-exams/` request. The course detail endpoint still
+serves full exam records when an instructor opens a course. The live statistics
+panel reuses unchanged snapshot images and limits concurrent snapshot downloads.
 
 Admins create courses and assign one or more active instructors to each course.
 A course belongs to one institute (IC, ITED, IASS, or ILEGG) or the separate

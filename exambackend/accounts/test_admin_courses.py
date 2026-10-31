@@ -83,6 +83,23 @@ class AdminCourseTests(TestCase):
             'action': 'set_institute', 'institute': 'ITED',
         }, format='json').status_code, 409)
 
+    def test_upcoming_exam_feed_is_single_request_and_assignment_scoped(self):
+        shared = Subject.objects.create(name='Programming', code='IT111', category='IC', instructor=self.ic_instructor)
+        shared.additional_instructors.add(self.second_ic_instructor)
+        other = Subject.objects.create(name='Education', code='ED101', category='ITED', instructor=self.ited_instructor)
+        exam = ExamSet.objects.create(subject=shared, title='Final')
+        ExamSet.objects.create(subject=other, title='Private exam')
+
+        self.client.force_authenticate(self.second_ic_instructor)
+        response = self.client.get('/api/instructor/upcoming-exams/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['exam_sets']), 1)
+        self.assertEqual(response.data['exam_sets'][0]['id'], exam.id)
+        self.assertEqual(response.data['exam_sets'][0]['subject_code'], 'IT111')
+
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get('/api/instructor/upcoming-exams/').status_code, 403)
+
     def test_instructor_can_change_only_their_course_banner(self):
         course = Subject.objects.create(name='Networks', code='IT201', category='IC', instructor=self.ic_instructor)
         self.client.force_authenticate(self.ic_instructor)

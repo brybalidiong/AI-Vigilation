@@ -1715,6 +1715,38 @@ def instructor_subjects(request):
     return Response({'error': 'Courses are created and assigned by an administrator.'}, status=status.HTTP_403_FORBIDDEN)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def instructor_upcoming_exams(request):
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    exams = (
+        ExamSet.objects.filter(
+            Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user)
+        )
+        .select_related('subject')
+        .distinct()
+        .order_by('-created_at', '-id')
+    )
+    rows = [
+        {
+            'id': exam.id,
+            'subject_id': exam.subject_id,
+            'subject_code': exam.subject.code,
+            'subject_name': exam.subject.name,
+            'title': exam.title,
+            'available_from': exam.available_from,
+            'due_at': exam.due_at,
+            'time_limit': exam.time_limit,
+            'is_final': exam.is_final,
+            'created_at': exam.created_at,
+        }
+        for exam in exams
+    ]
+    return Response({'exam_sets': rows}, status=status.HTTP_200_OK)
+
+
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def instructor_subject_detail(request, subject_id):

@@ -2541,14 +2541,12 @@ const displayedCourses = computed(() => {
   return rows;
 });
 
-const currentTime = ref("");
 const currentDate = ref("");
 let timeInterval = null;
 
 const updateTime = () => {
   const now = new Date();
   todayCalendarKey.value = calendarDayKey(now);
-  currentTime.value = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   currentDate.value = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 };
 
@@ -4051,7 +4049,7 @@ function syncStudentCourseFromRoute() {
 
 onMounted(async () => {
   updateTime();
-  timeInterval = setInterval(updateTime, 1000);
+  timeInterval = setInterval(updateTime, 60_000);
   _warmGazeModel();
   await Promise.all([fetchMySubjects(), fetchMyExams()]);
   if (examUpdatesStopped) return;

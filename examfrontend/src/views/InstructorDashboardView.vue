@@ -1924,7 +1924,6 @@ async function handleProfileUpdate(formData) {
   }
 }
 
-const currentTime = ref("");
 const currentDate = ref("");
 let timeInterval = null;
 
@@ -1934,7 +1933,6 @@ const announcementSaving = ref(false);
 const updateTime = () => {
   const now = new Date();
   todayCalendarKey.value = calendarDayKey(now);
-  currentTime.value = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   currentDate.value = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 };
 
@@ -2260,21 +2258,26 @@ function releaseStatsSnapshotUrls(keepSources = new Set()) {
 
 async function attachStatsSnapshotUrls(examinees) {
   const rows = examinees || [];
-  await Promise.all(rows.map(async (row) => {
-    const source = row.snapshot_url;
-    row.snapshot_display_url = source ? statsSnapshotObjectUrls.get(source) || null : null;
-    if (!source || row.snapshot_display_url) return;
-    try {
-      const response = await apiClient.get(source, { responseType: 'blob' });
-      if (response.data?.size > 0) {
-        const objectUrl = URL.createObjectURL(response.data);
-        statsSnapshotObjectUrls.set(source, objectUrl);
-        row.snapshot_display_url = objectUrl;
+  let nextIndex = 0;
+  async function loadNext() {
+    while (nextIndex < rows.length) {
+      const row = rows[nextIndex++];
+      const source = row.snapshot_url;
+      row.snapshot_display_url = source ? statsSnapshotObjectUrls.get(source) || null : null;
+      if (!source || row.snapshot_display_url) continue;
+      try {
+        const response = await apiClient.get(source, { responseType: 'blob' });
+        if (response.data?.size > 0) {
+          const objectUrl = URL.createObjectURL(response.data);
+          statsSnapshotObjectUrls.set(source, objectUrl);
+          row.snapshot_display_url = objectUrl;
+        }
+      } catch {
+        row.snapshot_display_url = null;
       }
-    } catch {
-      row.snapshot_display_url = null;
     }
-  }));
+  }
+  await Promise.all(Array.from({ length: Math.min(3, rows.length) }, loadNext));
   return rows;
 }
 
@@ -2985,22 +2988,11 @@ async function uploadCourseBanner(event) {
 async function fetchUpcomingExams() {
   upcomingLoading.value = true;
   try {
-    const { data } = await apiClient.get("/api/instructor/subjects/");
-    const rows = data.subjects || [];
-    const examLists = await Promise.all(
-      rows.map(async (subject) => {
-        const examResponse = await apiClient.get(`/api/instructor/subjects/${subject.id}/exam-sets/`);
-        const exams = examResponse?.data?.exam_sets || [];
-        return exams.map((exam) => ({
-          ...exam,
-          subject_id: subject.id,
-          subject_code: subject.code,
-          subject_name: subject.name,
-          display_due: toDisplayDue(exam),
-        }));
-      }),
-    );
-    upcomingExamRows.value = examLists.flat().sort(compareExamsNewestFirst);
+    const { data } = await apiClient.get('/api/instructor/upcoming-exams/');
+    upcomingExamRows.value = (data.exam_sets || []).map((exam) => ({
+      ...exam,
+      display_due: toDisplayDue(exam),
+    })).sort(compareExamsNewestFirst);
     upcomingLoaded.value = true;
   } catch {
     upcomingExamRows.value = [];
@@ -3732,7 +3724,10 @@ function submissionStatusClass(row) {
   }[submissionStatus(row)];
 }
 
+let statsRefreshInFlight = 0;
 async function fetchStatsData(exam, isBackground = false) {
+  if (isBackground && statsRefreshInFlight) return;
+  statsRefreshInFlight += 1;
   const generation = ++statsFetchGeneration;
   try {
     const { data } = await apiClient.get(`/api/instructor/subjects/${exam.subject_id}/exam-sets/${exam.id}/stats/`);
@@ -3744,6 +3739,8 @@ async function fetchStatsData(exam, isBackground = false) {
     examStatsExaminees.value = examinees;
   } catch(err) {
     if (!isBackground) error.value = "Unable to load exam statistics.";
+  } finally {
+    statsRefreshInFlight -= 1;
   }
 }
 
@@ -3765,10 +3762,10 @@ async function openExamStats(exam) {
 
   if (statsPollInterval) clearInterval(statsPollInterval);
   statsPollInterval = setInterval(() => {
-    if (statsExam.value && statsExam.value.id === enrichedExam.id) {
-      fetchStatsData(enrichedExam, true);
-    } else {
+    if (!statsExam.value || statsExam.value.id !== enrichedExam.id) {
       clearInterval(statsPollInterval);
+    } else if (!document.hidden && !statsRefreshInFlight) {
+      fetchStatsData(enrichedExam, true);
     }
   }, 5000);
 }
@@ -3918,7 +3915,7 @@ watch(progressExamsForSelectedSet, (exams) => {
 
 onMounted(async () => {
   updateTime();
-  timeInterval = setInterval(updateTime, 1000);
+  timeInterval = setInterval(updateTime, 60_000);
   if (!subjectsLoaded.value) await fetchSubjects();
   if (activeNav.value === "dashboard" && !upcomingLoaded.value) {
     await fetchUpcomingExams();
