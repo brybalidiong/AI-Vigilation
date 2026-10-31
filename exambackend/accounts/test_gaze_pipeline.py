@@ -59,6 +59,14 @@ class AdminGazeModelTests(TestCase):
         self.assertEqual(response.data['selected_model'], 'mobilenetv2')
         self.assertEqual(self.client.get(self.url).data['selected_model'], 'mobilenetv2')
 
+    def test_resnet50v2_uses_the_exported_filename(self):
+        self.assertEqual(gaze_service.GAZE_MODEL_FILES['resnet50v2'], 'ResNet50V2_gaze_float32.tflite')
+        with patch('accounts.gaze_service.prepare_gaze_model') as prepare:
+            response = self.client.patch(self.url, {'model_code': 'resnet50v2'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        prepare.assert_called_once_with('resnet50v2')
+        self.assertEqual(GazeModelSelection.objects.get(pk=1).model_code, 'resnet50v2')
+
 
 class IrisVisibilityTests(SimpleTestCase):
     def _landmarks(self):

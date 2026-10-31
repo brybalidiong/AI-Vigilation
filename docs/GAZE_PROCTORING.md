@@ -15,7 +15,7 @@ exambackend/
 ### Switching the gaze classifier
 
 The admin Gaze model page stores one selection for the entire backend. EfficientNet
-is the recommended default. MobileNetV2 and ResNet50 appear as unavailable until
+is the recommended default. MobileNetV2 and ResNet50V2 appear as unavailable until
 their runtime exports are placed beside the current model in `GAZE_ASSETS_DIR`
 (`exambackend/gaze_tracker/assets/` locally and on the Azure host). The selection
 is shared through the database and each worker refreshes it within two seconds.
@@ -29,13 +29,13 @@ Required runtime files:
 | --- | --- |
 | Existing EfficientNet | `EfficientNetB0_gaze_float32.tflite` |
 | MobileNetV2 | `MobileNetV2_gaze_float32.tflite` |
-| ResNet50 | `ResNet50_gaze_float32.tflite` |
+| ResNet50V2 | `ResNet50V2_gaze_float32.tflite` |
 
 The three models share the existing `class_names.json` and
 `face_landmarker.task`; do not replace the five labels or change their order.
 Each TFLite model must accept one float32 RGB image tensor of shape
 `[1, height, width, 3]` containing raw pixel values in `[0, 255]`. Include any
-MobileNetV2 or ResNet50 normalization *inside the exported model*. An optional
+MobileNetV2 or ResNet50V2 normalization *inside the exported model*. An optional
 second float32 geometry input must be `[1, 14]`. The sole output must be
 `[1, 5]` float32 softmax probabilities in the shared label order: above, left,
 right, normal, below. The admin endpoint validates these requirements and refuses

@@ -22,7 +22,7 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 - **Exam face liveness:** The verification dialog first confirms a clearly visible face and shows the live camera preview. It then prompts the student to blink before the ID portrait comparison. A short webcam sequence is analyzed on the backend for both eyes open, closed, then reopened; a single still photo cannot pass. The matching face is taken from the reopened frame. This basic motion check does not establish camera authenticity and may still be defeated by a replayed video or a manipulated client.
 - **Proctoring:** Gaze tracking uses MediaPipe and TensorFlow Lite; gadget detection lives in `exambackend/accounts/gadget_service.py`.
   The admin can select one database-backed gaze classifier for all exams. The
-  existing EfficientNet export is recommended; MobileNetV2 and ResNet50 require
+  existing EfficientNet export is recommended; MobileNetV2 and ResNet50V2 require
   compatible TFLite exports installed in the backend gaze assets directory.
 
 Role dashboards live in `examfrontend/src/views/`. Most API logic is in `exambackend/accounts/views.py`, with REST routes in `urls.py` and database models in `models.py`.

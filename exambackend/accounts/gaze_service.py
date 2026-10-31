@@ -32,12 +32,12 @@ _GAZE_MODEL_FILENAMES = ('EfficientNetB0_gaze_float32.tflite', 'gaze_model_float
 GAZE_MODEL_FILES = {
     'efficientnet': 'EfficientNetB0_gaze_float32.tflite',
     'mobilenetv2': 'MobileNetV2_gaze_float32.tflite',
-    'resnet50': 'ResNet50_gaze_float32.tflite',
+    'resnet50v2': 'ResNet50V2_gaze_float32.tflite',
 }
 GAZE_MODEL_NAMES = {
     'efficientnet': 'EfficientNet (recommended)',
     'mobilenetv2': 'MobileNetV2',
-    'resnet50': 'ResNet50',
+    'resnet50v2': 'ResNet50V2',
 }
 EXPECTED_GAZE_LABELS = [
     'Looking above the screen', 'Looking at the left', 'Looking at the right',
