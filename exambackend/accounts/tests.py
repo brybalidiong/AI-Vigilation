@@ -739,11 +739,9 @@ class CourseEnrollmentUniquenessTests(TestCase):
             {'emails': [self.email]}, format='json',
         ).status_code, 404)
 
-    def test_same_section_name_is_allowed_for_another_instructor_only(self):
+    def test_same_section_name_is_blocked_across_instructors(self):
         self.client.force_authenticate(self.other)
         url = f'/api/instructor/subjects/{self.subject.pk}/sets/'
-        first = self.client.post(url, {'name': 'Section A'}, format='json')
-        self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(self.client.post(url, {'name': 'section a'}, format='json').status_code, 409)
 
     def test_suggestions_only_include_available_admin_enrolled_students(self):

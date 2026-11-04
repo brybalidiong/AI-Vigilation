@@ -1979,8 +1979,8 @@ def subject_sets(request, subject_id):
         return Response({'error': 'Set name is required.'}, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
         Subject.objects.select_for_update().get(pk=subject.pk)
-        if StudentSet.objects.filter(subject=subject, created_by=request.user, name__iexact=name).exists():
-            return Response({'error': 'You already have a section with this name in this course.'}, status=status.HTTP_409_CONFLICT)
+        if StudentSet.objects.filter(subject=subject, name__iexact=name).exists():
+            return Response({'error': 'A section with this name already exists in this course.'}, status=status.HTTP_409_CONFLICT)
         roster = StudentSet.objects.create(name=name, created_by=request.user, subject=subject)
     return Response(
         {'id': roster.id, 'name': roster.name, 'created_at': roster.created_at, 'student_count': 0},

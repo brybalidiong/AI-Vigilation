@@ -56,7 +56,7 @@ Students can belong to only one section for a given course, even when different
 instructors manage the sections. Enrollment into another section in the same
 course is rejected or skipped during bulk import; the owning instructor must
 remove the old enrollment before moving the student. Section names are unique
-within each instructor's course sections. Manual enrollment suggests active,
+across the entire course. Manual enrollment suggests active,
 admin-enrolled students who are not already in that course.
 Instructor `.xlsx` attendance imports search every worksheet and column for email
 addresses, including multiple addresses in one cell. Only school addresses that
