@@ -44,14 +44,22 @@ def _name_matches(printed_name, first_name, last_name):
     last = _tokens(last_name)
     if not first or not last:
         return False
-    expected = first + last
-    # A middle name or initial may appear between the account's first and last names.
+    first_joined = ''.join(first)
+    last_joined = ''.join(last)
+    # Printed and account names may split the same given name differently,
+    # e.g. MARY ROSE on the ID and Maryrose in the account.
     for line in printed_name.splitlines():
         words = _tokens(line)
-        if len(words) < len(expected) or len(words) > len(expected) + 2:
-            continue
-        if words[:len(first)] == first and words[-len(last):] == last:
-            return True
+        for first_end in range(1, min(len(words), len(first) + 2) + 1):
+            if ''.join(words[:first_end]) != first_joined:
+                continue
+            for last_start in range(max(first_end, len(words) - len(last) - 1), len(words)):
+                if ''.join(words[last_start:]) != last_joined:
+                    continue
+                # Permit one printed middle name or initial. More extra words
+                # could indicate OCR joined unrelated text or another person.
+                if last_start - first_end <= 1:
+                    return True
     return False
 
 
@@ -75,22 +83,16 @@ def verify_student_id(image_bytes, first_name, last_name):
         raise StudentIdError('Upload a clear, upright photo of the entire student ID.')
 
     header_image = image[:int(height * .28), :]
-    header = _read_text(header_image)
-    if not _school_matches(header):
-        header = _read_text(header_image, enhance=False)
-    if not _school_matches(header):
+    if not any(_school_matches(_read_text(header_image, page_mode=mode, enhance=enhance))
+               for mode, enhance in ((6, True), (6, False), (11, False))):
         raise StudentIdError('This does not appear to be a DNSC student ID. Upload the front of your DNSC ID.')
-    role_image = image[int(height * .66):int(height * .79), :]
-    role = _tokens(_read_text(role_image))
-    if 'STUDENT' not in role:
-        role = _tokens(_read_text(role_image, enhance=False))
-    if 'STUDENT' not in role:
+    role_image = image[int(height * .61):int(height * .77), :]
+    if not any('STUDENT' in _tokens(_read_text(role_image, page_mode=mode, enhance=enhance))
+               for mode, enhance in ((6, True), (6, False), (11, False))):
         raise StudentIdError('The student label could not be read. Retake the photo with the entire ID visible.')
-    name_region = image[int(height * .57):int(height * .70), int(width * .10):int(width * .92)]
-    printed_name = _read_text(name_region)
-    if not _name_matches(printed_name, first_name, last_name):
-        printed_name = _read_text(name_region, enhance=False)
-    if not _name_matches(printed_name, first_name, last_name):
+    name_region = image[int(height * .52):int(height * .70), int(width * .05):int(width * .96)]
+    if not any(_name_matches(_read_text(name_region, page_mode=mode, enhance=enhance), first_name, last_name)
+               for mode, enhance in ((6, True), (6, False), (11, False))):
         raise StudentIdError('The name on the ID could not be matched to your account. Retake the photo or contact an administrator to correct your account name.')
 
     portrait = image[int(height * .23):int(height * .62), int(width * .14):int(width * .82)]

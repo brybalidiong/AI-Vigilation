@@ -34,6 +34,31 @@ class StudentIdReadingTests(SimpleTestCase):
         self.assertFalse(_name_matches('ALEX Q. SANTOS', 'Alex', 'Reyes'))
         self.assertFalse(_name_matches('ALEX REYES AND SANTOS', 'Alex', 'Reyes'))
 
+    def test_joined_given_name_matches_printed_spacing(self):
+        self.assertTrue(_name_matches('ANNA MARIE REYES', 'Annamarie', 'Reyes'))
+        self.assertTrue(_name_matches('ANNAMARIE REYES', 'Anna Marie', 'Reyes'))
+        self.assertFalse(_name_matches('ANNA MARIE SANTOS', 'Annamarie', 'Reyes'))
+
+    @patch('accounts.student_id_service._get_face_features', return_value=np.array([[0.1, 0.2]], dtype=np.float32))
+    @patch('accounts.student_id_service._read_text')
+    def test_text_regions_include_early_name_and_student_label(self, read_text, _features):
+        image = np.zeros((1000, 700, 3), dtype=np.uint8)
+        image[550:570, :, 1] = 200  # Name above the old 57% crop boundary.
+        image[635:650, :, 0] = 100  # Role above the old 66% crop boundary.
+
+        def visible_text(region, **_kwargs):
+            if region.shape[0] == 280:
+                return 'DAVAO DEL NORTE STATE COLLEGE'
+            if np.any(region[:, :, 1] == 200):
+                return 'ANNA MARIE REYES'
+            if np.any(region[:, :, 0] == 100):
+                return 'STUDENT'
+            return ''
+
+        read_text.side_effect = visible_text
+        encoded = cv2.imencode('.png', image)[1].tobytes()
+        self.assertEqual(len(verify_student_id(encoded, 'Annamarie', 'Reyes')), 2)
+
     @patch('accounts.student_id_service._get_face_features')
     @patch('accounts.student_id_service._read_text')
     def test_matching_dnsc_student_id_extracts_portrait(self, read_text, get_features):
@@ -56,7 +81,7 @@ class StudentIdReadingTests(SimpleTestCase):
     @patch('accounts.student_id_service._get_face_features')
     @patch('accounts.student_id_service._read_text')
     def test_mismatched_name_rejects_before_portrait_is_used(self, read_text, get_features):
-        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. SANTOS', 'ALEX Q. SANTOS']
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'STUDENT', 'ALEX Q. SANTOS', 'ALEX Q. SANTOS', 'ALEX Q. SANTOS']
         with self.assertRaises(StudentIdError):
             verify_student_id(self.image, 'Alex', 'Reyes')
         get_features.assert_not_called()
@@ -68,7 +93,7 @@ class StudentIdReadingTests(SimpleTestCase):
 
     @patch('accounts.student_id_service._read_text')
     def test_missing_student_label_is_rejected(self, read_text):
-        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'FACULTY', 'FACULTY']
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'FACULTY', 'FACULTY', 'FACULTY']
         with self.assertRaises(StudentIdError):
             verify_student_id(self.image, 'Alex', 'Reyes')
 
