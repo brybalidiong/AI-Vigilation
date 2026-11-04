@@ -73,6 +73,12 @@ banner and archive a course from their own active list. Each instructor has an
 independent archive; restoring returns the course to that instructor's list.
 Archiving does not remove exams, student records, or other instructors' access.
 Admins can edit an instructor's school email or delete an instructor account.
+Admin registration accepts a single school email or a batch of pasted emails or
+an `.xlsx` workbook. School usernames use `surname.givenname@dnsc.edu.ph`;
+first and last names are inferred from that order, shown in a batch preview,
+and ambiguous email formats are flagged instead of guessing. A batch applies
+one selected institute, skips duplicates and role conflicts, and does not
+overwrite names on existing student accounts used for ID verification.
 Reassigning a course preserves sections owned by instructors who remain assigned;
 sections and exams of removed instructors, plus legacy unowned records, move to
 the new lead.

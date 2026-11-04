@@ -374,7 +374,7 @@ class AdminAccessWorkflowTests(TestCase):
     @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
     def test_registration_requires_valid_institute_and_lists_assignment(self):
         for url in ('/api/admin/instructors/', '/api/admin/students/'):
-            email = ('new-instructor' if 'instructors' in url else 'new-student') + '@dnsc.edu.ph'
+            email = ('instructor.new' if 'instructors' in url else 'student.new') + '@dnsc.edu.ph'
             missing = self.client.post(url, {'email': email}, format='json')
             self.assertEqual(missing.status_code, 400, missing.data)
             invalid = self.client.post(url, {'email': email, 'institute': 'OTHER'}, format='json')
@@ -514,6 +514,85 @@ class AdminAccessWorkflowTests(TestCase):
 
 
 @override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+@override_settings(ALLOWED_SCHOOL_DOMAIN='dnsc.edu.ph')
+class AdminBulkRegistrationTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user('bulk-admin', is_superuser=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.url = '/api/admin/bulk-register/'
+
+    def test_single_registration_derives_name_from_surname_given_email(self):
+        response = self.client.post('/api/admin/students/', {
+            'email': 'reyes.alex@dnsc.edu.ph', 'institute': 'IC',
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual((response.data['first_name'], response.data['last_name']), ('Alex', 'Reyes'))
+        instructor = self.client.post('/api/admin/instructors/', {
+            'email': 'santos.maria@dnsc.edu.ph', 'institute': 'ITED',
+        }, format='json')
+        self.assertEqual(instructor.status_code, 201, instructor.data)
+        self.assertEqual((instructor.data['first_name'], instructor.data['last_name']), ('Maria', 'Santos'))
+
+    def test_preview_and_commit_skip_duplicates_and_role_conflicts(self):
+        payload = {'role': 'student', 'institute': 'IC',
+                   'emails': 'reyes.alex@dnsc.edu.ph\nreyes.alex@dnsc.edu.ph\nbad@dnsc.edu.ph\nsantos.maria@other.edu'}
+        preview = self.client.post(self.url, {**payload, 'preview': True}, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual([row['status'] for row in preview.data['rows']],
+                         ['ready', 'duplicate', 'invalid', 'invalid'])
+        self.assertFalse(User.objects.filter(email='reyes.alex@dnsc.edu.ph').exists())
+        saved = self.client.post(self.url, payload, format='json')
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertEqual(saved.data['created_count'], 1)
+        user = User.objects.get(email='reyes.alex@dnsc.edu.ph')
+        self.assertEqual((user.first_name, user.last_name, user.profile.institute), ('Alex', 'Reyes', 'IC'))
+        self.assertFalse(user.has_usable_password())
+        again = self.client.post(self.url, payload, format='json')
+        self.assertEqual(again.data['created_count'], 0)
+        conflict = self.client.post(self.url, {
+            'role': 'instructor', 'institute': 'IC', 'emails': 'reyes.alex@dnsc.edu.ph',
+        }, format='json')
+        self.assertEqual(conflict.data['rows'][0]['status'], 'conflict')
+
+    def test_excel_import_finds_email_in_different_columns_and_sheets(self):
+        workbook = Workbook()
+        workbook.active['C4'] = 'Email: cruz.juan@dnsc.edu.ph'
+        workbook.create_sheet('Other')['A2'] = 'lim.ana@dnsc.edu.ph'
+        data = BytesIO()
+        workbook.save(data)
+        upload = SimpleUploadedFile('attendance.xlsx', data.getvalue(),
+                                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response = self.client.post(self.url, {
+            'role': 'instructor', 'institute': 'ITED', 'file': upload, 'preview': 'true',
+        }, format='multipart')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual({row['email'] for row in response.data['rows']},
+                         {'cruz.juan@dnsc.edu.ph', 'lim.ana@dnsc.edu.ph'})
+        self.assertEqual(User.objects.filter(is_staff=True, is_superuser=False).count(), 0)
+
+    def test_bulk_endpoint_requires_admin(self):
+        self.client.force_authenticate(User.objects.create_user('ordinary'))
+        response = self.client.post(self.url, {'role': 'student', 'institute': 'IC',
+                                               'emails': 'reyes.alex@dnsc.edu.ph'}, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_batch_restores_student_without_replacing_verified_name(self):
+        user = User.objects.create_user('reyes.alex@dnsc.edu.ph', email='reyes.alex@dnsc.edu.ph',
+                                        first_name='Alexandra', last_name='Reyes', is_active=False)
+        UserProfile.objects.create(user=user, role='student', institute='IC', is_enrolled=False)
+        response = self.client.post(self.url, {
+            'role': 'student', 'institute': 'ITED', 'emails': user.email,
+        }, format='json')
+        self.assertEqual(response.data['restored_count'], 1)
+        user.refresh_from_db()
+        user.profile.refresh_from_db()
+        self.assertEqual(user.first_name, 'Alexandra')
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.profile.is_enrolled)
+        self.assertEqual(user.profile.institute, 'ITED')
+
+
 class ExcelEnrollmentImportTests(TestCase):
     @classmethod
     def setUpTestData(cls):

@@ -781,6 +781,22 @@ def _valid_institute(value):
     return isinstance(value, str) and value in dict(UserProfile.INSTITUTE_CHOICES)
 
 
+def _name_from_school_email(email):
+    """School usernames use surname.given_name@domain."""
+    email = str(email or '').strip().lower()
+    try:
+        validate_email(email)
+    except ValidationError:
+        raise ValueError('Enter a valid school email address.') from None
+    if not email.endswith(f'@{settings.ALLOWED_SCHOOL_DOMAIN}'):
+        raise ValueError(f'Only @{settings.ALLOWED_SCHOOL_DOMAIN} emails are allowed.')
+    parts = email.split('@', 1)[0].split('.')
+    if len(parts) != 2 or any(not re.fullmatch(r'[a-z]+(?:[-_][a-z]+)*', part) for part in parts):
+        raise ValueError('Email must use surname.givenname@' + settings.ALLOWED_SCHOOL_DOMAIN + '.')
+    display = lambda part: part.replace('_', ' ').title()
+    return display(parts[1]), display(parts[0])
+
+
 def _course_instructors(instructor_ids, category):
     if not isinstance(instructor_ids, list) or not instructor_ids or any(
         isinstance(value, bool) or not str(value).isdigit() for value in instructor_ids
@@ -1083,6 +1099,15 @@ def admin_instructors(request):
             {'error': f"Only @{settings.ALLOWED_SCHOOL_DOMAIN} emails are allowed."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    if User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).exists():
+        return Response({'error': 'This account already exists. Use the instructors list to manage access.'}, status=status.HTTP_409_CONFLICT)
+    if not first_name or not last_name:
+        try:
+            derived_first, derived_last = _name_from_school_email(email)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        first_name = first_name or derived_first
+        last_name = last_name or derived_last
 
     user, created = User.objects.get_or_create(
         username=email,
@@ -1248,9 +1273,27 @@ def admin_students(request):
             {'error': f"Only @{settings.ALLOWED_SCHOOL_DOMAIN} emails are allowed."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    existing_user = User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).first()
+    if existing_user and (
+        existing_user.is_staff or existing_user.is_superuser
+        or UserProfile.objects.filter(user=existing_user, role='instructor').exists()
+    ):
+        return Response({'error': 'This email belongs to an instructor account.'}, status=status.HTTP_409_CONFLICT)
+    if not first_name or not last_name:
+        if existing_user:
+            # Re-enrollment must not overwrite an existing name used for ID verification.
+            first_name = first_name or existing_user.first_name
+            last_name = last_name or existing_user.last_name
+        else:
+            try:
+                derived_first, derived_last = _name_from_school_email(email)
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            first_name = first_name or derived_first
+            last_name = last_name or derived_last
 
     # Create or update the user account for this student
-    user, created = User.objects.get_or_create(
+    user, created = (existing_user, False) if existing_user else User.objects.get_or_create(
         username=email,
         defaults={
             'email': email,
@@ -1309,6 +1352,96 @@ def admin_students(request):
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def admin_bulk_register(request):
+    """Preview or register school accounts from pasted emails or an attendance workbook."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    role = request.data.get('role')
+    institute = request.data.get('institute')
+    if role not in {'student', 'instructor'} or not _valid_institute(institute):
+        return Response({'error': 'Choose a role and institute.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    upload = request.FILES.get('file')
+    raw_emails = str(request.data.get('emails') or '')
+    if upload and raw_emails.strip():
+        return Response({'error': 'Paste emails or upload a file, not both.'}, status=status.HTTP_400_BAD_REQUEST)
+    if upload:
+        if not upload.name.lower().endswith('.xlsx') or upload.size > 5 * 1024 * 1024:
+            return Response({'error': 'Upload a .xlsx workbook no larger than 5 MB.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            workbook = load_workbook(upload, read_only=True, data_only=True)
+            emails = []
+            for sheet in workbook.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    for value in row:
+                        if value is not None:
+                            emails.extend(match.group().lower() for match in _SPREADSHEET_EMAIL_RE.finditer(str(value)))
+                            if len(emails) > 500:
+                                raise ValueError('A batch can contain at most 500 emails.')
+        except (InvalidFileException, BadZipFile, OSError, EOFError):
+            return Response({'error': 'The uploaded file is not a valid .xlsx workbook.'}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        finally:
+            if 'workbook' in locals():
+                workbook.close()
+    else:
+        emails = [value.strip().lower() for value in re.split(r'[\s,;]+', raw_emails) if value.strip()]
+    if not emails or len(emails) > 500:
+        return Response({'error': 'Provide between 1 and 500 school emails.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    preview = str(request.data.get('preview', '')).lower() in {'true', '1'}
+    rows = []
+    seen = set()
+    with transaction.atomic():
+        for email in emails:
+            row = {'email': email, 'first_name': '', 'last_name': '', 'status': 'ready', 'reason': ''}
+            if email in seen:
+                row.update(status='duplicate', reason='Repeated in this batch.')
+            else:
+                seen.add(email)
+                try:
+                    first_name, last_name = _name_from_school_email(email)
+                    row.update(first_name=first_name, last_name=last_name)
+                except ValueError as exc:
+                    row.update(status='invalid', reason=str(exc))
+                if row['status'] == 'ready':
+                    existing = User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).select_related('profile').first()
+                    if existing:
+                        profile = getattr(existing, 'profile', None)
+                        if existing.is_superuser or (role == 'instructor' and (not profile or profile.role != 'instructor')) or (role == 'student' and (existing.is_staff or not profile or profile.role != 'student')):
+                            row.update(status='conflict', reason='Email belongs to another account role.')
+                        elif role == 'student' and profile and (not profile.is_enrolled or not existing.is_active):
+                            row.update(status='restore', reason='Existing student access will be restored.')
+                        else:
+                            row.update(status='existing', reason='Already registered.')
+                        if existing.first_name and existing.last_name:
+                            row.update(first_name=existing.first_name, last_name=existing.last_name)
+            if not preview and row['status'] in {'ready', 'restore'}:
+                if row['status'] == 'ready':
+                    user = User(username=email, email=email, first_name=row['first_name'],
+                                last_name=row['last_name'], is_staff=role == 'instructor')
+                    user.set_unusable_password()
+                    user.save()
+                    UserProfile.objects.create(user=user, role=role, institute=institute,
+                                               is_enrolled=role == 'student')
+                    row['id'] = user.id
+                    row['status'] = 'created'
+                else:
+                    existing.is_active = True
+                    existing.save(update_fields=['is_active'])
+                    profile.is_enrolled = True
+                    profile.institute = institute
+                    profile.save(update_fields=['is_enrolled', 'institute'])
+                    row['id'] = existing.id
+                    row['status'] = 'restored'
+            rows.append(row)
+    return Response({'rows': rows, 'created_count': sum(row['status'] == 'created' for row in rows),
+                     'restored_count': sum(row['status'] == 'restored' for row in rows)})
 
 
 @api_view(['GET', 'PATCH', 'DELETE'])

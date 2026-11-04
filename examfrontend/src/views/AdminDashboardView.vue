@@ -398,10 +398,12 @@
           </div>
           <form v-else id="instructor-register-panel" class="create-form-wrapper admin-entry-form" role="tabpanel" aria-labelledby="add-instructor-btn" @submit.prevent="registerInstructor">
             <div class="entry-heading"><div><h3 class="form-title">Register instructor</h3><p>Use the instructor's school email. They will sign in with Google.</p></div></div>
-            <div class="inline-form">
-              <label class="entry-field" for="instructor-first-name">First name<input v-model="newInstructor.first_name" type="text" autocomplete="given-name" id="instructor-first-name"/></label>
-              <label class="entry-field" for="instructor-last-name">Last name<input v-model="newInstructor.last_name" type="text" autocomplete="family-name" id="instructor-last-name"/></label>
-              <label class="entry-field entry-field--email" for="instructor-email">School email<input v-model="newInstructor.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="instructor-email"/></label>
+            <div class="admin-register-mode" role="group" aria-label="Registration method">
+              <button type="button" :class="{ active: registrationMode.instructor === 'single' }" @click="registrationMode.instructor = 'single'">One instructor</button>
+              <button type="button" :class="{ active: registrationMode.instructor === 'batch' }" @click="registrationMode.instructor = 'batch'">Batch register</button>
+            </div>
+            <div v-if="registrationMode.instructor === 'single'" class="inline-form">
+              <label class="entry-field entry-field--email" for="instructor-email">School email<input v-model="newInstructor.email" type="email" autocomplete="email" :placeholder="`surname.givenname@${schoolDomain}`" required id="instructor-email"/></label>
               <label class="entry-field entry-field--institute" for="instructor-institute">Institute
                 <select v-model="newInstructor.institute" id="instructor-institute" required>
                   <option value="" disabled>Select institute</option>
@@ -409,7 +411,9 @@
                 </select>
               </label>
             </div>
-            <div class="entry-actions">
+            <p v-if="registrationMode.instructor === 'single'" class="admin-name-preview">{{ derivedRegistrationName(newInstructor.email) }}</p>
+            <AdminBulkRegister v-if="registrationMode.instructor === 'batch'" role="instructor" :institutes="institutes" :school-domain="schoolDomain" @saved="handleBulkRegistered('instructor', $event)" />
+            <div v-if="registrationMode.instructor === 'single'" class="entry-actions">
               <button type="button" class="ghost-btn shrink-btn" @click="closeInstructorForm">Cancel</button>
               <button type="submit" class="primary-btn shrink-btn" :disabled="instructorLoading" id="submit-instructor-btn">{{ instructorLoading ? 'Registering...' : 'Register' }}</button>
             </div>
@@ -542,10 +546,12 @@
           </div>
           <form v-else id="student-register-panel" class="create-form-wrapper admin-entry-form" role="tabpanel" aria-labelledby="add-student-btn" @submit.prevent="enrollStudent">
             <div class="entry-heading"><div><h3 class="form-title">Register student</h3><p>Use the student's school email to allow Google sign-in.</p></div></div>
-            <div class="inline-form">
-              <label class="entry-field" for="student-first-name">First name<input v-model="newStudent.first_name" type="text" autocomplete="given-name" id="student-first-name" required/></label>
-              <label class="entry-field" for="student-last-name">Last name<input v-model="newStudent.last_name" type="text" autocomplete="family-name" id="student-last-name" required/></label>
-              <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`name@${schoolDomain}`" required id="student-email"/></label>
+            <div class="admin-register-mode" role="group" aria-label="Registration method">
+              <button type="button" :class="{ active: registrationMode.student === 'single' }" @click="registrationMode.student = 'single'">One student</button>
+              <button type="button" :class="{ active: registrationMode.student === 'batch' }" @click="registrationMode.student = 'batch'">Batch register</button>
+            </div>
+            <div v-if="registrationMode.student === 'single'" class="inline-form">
+              <label class="entry-field entry-field--email" for="student-email">School email<input v-model="newStudent.email" type="email" autocomplete="email" :placeholder="`surname.givenname@${schoolDomain}`" required id="student-email"/></label>
               <label class="entry-field entry-field--institute" for="student-institute">Institute
                 <select v-model="newStudent.institute" id="student-institute" required>
                   <option value="" disabled>Select institute</option>
@@ -553,7 +559,9 @@
                 </select>
               </label>
             </div>
-            <div class="entry-actions">
+            <p v-if="registrationMode.student === 'single'" class="admin-name-preview">{{ derivedRegistrationName(newStudent.email) }}</p>
+            <AdminBulkRegister v-if="registrationMode.student === 'batch'" role="student" :institutes="institutes" :school-domain="schoolDomain" @saved="handleBulkRegistered('student', $event)" />
+            <div v-if="registrationMode.student === 'single'" class="entry-actions">
               <button type="button" class="ghost-btn shrink-btn" @click="closeStudentForm">Cancel</button>
               <button type="submit" class="primary-btn shrink-btn" :disabled="studentLoading" id="submit-student-btn">{{ studentLoading ? 'Enrolling...' : 'Register' }}</button>
             </div>
@@ -644,11 +652,22 @@ import axios from "axios";
 import ConfirmModal from "@/components/ConfirmModal.vue";
 import NoticeModal from "@/components/NoticeModal.vue";
 import InstructorAssignmentPicker from "@/components/InstructorAssignmentPicker.vue";
+import AdminBulkRegister from "@/components/AdminBulkRegister.vue";
 import SkeletonLoader from "@/components/SkeletonLoader.vue";
 
 const router = useRouter();
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const schoolDomain = import.meta.env.VITE_SCHOOL_DOMAIN || "dnsc.edu.ph";
+const registrationMode = ref({ instructor: 'single', student: 'single' });
+function derivedRegistrationName(email) {
+  const local = String(email || '').trim().toLowerCase().split('@')[0];
+  const parts = local.split('.');
+  if (parts.length !== 2 || parts.some(part => !/^[a-z]+(?:[-_][a-z]+)*$/.test(part))) {
+    return `Name is filled automatically from surname.givenname@${schoolDomain}.`;
+  }
+  const display = part => part.replaceAll('_', ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase());
+  return `Name: ${display(parts[1])} ${display(parts[0])}`;
+}
 const institutes = [
   { code: 'IC', name: 'Institute of Computing' },
   { code: 'ITED', name: 'Institute of Teachers Education' },
@@ -712,7 +731,7 @@ const editedInstructorEmail = ref('');
 const emailEditError = ref('');
 const emailEditSaving = ref(false);
 const hasInstructorFilters = computed(() => Boolean(instructorSearch.value) || instructorStatusFilter.value !== 'all' || instructorInstituteFilter.value !== 'all');
-const newInstructor = ref({ email: "", first_name: "", last_name: "", institute: "" });
+const newInstructor = ref({ email: "", institute: "" });
 
 // Courses
 const courses = ref([]);
@@ -831,7 +850,7 @@ function showActionError(text) {
   actionError.value = text;
 }
 const studentSearch = ref("");
-const newStudent = ref({ email: "", first_name: "", last_name: "", institute: "" });
+const newStudent = ref({ email: "", institute: "" });
 
 function selectAdminSection(section) {
   activeTab.value = section;
@@ -1099,6 +1118,14 @@ async function registerInstructor() {
   }
 }
 
+async function handleBulkRegistered(role, result) {
+  const count = result.created_count || 0;
+  const restored = result.restored_count || 0;
+  if (role === 'instructor') await fetchInstructors();
+  else await fetchStudents();
+  showActionSuccess('Batch registration complete', `${count} ${role}${count === 1 ? '' : 's'} registered${restored ? `, ${restored} access restored` : ''}.`);
+}
+
 function setInstructorActive(ins) {
   if (!ins.is_active) {
     updateInstructorActive(ins, true);
@@ -1351,12 +1378,14 @@ async function toggleReupload(st, event) {
 }
 
 function clearInstructorForm() {
-  newInstructor.value = { email: "", first_name: "", last_name: "", institute: "" };
+  newInstructor.value = { email: "", institute: "" };
+  registrationMode.value.instructor = 'single';
   instructorError.value = "";
 }
 
 function clearStudentForm() {
-  newStudent.value = { email: "", first_name: "", last_name: "", institute: "" };
+  newStudent.value = { email: "", institute: "" };
+  registrationMode.value.student = 'single';
   studentError.value = "";
 }
 
@@ -1654,6 +1683,11 @@ onMounted(() => {
 .table-skeleton { display: grid; gap: .35rem; padding: 1rem; }
 .table-skeleton .skeleton { margin-bottom: 0; }
 .admin-entry-form { margin-bottom: 1.25rem; border: 1px solid #dce5f0; border-radius: 16px; background: #fff; padding: 1.5rem; box-shadow: 0 10px 30px rgba(15, 23, 42, .055); }
+.admin-register-mode { display: inline-flex; gap: .25rem; padding: .25rem; margin-bottom: 1rem; border-radius: 10px; background: #eaf0f7; }
+.admin-register-mode button { border: 0; border-radius: 8px; padding: .55rem .85rem; background: transparent; color: #536984; font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.admin-register-mode button.active { background: #fff; color: #1d3461; box-shadow: 0 1px 5px rgba(25, 48, 80, .12); }
+.admin-register-mode button:focus-visible { outline: 3px solid rgba(29, 52, 97, .2); }
+.admin-name-preview { margin: .8rem 0 0; color: #526984; font-size: .82rem; }
 .entry-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .entry-heading .form-title { margin: 0 0 .25rem; color: #142849; }
 .entry-heading p { margin: 0; color: #64748b; font-size: .82rem; }

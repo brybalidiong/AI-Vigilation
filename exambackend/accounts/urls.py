@@ -12,6 +12,7 @@ from .views import (
     admin_instructor_detail,
     admin_students,
     admin_student_detail,
+    admin_bulk_register,
     available_course_students,
     bulk_enroll_students,
     enrolled_students,
@@ -74,6 +75,7 @@ urlpatterns = [
     path('admin/instructors/<int:instructor_id>/', admin_instructor_detail),
     path('admin/students/', admin_students),
     path('admin/students/<int:student_id>/', admin_student_detail),
+    path('admin/bulk-register/', admin_bulk_register),
     # Instructor endpoints
     path('instructor/sets/', student_sets),
     path('instructor/sets/<int:set_id>/', student_set_detail),
