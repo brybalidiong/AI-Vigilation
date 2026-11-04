@@ -20,7 +20,9 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
 - **Database:** PostgreSQL/Supabase, with an optional local SQLite configuration.
 - **Identity:** Firebase integration, DNSC student ID OCR in `exambackend/accounts/student_id_service.py`, and OpenCV YuNet/SFace models in `exambackend/accounts/face_service.py`. Students upload the front of their DNSC ID; the backend reads the school header, STUDENT label, and printed first/last name, compares the name with the admin-managed account name, and stores an embedding from the ID portrait. The exam precheck compares the webcam face with that portrait. A failed or unreadable ID is rejected without changing verification state. Previously approved face photos require a new ID upload. OCR/name matching does not establish that an ID card is genuine.
   The ID reader checks a wider name and STUDENT region to accommodate card layout
-  differences and retries sparse OCR when ordinary OCR cannot read a marker.
+  differences. School OCR combines readings from the top of the card and a
+  text-focused header crop, and retries sparse OCR when ordinary OCR cannot
+  read a marker. OCR input is capped in size to avoid timing out on large photos.
   Spacing differences in a given name (such as two printed words joined in the
   account) are accepted only when the complete first and last names still match.
 - **Exam face liveness:** The verification dialog first confirms a clearly visible face and shows the live camera preview. It then prompts the student to blink before the ID portrait comparison. A short webcam sequence is analyzed on the backend for both eyes open, closed, then reopened; a single still photo cannot pass. The matching face is taken from the reopened frame. This basic motion check does not establish camera authenticity and may still be defeated by a replayed video or a manipulated client.

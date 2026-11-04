@@ -21,7 +21,7 @@ from accounts.models import (
     EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, QuestionBankItem, StudentAnswer,
     StudentSet, Subject, SubjectEnrollment, UserProfile,
 )
-from accounts.student_id_service import StudentIdError, _name_matches, verify_student_id
+from accounts.student_id_service import StudentIdError, _name_matches, _read_text, verify_student_id
 
 
 class StudentIdReadingTests(SimpleTestCase):
@@ -38,6 +38,15 @@ class StudentIdReadingTests(SimpleTestCase):
         self.assertTrue(_name_matches('ANNA MARIE REYES', 'Annamarie', 'Reyes'))
         self.assertTrue(_name_matches('ANNAMARIE REYES', 'Anna Marie', 'Reyes'))
         self.assertFalse(_name_matches('ANNA MARIE SANTOS', 'Annamarie', 'Reyes'))
+
+    @patch('accounts.student_id_service.subprocess.run')
+    def test_large_photo_is_bounded_before_ocr(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = b''
+        _read_text(np.zeros((2500, 1500, 3), dtype=np.uint8))
+        encoded = np.frombuffer(run.call_args.kwargs['input'], dtype=np.uint8)
+        ocr_image = cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE)
+        self.assertLessEqual(max(ocr_image.shape), 2200)
 
     @patch('accounts.student_id_service._get_face_features', return_value=np.array([[0.1, 0.2]], dtype=np.float32))
     @patch('accounts.student_id_service._read_text')
@@ -77,6 +86,16 @@ class StudentIdReadingTests(SimpleTestCase):
         get_features.return_value = np.array([[0.1, 0.2]], dtype=np.float32)
         self.assertEqual(len(verify_student_id(self.image, 'Alex', 'Reyes')), 2)
         self.assertEqual(read_text.call_count, 5)
+
+    @patch('accounts.student_id_service._get_face_features', return_value=np.array([[0.1, 0.2]], dtype=np.float32))
+    @patch('accounts.student_id_service._read_text')
+    def test_school_header_combines_readings_from_text_focused_crop(self, read_text, _features):
+        read_text.side_effect = [
+            'STATE COLLEGE', 'STATE COLLEGE', 'STATE COLLEGE',
+            'DAVA0 DEL N0RTE', 'STUDENT', 'ALEX REYES',
+        ]
+        self.assertEqual(len(verify_student_id(self.image, 'Alex', 'Reyes')), 2)
+        self.assertEqual(read_text.call_count, 6)
 
     @patch('accounts.student_id_service._get_face_features')
     @patch('accounts.student_id_service._read_text')

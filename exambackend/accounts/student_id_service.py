@@ -21,7 +21,10 @@ def _tokens(value):
 
 def _read_text(image, page_mode=6, enhance=True):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    scale = min(2.0, 2200 / max(gray.shape))
+    if abs(scale - 1) > .01:
+        gray = cv2.resize(gray, None, fx=scale, fy=scale,
+                          interpolation=cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA)
     if enhance:
         gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
     ok, encoded = cv2.imencode('.png', gray)
@@ -48,8 +51,9 @@ def _name_matches(printed_name, first_name, last_name):
     last_joined = ''.join(last)
     # Printed and account names may split the same given name differently,
     # e.g. MARY ROSE on the ID and Maryrose in the account.
-    for line in printed_name.splitlines():
-        words = _tokens(line)
+    lines = [_tokens(line) for line in printed_name.splitlines() if _tokens(line)]
+    candidates = lines + [left + right for left, right in zip(lines, lines[1:])]
+    for words in candidates:
         for first_end in range(1, min(len(words), len(first) + 2) + 1):
             if ''.join(words[:first_end]) != first_joined:
                 continue
@@ -64,11 +68,41 @@ def _name_matches(printed_name, first_name, last_name):
 
 
 def _school_matches(header_text):
-    words = _tokens(header_text)
+    normalized = header_text.upper().replace('0', 'O').replace('1', 'I')
+    words = _tokens(normalized)
+    joined = ''.join(words)
     return 'DNSC' in words or (
-        'DAVAO' in words and 'NORTE' in words
-        and ('STATE' in words or 'COLLEGE' in words)
+        'DAVAO' in joined
+        and (('NORTE' in joined and ('STATE' in joined or 'COLLEGE' in joined))
+             or ('PANABO' in joined and 'STATE' in joined and 'COLLEGE' in joined))
     )
+
+
+def _role_matches(text):
+    return 'STUDENT' in ''.join(_tokens(text))
+
+
+def _ocr_matches(image, matcher):
+    for page_mode, enhance in ((6, True), (6, False), (11, False)):
+        if matcher(_read_text(image, page_mode=page_mode, enhance=enhance)):
+            return True
+    return False
+
+
+def _school_header_matches(image):
+    height, width = image.shape[:2]
+    regions = (
+        image[:int(height * .28), :],
+        image[int(height * .04):int(height * .35), int(width * .20):],
+    )
+    readings = []
+    for region in regions:
+        for page_mode, enhance in ((6, True), (6, False), (11, False)):
+            reading = _read_text(region, page_mode=page_mode, enhance=enhance)
+            readings.append(reading)
+            if _school_matches(' '.join(readings)):
+                return True
+    return False
 
 
 def verify_student_id(image_bytes, first_name, last_name):
@@ -82,17 +116,13 @@ def verify_student_id(image_bytes, first_name, last_name):
     if width < 500 or height < 750 or height / width < 1.25:
         raise StudentIdError('Upload a clear, upright photo of the entire student ID.')
 
-    header_image = image[:int(height * .28), :]
-    if not any(_school_matches(_read_text(header_image, page_mode=mode, enhance=enhance))
-               for mode, enhance in ((6, True), (6, False), (11, False))):
+    if not _school_header_matches(image):
         raise StudentIdError('This does not appear to be a DNSC student ID. Upload the front of your DNSC ID.')
     role_image = image[int(height * .61):int(height * .77), :]
-    if not any('STUDENT' in _tokens(_read_text(role_image, page_mode=mode, enhance=enhance))
-               for mode, enhance in ((6, True), (6, False), (11, False))):
+    if not _ocr_matches(role_image, _role_matches):
         raise StudentIdError('The student label could not be read. Retake the photo with the entire ID visible.')
     name_region = image[int(height * .52):int(height * .70), int(width * .05):int(width * .96)]
-    if not any(_name_matches(_read_text(name_region, page_mode=mode, enhance=enhance), first_name, last_name)
-               for mode, enhance in ((6, True), (6, False), (11, False))):
+    if not _ocr_matches(name_region, lambda text: _name_matches(text, first_name, last_name)):
         raise StudentIdError('The name on the ID could not be matched to your account. Retake the photo or contact an administrator to correct your account name.')
 
     portrait = image[int(height * .23):int(height * .62), int(width * .14):int(width * .82)]
