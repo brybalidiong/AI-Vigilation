@@ -168,6 +168,10 @@ class ExamSet(models.Model):
         on_delete=models.CASCADE,
         related_name='exam_sets',
     )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_exam_sets',
+    )
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, default='')
     available_from = models.DateTimeField(null=True, blank=True)

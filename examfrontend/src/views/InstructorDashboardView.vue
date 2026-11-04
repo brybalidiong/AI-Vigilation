@@ -503,7 +503,7 @@
                     <div class="create-panel__field">
                       <label class="create-panel__label" for="new-exam-section">Assign to Section</label>
                       <select id="new-exam-section" v-model="newExamAssignedSet" class="create-panel__input">
-                        <option value="">All Sets (Entire Course)</option>
+                        <option value="">All my sections</option>
                         <option v-for="s in subjectSets" :key="s.id" :value="s.id">{{ s.name }}</option>
                       </select>
                     </div>

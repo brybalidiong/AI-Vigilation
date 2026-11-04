@@ -50,8 +50,12 @@ that institute; minor courses can be assigned to instructors from any institute.
 The original instructor field remains the lead instructor for legacy data.
 Each instructor sees and manages only the course sections and students assigned
 to that instructor; a student's course card names the owner of their section.
-Shared course exams remain available to assigned instructors, but exam progress,
-statistics, reports, and snapshots include only students in their own sections.
+Each exam belongs to the instructor who created it. Existing exams are assigned
+to the course lead during migration. Instructors see and manage only their own
+exams, and students see only exams owned by their section's instructor. An exam
+assigned to "all my sections" reaches the owner's sections, never another
+instructor's. Exam progress, statistics, reports, and snapshots include only
+students in the instructor's sections.
 Students can belong to only one section for a given course, even when different
 instructors manage the sections. Enrollment into another section in the same
 course is rejected or skipped during bulk import; the owning instructor must
@@ -70,7 +74,8 @@ independent archive; restoring returns the course to that instructor's list.
 Archiving does not remove exams, student records, or other instructors' access.
 Admins can edit an instructor's school email or delete an instructor account.
 Reassigning a course preserves sections owned by instructors who remain assigned;
-sections of removed instructors and legacy unowned sections move to the new lead.
+sections and exams of removed instructors, plus legacy unowned records, move to
+the new lead.
 Email edits update the Django login username as well as the email, so the new
 school Google address is used on the next sign-in. Deletion requires all course
 assignments to be reassigned first; standalone rosters remain after removal.

@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, OuterRef, Q
-from django.db.models.functions import Lower
+from django.db.models.functions import Coalesce, Lower
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
@@ -83,6 +83,11 @@ def _enroll_student_in_set_once(email: str, roster: StudentSet):
 
 def _is_instructor(user):
     return bool(user and user.is_authenticated and user.is_active and user.is_staff and not user.is_superuser)
+
+
+def _instructor_exam_filter(user):
+    # Legacy records created outside the instructor API belong to the lead.
+    return Q(created_by=user) | Q(created_by__isnull=True, subject__instructor=user)
 
 
 def _effective_face_status(profile):
@@ -885,6 +890,9 @@ def admin_course_detail(request, subject_id):
         # Keep sections owned by instructors who remain assigned. Transfer only
         # orphaned sections so existing enrollments remain available.
         subject.student_sets.filter(
+            Q(created_by__isnull=True) | Q(created_by_id__in=removed_ids)
+        ).update(created_by=instructors[0])
+        subject.exam_sets.filter(
             Q(created_by__isnull=True) | Q(created_by_id__in=removed_ids)
         ).update(created_by=instructors[0])
     return Response(_serialize_admin_course(subject))
@@ -1777,7 +1785,8 @@ def instructor_upcoming_exams(request):
 
     exams = (
         ExamSet.objects.filter(
-            Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user)
+            _instructor_exam_filter(request.user),
+            Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
         )
         .select_related('subject')
         .distinct()
@@ -2026,7 +2035,7 @@ def subject_exam_sets(request, subject_id):
     if request.method == 'GET':
         rows = []
         exams = (
-            ExamSet.objects.filter(subject=subject)
+            ExamSet.objects.filter(_instructor_exam_filter(request.user), subject=subject)
             .annotate(
                 question_count=Count('questions', distinct=True),
                 non_essay_question_count=Count(
@@ -2076,6 +2085,18 @@ def subject_exam_sets(request, subject_id):
     if str(allow_backtracking_raw).lower() not in ('true', 'false'):
         return Response({'error': 'Invalid question navigation setting.'}, status=status.HTTP_400_BAD_REQUEST)
     assigned_sets_raw = request.data.get('assigned_sets', '[]')
+    try:
+        import json
+        assigned_set_ids = json.loads(assigned_sets_raw) if isinstance(assigned_sets_raw, str) else assigned_sets_raw
+        if not isinstance(assigned_set_ids, list) or any(isinstance(value, bool) for value in assigned_set_ids):
+            raise ValueError
+        assigned_set_ids = [int(value) for value in assigned_set_ids]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return Response({'error': 'Choose valid sections for this exam.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(set(assigned_set_ids)) != len(assigned_set_ids) or StudentSet.objects.filter(
+        id__in=assigned_set_ids, subject=subject, created_by=request.user,
+    ).count() != len(assigned_set_ids):
+        return Response({'error': 'Choose only your own sections for this exam.'}, status=status.HTTP_400_BAD_REQUEST)
     if not title:
         return Response({'error': 'Exam set title is required.'}, status=status.HTTP_400_BAD_REQUEST)
     if not due_at_raw:
@@ -2110,6 +2131,7 @@ def subject_exam_sets(request, subject_id):
         due_at_value = timezone.make_aware(due_at_value, timezone.get_current_timezone())
     exam_set = ExamSet.objects.create(
         subject=subject,
+        created_by=request.user,
         title=title,
         description=description,
         available_from=available_from_value,
@@ -2121,13 +2143,8 @@ def subject_exam_sets(request, subject_id):
         allow_backtracking=str(allow_backtracking_raw).lower() == 'true',
     )
 
-    try:
-        import json
-        assigned_set_ids = json.loads(assigned_sets_raw)
-        if isinstance(assigned_set_ids, list) and len(assigned_set_ids) > 0:
-            exam_set.assigned_sets.set(assigned_set_ids)
-    except:
-        pass
+    if assigned_set_ids:
+        exam_set.assigned_sets.set(assigned_set_ids)
 
     if parsed_questions:
         batch = QuestionBankBatch.objects.create(subject=subject, name=f'{title} upload'[:160])
@@ -2164,6 +2181,7 @@ def subject_exam_set_detail(request, subject_id, exam_set_id):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     exam_set = ExamSet.objects.filter(
+        _instructor_exam_filter(request.user),
         Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
         id=exam_set_id,
         subject_id=subject_id,
@@ -2227,6 +2245,7 @@ def exam_set_stats(request, subject_id, exam_set_id):
 
     exam_set = (
         ExamSet.objects.filter(
+            _instructor_exam_filter(request.user),
             Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
             id=exam_set_id,
             subject_id=subject_id,
@@ -2331,6 +2350,9 @@ def instructor_submission_snapshot(request, subject_id, exam_set_id, submission_
         pk=submission_id,
         exam_set_id=exam_set_id,
         exam_set__subject_id=subject_id,
+    ).filter(
+        Q(exam_set__created_by=request.user)
+        | Q(exam_set__created_by__isnull=True, exam_set__subject__instructor=request.user)
     ).annotate(is_my_student=Exists(EnrolledStudent.objects.filter(
         email__iexact=OuterRef('student_email'),
         student_set__subject_id=subject_id,
@@ -2370,7 +2392,7 @@ def subject_exam_progress(request, subject_id):
 
         if not exam_set_id or not student_email:
             return Response({'error': 'exam_set_id and student_email are required.'}, status=status.HTTP_400_BAD_REQUEST)
-        exam_set = ExamSet.objects.filter(id=exam_set_id, subject=subject).first()
+        exam_set = ExamSet.objects.filter(_instructor_exam_filter(request.user), id=exam_set_id, subject=subject).first()
         if not exam_set:
             return Response({'error': 'Exam set not found for this subject.'}, status=status.HTTP_404_NOT_FOUND)
         if not EnrolledStudent.objects.filter(
@@ -2425,7 +2447,7 @@ def subject_exam_progress(request, subject_id):
 
     student_emails = list(email_to_set.keys())
     exams = list(
-        ExamSet.objects.filter(subject=subject)
+        ExamSet.objects.filter(_instructor_exam_filter(request.user), subject=subject)
         .prefetch_related('assigned_sets', 'questions')
         .order_by('-created_at', '-id')
     )
@@ -2575,11 +2597,18 @@ def my_subjects(request):
 @permission_classes([IsAuthenticated])
 def my_exam_sets(request):
     student_email = request.user.email
+    my_roster = EnrolledStudent.objects.filter(
+        email__iexact=student_email,
+        student_set__subject_id=OuterRef('subject_id'),
+        student_set__created_by_id=OuterRef('exam_owner_id'),
+    )
     subject_exams = (
         ExamSet.objects.filter(
-            subject__student_sets__students__email__iexact=student_email,
             is_final=True,
         )
+        .annotate(exam_owner_id=Coalesce('created_by_id', 'subject__instructor_id'))
+        .annotate(in_my_section=Exists(my_roster))
+        .filter(in_my_section=True)
         .filter(
             Q(assigned_sets__isnull=True)
             | Q(assigned_sets__students__email__iexact=student_email)
@@ -3282,7 +3311,9 @@ def exam_add_bank_questions(request, subject_id, exam_set_id):
     if len(bank_items) != len(ids):
         return Response({'error': 'One or more questions are outside this course.'}, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
-        exam_set = ExamSet.objects.select_for_update().filter(id=exam_set_id, subject=subject).first()
+        exam_set = ExamSet.objects.select_for_update().filter(
+            _instructor_exam_filter(request.user), id=exam_set_id, subject=subject,
+        ).first()
         if not exam_set:
             return Response({'error': 'Exam not found.'}, status=status.HTTP_404_NOT_FOUND)
         if exam_set.is_final:
@@ -3318,7 +3349,7 @@ def exam_questions(request, subject_id, exam_set_id):
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    exam_set = ExamSet.objects.filter(id=exam_set_id, subject=subject).first()
+    exam_set = ExamSet.objects.filter(_instructor_exam_filter(request.user), id=exam_set_id, subject=subject).first()
     if not exam_set:
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -3372,6 +3403,8 @@ def exam_question_detail(request, subject_id, exam_set_id, question_id):
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     q = ExamQuestion.objects.filter(
+        Q(exam_set__created_by=request.user)
+        | Q(exam_set__created_by__isnull=True, exam_set__subject__instructor=request.user),
         id=question_id,
         exam_set_id=exam_set_id,
         exam_set__subject=subject,
@@ -3396,7 +3429,7 @@ def finalize_exam(request, subject_id, exam_set_id):
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    exam_set = ExamSet.objects.filter(id=exam_set_id, subject=subject).first()
+    exam_set = ExamSet.objects.filter(_instructor_exam_filter(request.user), id=exam_set_id, subject=subject).first()
     if not exam_set:
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -3419,6 +3452,7 @@ def _student_can_access_exam(student_email, exam_set):
     allowed_qs = EnrolledStudent.objects.filter(
         email__iexact=student_email,
         student_set__subject_id=exam_set.subject_id,
+        student_set__created_by_id=exam_set.created_by_id or exam_set.subject.instructor_id,
     )
     # Check assignments and enrollment in one query. This path runs on every
     # live gadget frame, so an extra remote DB round trip is visible to users.
@@ -4455,6 +4489,7 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     exam_set = ExamSet.objects.filter(
+        _instructor_exam_filter(request.user),
         Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
         id=exam_set_id,
         subject_id=subject_id,

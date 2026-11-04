@@ -764,7 +764,7 @@ class CourseEnrollmentUniquenessTests(TestCase):
         progress = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/exam-progress/')
         self.assertEqual(progress.data['progress'], [])
         stats = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{exam.pk}/stats/')
-        self.assertEqual(stats.data['examinees'], [])
+        self.assertEqual(stats.status_code, 404)
 
     def test_student_course_names_the_section_owner(self):
         EnrolledStudent.objects.create(email=self.email, student_set=self.second_set)
@@ -775,6 +775,46 @@ class CourseEnrollmentUniquenessTests(TestCase):
         self.client.force_authenticate(student)
         result = self.client.get('/api/student/subjects/')
         self.assertEqual(result.data['subjects'][0]['instructor_name'], 'Other Instructor')
+
+    def test_exams_are_owned_by_the_instructor_who_created_them(self):
+        old_exam = ExamSet.objects.create(subject=self.subject, created_by=self.lead, title='Lead exam', is_final=True)
+        self.client.force_authenticate(self.other)
+        url = f'/api/instructor/subjects/{self.subject.pk}/exam-sets/'
+        self.assertEqual(self.client.get(url).data['exam_sets'], [])
+        self.assertEqual(self.client.get('/api/instructor/upcoming-exams/').data['exam_sets'], [])
+        self.assertEqual(self.client.delete(f'{url}{old_exam.pk}/').status_code, 404)
+        self.assertEqual(self.client.get(f'{url}{old_exam.pk}/questions/').status_code, 404)
+        self.assertEqual(self.client.get(f'{url}{old_exam.pk}/stats/').status_code, 404)
+        self.assertEqual(self.client.post(f'{url}{old_exam.pk}/finalize/').status_code, 404)
+        created = self.client.post(url, {
+            'title': 'Other exam', 'due_at': '2030-01-01',
+            'assigned_sets': f'[{self.second_set.pk}]',
+        }, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        new_exam = ExamSet.objects.get(pk=created.data['id'])
+        self.assertEqual(new_exam.created_by_id, self.other.pk)
+        self.assertEqual(new_exam.assigned_sets.get().pk, self.second_set.pk)
+        self.client.force_authenticate(self.lead)
+        self.assertEqual([row['id'] for row in self.client.get(url).data['exam_sets']], [old_exam.pk])
+
+    def test_instructor_cannot_assign_another_instructors_section(self):
+        self.client.force_authenticate(self.other)
+        response = self.client.post(f'/api/instructor/subjects/{self.subject.pk}/exam-sets/', {
+            'title': 'Wrong section', 'due_at': '2030-01-01',
+            'assigned_sets': f'[{self.first_set.pk}]',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ExamSet.objects.filter(title='Wrong section').exists())
+
+    def test_student_only_sees_exams_from_their_section_instructor(self):
+        EnrolledStudent.objects.create(email=self.email, student_set=self.second_set)
+        lead_exam = ExamSet.objects.create(subject=self.subject, created_by=self.lead, title='Lead exam', is_final=True)
+        own_exam = ExamSet.objects.create(subject=self.subject, created_by=self.other, title='Other exam', is_final=True)
+        student = User.objects.get(email=self.email)
+        self.client.force_authenticate(student)
+        exams = self.client.get('/api/student/exams/')
+        self.assertEqual([row['id'] for row in exams.data['exam_sets']], [own_exam.pk])
+        self.assertEqual(self.client.get(f'/api/student/exams/{lead_exam.pk}/questions/').status_code, 403)
 
 
 class ExamListOrderingTests(TestCase):
@@ -834,7 +874,7 @@ class ExamQuestionOrderTests(TestCase):
         cls.subject = Subject.objects.create(
             name='Science', code='SCI', instructor=cls.instructor,
         )
-        roster = StudentSet.objects.create(name='Section A', subject=cls.subject)
+        roster = StudentSet.objects.create(name='Section A', subject=cls.subject, created_by=cls.instructor)
         cls.students = [
             User.objects.create(username=f'student{i}', email=f'student{i}@example.com')
             for i in range(2)
