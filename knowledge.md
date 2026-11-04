@@ -87,8 +87,11 @@ Exam uploads remain drafts. Publishing an exam sends a Django Channels event to
 students enrolled in the course; their open dashboards refetch the authorized exam
 list. The local in-memory channel layer supports one backend process. Deployments
 with multiple processes set `REDIS_URL` for a shared Redis channel layer.
-Each course has a reusable Question Bank organized into named batches. Instructors
-create questions or bulk upload UTF-8 `.txt`, `.iken`, or `.csv` files directly on
+Each instructor has a separate Question Bank in each assigned course, organized
+into named batches. Existing batches are assigned to the course lead during
+migration; removing an instructor from a course transfers that instructor's
+batches to the new lead. Instructors create questions or bulk upload UTF-8
+`.txt`, `.iken`, or `.csv` files directly on
 the course Question Bank page. Aiken multiple-choice uses an `ANSWER:` letter;
 blank-line-separated text can hold essay prompts; CSV supports mixed question
 types, with a downloadable sample format in the UI. Pasted text remains available.

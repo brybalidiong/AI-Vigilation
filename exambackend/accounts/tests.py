@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from accounts.grading import grade_question
 from accounts.models import (
-    EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, QuestionBankItem, StudentAnswer,
+    EnrolledStudent, ExamQuestion, ExamSet, ExamSubmission, QuestionBankBatch, QuestionBankItem, StudentAnswer,
     StudentSet, Subject, SubjectEnrollment, UserProfile,
 )
 from accounts.student_id_service import StudentIdError, _name_matches, _read_text, verify_student_id
@@ -815,6 +815,47 @@ class CourseEnrollmentUniquenessTests(TestCase):
         exams = self.client.get('/api/student/exams/')
         self.assertEqual([row['id'] for row in exams.data['exam_sets']], [own_exam.pk])
         self.assertEqual(self.client.get(f'/api/student/exams/{lead_exam.pk}/questions/').status_code, 403)
+
+    def test_question_banks_are_private_per_instructor_and_course(self):
+        url = f'/api/instructor/subjects/{self.subject.pk}/question-bank/'
+        created = self.client.post(url, {
+            'batch_name': 'My questions', 'question_type': 'identification',
+            'question_text': 'Lead question?', 'correct_answer': 'Lead answer',
+        }, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        lead_item = QuestionBankItem.objects.get(pk=created.data['id'])
+        self.assertEqual(lead_item.batch.created_by_id, self.lead.pk)
+        other_course = Subject.objects.create(name='Other course', code='OC', instructor=self.lead)
+        other_course_batch = QuestionBankBatch.objects.create(
+            subject=other_course, created_by=self.lead, name='Other course batch',
+        )
+        self.assertEqual([row['id'] for row in self.client.get(url).data['batches']], [lead_item.batch_id])
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get(url).data['batches'], [])
+        self.assertEqual(self.client.delete(f'{url}{lead_item.pk}/').status_code, 404)
+        self.assertEqual(self.client.delete(f'{url}batches/{lead_item.batch_id}/').status_code, 404)
+        self.assertEqual(self.client.post(url, {
+            'batch_id': lead_item.batch_id, 'question_type': 'identification',
+            'question_text': 'Borrowed?', 'correct_answer': 'No',
+        }, format='json').status_code, 400)
+        self.assertEqual(self.client.post(url, {
+            'batch_id': other_course_batch.pk, 'question_type': 'identification',
+            'question_text': 'Other course?', 'correct_answer': 'No',
+        }, format='json').status_code, 400)
+        exam = ExamSet.objects.create(subject=self.subject, created_by=self.other, title='Other exam')
+        self.assertEqual(self.client.post(
+            f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{exam.pk}/questions/from-bank/',
+            {'question_ids': [lead_item.pk]}, format='json',
+        ).status_code, 400)
+        own = self.client.post(url, {
+            'batch_name': 'My questions', 'question_type': 'identification',
+            'question_text': 'Other question?', 'correct_answer': 'Other answer',
+        }, format='json')
+        self.assertEqual(own.status_code, 201, own.data)
+        self.assertEqual(QuestionBankItem.objects.get(pk=own.data['id']).batch.created_by_id, self.other.pk)
+        self.assertEqual([row['id'] for row in self.client.get(url).data['batches']], [
+            QuestionBankItem.objects.get(pk=own.data['id']).batch_id,
+        ])
 
 
 class ExamListOrderingTests(TestCase):
