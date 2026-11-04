@@ -665,7 +665,8 @@ class CourseEnrollmentUniquenessTests(TestCase):
             'email': self.email.upper(), 'student_set_id': self.second_set.pk,
         }, format='json')
         self.assertEqual(duplicate.status_code, 409, duplicate.data)
-        self.assertIn('Section A', duplicate.data['error'])
+        self.assertIn('already enrolled', duplicate.data['error'])
+        self.assertNotIn('Section A', duplicate.data['error'])
         self.assertEqual(EnrolledStudent.objects.filter(student_set__subject=self.subject).count(), 1)
 
     def test_bulk_and_general_enrollment_skip_second_course_roster(self):
@@ -688,10 +689,14 @@ class CourseEnrollmentUniquenessTests(TestCase):
     def test_student_can_move_to_another_roster_after_removal(self):
         enrollment = EnrolledStudent.objects.create(email=self.email, student_set=self.first_set)
         self.client.force_authenticate(self.other)
-        remove = self.client.delete(
+        denied = self.client.delete(
             f'/api/instructor/subjects/{self.subject.pk}/students/{enrollment.pk}/',
         )
+        self.assertEqual(denied.status_code, 404)
+        self.client.force_authenticate(self.lead)
+        remove = self.client.delete(f'/api/instructor/subjects/{self.subject.pk}/students/{enrollment.pk}/')
         self.assertEqual(remove.status_code, 204)
+        self.client.force_authenticate(self.other)
         add = self.client.post(f'/api/instructor/subjects/{self.subject.pk}/students/', {
             'email': self.email, 'student_set_id': self.second_set.pk,
         }, format='json')
@@ -711,6 +716,67 @@ class CourseEnrollmentUniquenessTests(TestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(EnrolledStudent.objects.filter(email=self.email).count(), 2)
+
+    def test_each_instructor_sees_and_manages_only_own_sections(self):
+        EnrolledStudent.objects.create(email=self.email, student_set=self.first_set)
+        own = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/sets/')
+        self.assertEqual([row['id'] for row in own.data['sets']], [self.first_set.pk])
+        self.client.force_authenticate(self.other)
+        sections = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/sets/')
+        self.assertEqual([row['id'] for row in sections.data['sets']], [self.second_set.pk])
+        students = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/students/')
+        self.assertEqual(students.data['students'], [])
+        general = self.client.get('/api/instructor/students/')
+        self.assertEqual(general.data['students'], [])
+        self.assertEqual(self.client.delete(
+            f'/api/instructor/subjects/{self.subject.pk}/sets/{self.first_set.pk}/'
+        ).status_code, 404)
+        self.assertEqual(self.client.post('/api/instructor/students/', {
+            'email': self.email, 'student_set_id': self.first_set.pk,
+        }, format='json').status_code, 404)
+        self.assertEqual(self.client.post(
+            f'/api/instructor/sets/{self.first_set.pk}/enroll-bulk/',
+            {'emails': [self.email]}, format='json',
+        ).status_code, 404)
+
+    def test_same_section_name_is_allowed_for_another_instructor_only(self):
+        self.client.force_authenticate(self.other)
+        url = f'/api/instructor/subjects/{self.subject.pk}/sets/'
+        first = self.client.post(url, {'name': 'Section A'}, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(self.client.post(url, {'name': 'section a'}, format='json').status_code, 409)
+
+    def test_suggestions_only_include_available_admin_enrolled_students(self):
+        url = f'/api/instructor/subjects/{self.subject.pk}/available-students/'
+        available = User.objects.create_user('candidate', email='candidate@dnsc.edu.ph', first_name='Candidate')
+        UserProfile.objects.create(user=available, role='student', is_enrolled=True)
+        disabled = User.objects.create_user('disabled', email='disabled@dnsc.edu.ph', first_name='Candidate')
+        UserProfile.objects.create(user=disabled, role='student', is_enrolled=False)
+        EnrolledStudent.objects.create(email=self.email, student_set=self.second_set)
+        result = self.client.get(url, {'q': 'dnsc.edu.ph'})
+        self.assertEqual([row['email'] for row in result.data['students']], [available.email])
+        self.assertEqual(self.client.get(url, {'q': 'c'}).data['students'], [])
+
+    def test_course_counts_and_exam_progress_use_own_students(self):
+        EnrolledStudent.objects.create(email=self.email, student_set=self.first_set)
+        exam = ExamSet.objects.create(subject=self.subject, title='Shared exam', is_final=True)
+        self.client.force_authenticate(self.other)
+        courses = self.client.get('/api/instructor/subjects/')
+        self.assertEqual(courses.data['subjects'][0]['student_count'], 0)
+        progress = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/exam-progress/')
+        self.assertEqual(progress.data['progress'], [])
+        stats = self.client.get(f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{exam.pk}/stats/')
+        self.assertEqual(stats.data['examinees'], [])
+
+    def test_student_course_names_the_section_owner(self):
+        EnrolledStudent.objects.create(email=self.email, student_set=self.second_set)
+        self.other.first_name = 'Other'
+        self.other.last_name = 'Instructor'
+        self.other.save(update_fields=['first_name', 'last_name'])
+        student = User.objects.get(email=self.email)
+        self.client.force_authenticate(student)
+        result = self.client.get('/api/student/subjects/')
+        self.assertEqual(result.data['subjects'][0]['instructor_name'], 'Other Instructor')
 
 
 class ExamListOrderingTests(TestCase):

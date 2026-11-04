@@ -5,7 +5,7 @@ from django.core.files.base import ContentFile
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Exists, Q
+from django.db.models import Count, Exists, OuterRef, Q
 from django.db.models.functions import Lower
 from django.http import FileResponse
 from django.utils import timezone
@@ -874,7 +874,6 @@ def admin_course_detail(request, subject_id):
         Q(instructor__in=instructors) | Q(additional_instructors__in=instructors)
     ).exists():
         return Response({'error': 'An assigned instructor already has a course with that code.'}, status=status.HTTP_409_CONFLICT)
-    previous_instructor_id = subject.instructor_id
     with transaction.atomic():
         subject.category = category
         subject.instructor = instructors[0]
@@ -883,8 +882,11 @@ def admin_course_detail(request, subject_id):
         removed_ids = set(current_ids) - {instructor.id for instructor in instructors}
         if removed_ids:
             subject.archived_by.remove(*removed_ids)
-        if previous_instructor_id != instructors[0].id:
-            subject.student_sets.update(created_by=instructors[0])
+        # Keep sections owned by instructors who remain assigned. Transfer only
+        # orphaned sections so existing enrollments remain available.
+        subject.student_sets.filter(
+            Q(created_by__isnull=True) | Q(created_by_id__in=removed_ids)
+        ).update(created_by=instructors[0])
     return Response(_serialize_admin_course(subject))
 
 
@@ -1406,8 +1408,8 @@ def enrolled_students(request):
     if request.method == 'GET':
         qs = EnrolledStudent.objects.filter(
             Q(student_set__created_by=request.user, student_set__subject__isnull=True)
-            | Q(student_set__subject__instructor=request.user)
-            | Q(student_set__subject__additional_instructors=request.user)
+            | Q(student_set__created_by=request.user, student_set__subject__instructor=request.user)
+            | Q(student_set__created_by=request.user, student_set__subject__additional_instructors=request.user)
         ).distinct().select_related(
             'student_set'
         ).order_by('student_set_id', 'email')
@@ -1444,8 +1446,8 @@ def enrolled_students(request):
 
     roster = StudentSet.objects.filter(
         Q(created_by=request.user, subject__isnull=True)
-        | Q(subject__instructor=request.user)
-        | Q(subject__additional_instructors=request.user),
+        | Q(created_by=request.user, subject__instructor=request.user)
+        | Q(created_by=request.user, subject__additional_instructors=request.user),
         id=student_set_id,
     ).distinct().first()
     if not roster:
@@ -1469,7 +1471,7 @@ def enrolled_students(request):
         )
     if existing:
         message = (
-            f'This student is already enrolled in this course through {existing.student_set.name}.'
+            'This student is already enrolled in another section of this course.'
             if roster.subject_id and existing.student_set_id != roster.id
             else 'This email is already in this set.'
         )
@@ -1494,6 +1496,37 @@ _SPREADSHEET_EMAIL_RE = re.compile(
 )
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def available_course_students(request, subject_id):
+    """Suggest admin-enrolled students who are not already in this course."""
+    if not _is_instructor(request.user):
+        return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if not Subject.objects.filter(
+        Q(instructor=request.user) | Q(additional_instructors=request.user), pk=subject_id,
+    ).exists():
+        return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
+    query = (request.query_params.get('q') or '').strip()[:100]
+    if len(query) < 2:
+        return Response({'students': []})
+    existing = EnrolledStudent.objects.filter(
+        student_set__subject_id=subject_id,
+        email__iexact=OuterRef('user__email'),
+    )
+    candidates = (
+        UserProfile.objects.filter(role='student', is_enrolled=True, user__is_active=True)
+        .filter(Q(user__email__icontains=query) | Q(user__first_name__icontains=query)
+                | Q(user__last_name__icontains=query))
+        .annotate(already_in_course=Exists(existing))
+        .filter(already_in_course=False)
+        .select_related('user').order_by('user__last_name', 'user__first_name', 'user__email')[:10]
+    )
+    return Response({'students': [
+        {'name': profile.user.get_full_name().strip(), 'email': profile.user.email}
+        for profile in candidates
+    ]})
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def bulk_enroll_students(request, set_id):
@@ -1502,8 +1535,8 @@ def bulk_enroll_students(request, set_id):
 
     roster = StudentSet.objects.filter(
         Q(created_by=request.user, subject__isnull=True)
-        | Q(subject__instructor=request.user)
-        | Q(subject__additional_instructors=request.user),
+        | Q(created_by=request.user, subject__instructor=request.user)
+        | Q(created_by=request.user, subject__additional_instructors=request.user),
         id=set_id,
     ).distinct().first()
     if not roster:
@@ -1610,7 +1643,7 @@ def bulk_enroll_students(request, set_id):
                 detail = {
                     'email': email,
                     'reason': (
-                        f'Already enrolled in this course through {existing.student_set.name}.'
+                        'Already enrolled in another section of this course.'
                         if roster.subject_id and existing.student_set_id != roster.id
                         else 'Already in this section.'
                     ),
@@ -1711,7 +1744,10 @@ def instructor_subjects(request):
         archived_ids = set(request.user.archived_subjects.values_list('id', flat=True))
         qs = (
             Subject.objects.filter(Q(instructor=request.user) | Q(additional_instructors=request.user)).distinct()
-            .annotate(student_count=Count('student_sets__students__email', distinct=True))
+            .annotate(student_count=Count(
+                'student_sets__students__email',
+                filter=Q(student_sets__created_by=request.user), distinct=True,
+            ))
             .order_by('name')
         )
         rows = [
@@ -1823,7 +1859,7 @@ def subject_students(request, subject_id):
 
     if request.method == 'GET':
         qs = (
-            EnrolledStudent.objects.filter(student_set__subject=subject)
+            EnrolledStudent.objects.filter(student_set__subject=subject, student_set__created_by=request.user)
             .select_related('student_set')
             .order_by('email')
         )
@@ -1857,6 +1893,7 @@ def subject_students(request, subject_id):
     roster = StudentSet.objects.filter(
         id=student_set_id,
         subject=subject,
+        created_by=request.user,
     ).first()
     if not roster:
         return Response({'error': 'Student set not found for this subject.'}, status=status.HTTP_404_NOT_FOUND)
@@ -1873,7 +1910,7 @@ def subject_students(request, subject_id):
         return Response({'error': 'Student already enrolled in this set.'}, status=status.HTTP_409_CONFLICT)
     if existing:
         message = (
-            f'Student already enrolled in this course through {existing.student_set.name}.'
+            'Student already enrolled in another section of this course.'
             if existing.student_set_id != roster.id
             else 'Student already enrolled in this set.'
         )
@@ -1903,6 +1940,7 @@ def subject_student_detail(request, subject_id, enrollment_id):
         .filter(
             Q(student_set__subject__instructor=request.user)
             | Q(student_set__subject__additional_instructors=request.user),
+            student_set__created_by=request.user,
             id=enrollment_id,
             student_set__subject_id=subject_id,
         )
@@ -1929,7 +1967,7 @@ def subject_sets(request, subject_id):
 
     if request.method == 'GET':
         rows = (
-            StudentSet.objects.filter(subject=subject)
+            StudentSet.objects.filter(subject=subject, created_by=request.user)
             .annotate(student_count=Count('students', distinct=True))
             .values('id', 'name', 'created_at', 'student_count')
             .order_by('name')
@@ -1939,9 +1977,11 @@ def subject_sets(request, subject_id):
     name = (request.data.get('name') or '').strip()
     if not name:
         return Response({'error': 'Set name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-    if StudentSet.objects.filter(subject=subject, name__iexact=name).exists():
-        return Response({'error': 'Set name already exists in this subject.'}, status=status.HTTP_409_CONFLICT)
-    roster = StudentSet.objects.create(name=name, created_by=request.user, subject=subject)
+    with transaction.atomic():
+        Subject.objects.select_for_update().get(pk=subject.pk)
+        if StudentSet.objects.filter(subject=subject, created_by=request.user, name__iexact=name).exists():
+            return Response({'error': 'You already have a section with this name in this course.'}, status=status.HTTP_409_CONFLICT)
+        roster = StudentSet.objects.create(name=name, created_by=request.user, subject=subject)
     return Response(
         {'id': roster.id, 'name': roster.name, 'created_at': roster.created_at, 'student_count': 0},
         status=status.HTTP_201_CREATED,
@@ -1958,6 +1998,7 @@ def subject_set_detail(request, subject_id, set_id):
             Q(subject__instructor=request.user) | Q(subject__additional_instructors=request.user),
             id=set_id,
             subject_id=subject_id,
+            created_by=request.user,
         )
         .distinct()
         .prefetch_related('students')
@@ -2199,6 +2240,7 @@ def exam_set_stats(request, subject_id, exam_set_id):
 
     students = EnrolledStudent.objects.filter(
         student_set__subject_id=subject_id,
+        student_set__created_by=request.user,
     ).select_related('student_set')
     
     submissions = list(
@@ -2289,7 +2331,11 @@ def instructor_submission_snapshot(request, subject_id, exam_set_id, submission_
         pk=submission_id,
         exam_set_id=exam_set_id,
         exam_set__subject_id=subject_id,
-    ).distinct().only('latest_snapshot').first()
+    ).annotate(is_my_student=Exists(EnrolledStudent.objects.filter(
+        email__iexact=OuterRef('student_email'),
+        student_set__subject_id=subject_id,
+        student_set__created_by=request.user,
+    ))).filter(is_my_student=True).distinct().only('latest_snapshot').first()
     if not submission or not submission.latest_snapshot:
         return Response({'error': 'Snapshot not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -2327,6 +2373,11 @@ def subject_exam_progress(request, subject_id):
         exam_set = ExamSet.objects.filter(id=exam_set_id, subject=subject).first()
         if not exam_set:
             return Response({'error': 'Exam set not found for this subject.'}, status=status.HTTP_404_NOT_FOUND)
+        if not EnrolledStudent.objects.filter(
+            student_set__subject=subject, student_set__created_by=request.user,
+            email__iexact=student_email,
+        ).exists():
+            return Response({'error': 'Student is not in your sections.'}, status=status.HTTP_404_NOT_FOUND)
 
         submitted_at_value = parse_datetime(submitted_at_raw) if submitted_at_raw else timezone.now()
         if submitted_at_raw and submitted_at_value is None:
@@ -2361,6 +2412,7 @@ def subject_exam_progress(request, subject_id):
     enrollment_qs = (
         EnrolledStudent.objects.filter(
             student_set__subject=subject,
+            student_set__created_by=request.user,
         )
         .select_related('student_set')
     )
@@ -2494,7 +2546,7 @@ def my_subjects(request):
             email__iexact=request.user.email,
             student_set__subject__isnull=False,
         )
-        .select_related('student_set', 'student_set__subject', 'student_set__subject__instructor')
+        .select_related('student_set', 'student_set__created_by', 'student_set__subject', 'student_set__subject__instructor')
         .order_by('student_set__subject__name')
     )
     subjects = []
@@ -2504,10 +2556,8 @@ def my_subjects(request):
         if subject.id in seen:
             continue
         seen.add(subject.id)
-        instructor_name = (
-            subject.instructor.get_full_name().strip()
-            or subject.instructor.username
-        )
+        assigned_instructor = row.student_set.created_by or subject.instructor
+        instructor_name = assigned_instructor.get_full_name().strip() or assigned_instructor.username
         subjects.append(
             {
                 'id': subject.id,
@@ -4415,6 +4465,11 @@ def instructor_integrity_report(request, subject_id, exam_set_id):
     student_email = (request.query_params.get('student_email') or '').strip().lower()
     if not student_email:
         return Response({'error': 'student_email query parameter is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not EnrolledStudent.objects.filter(
+        email__iexact=student_email, student_set__subject_id=subject_id,
+        student_set__created_by=request.user,
+    ).exists():
+        return Response({'error': 'No submission found for this student.'}, status=status.HTTP_404_NOT_FOUND)
 
     submission = ExamSubmission.objects.filter(exam_set=exam_set, student_email=student_email).first()
     if not submission:

@@ -828,7 +828,14 @@
 
                   <div class="enroll-quick">
                     <form class="enroll-inline-form" @submit.prevent="enrollStudentToSubject">
-                      <input v-model="subjectStudentEmail" type="email" placeholder="student@dnsc.edu.ph" required aria-label="Student email" />
+                      <div class="enroll-suggest">
+                        <input v-model="subjectStudentEmail" type="email" placeholder="Search name or school email" required aria-label="Student email" autocomplete="off" aria-autocomplete="list" :aria-expanded="showStudentSuggestions && studentSuggestions.length > 0" aria-controls="available-student-options" @input="searchAvailableStudents" @focus="searchAvailableStudents" @blur="hideStudentSuggestions" />
+                        <div v-if="showStudentSuggestions && studentSuggestions.length" id="available-student-options" class="enroll-suggest__list" role="listbox" aria-label="Available students">
+                          <button v-for="student in studentSuggestions" :key="student.email" type="button" class="enroll-suggest__option" role="option" @mousedown.prevent="selectStudentSuggestion(student)">
+                            <strong>{{ student.name || student.email }}</strong><span>{{ student.email }}</span>
+                          </button>
+                        </div>
+                      </div>
                       <button type="submit" class="primary-btn" :disabled="studentsLoading">Enroll</button>
                     </form>
                     <button type="button" class="ghost-btn" :class="{ 'ghost-btn--on': showBatchEnroll }" @click="showBatchEnroll = !showBatchEnroll">
@@ -2127,6 +2134,38 @@ const subjectSetsLoading = ref(false);
 const subjectStudents = ref([]);
 const studentsLoading = ref(false);
 const subjectStudentEmail = ref("");
+const studentSuggestions = ref([]);
+const showStudentSuggestions = ref(false);
+let studentSuggestionTimer = null;
+let studentSuggestionRequest = 0;
+function searchAvailableStudents() {
+  clearTimeout(studentSuggestionTimer);
+  const query = subjectStudentEmail.value.trim();
+  const requestId = ++studentSuggestionRequest;
+  studentSuggestions.value = [];
+  showStudentSuggestions.value = query.length >= 2;
+  if (!showStudentSuggestions.value || !selectedSubjectId.value) return;
+  const subjectId = selectedSubjectId.value;
+  studentSuggestionTimer = setTimeout(async () => {
+    try {
+      const { data } = await apiClient.get(`/api/instructor/subjects/${subjectId}/available-students/`, { params: { q: query } });
+      if (requestId === studentSuggestionRequest && subjectId === selectedSubjectId.value) {
+        studentSuggestions.value = data.students || [];
+      }
+    } catch {
+      if (requestId === studentSuggestionRequest) studentSuggestions.value = [];
+    }
+  }, 220);
+}
+function selectStudentSuggestion(student) {
+  subjectStudentEmail.value = student.email;
+  showStudentSuggestions.value = false;
+  studentSuggestions.value = [];
+  ++studentSuggestionRequest;
+}
+function hideStudentSuggestions() {
+  showStudentSuggestions.value = false;
+}
 const examSets = ref([]);
 const examSetsLoading = ref(false);
 const examUploading = ref(false);
@@ -2670,7 +2709,11 @@ function closeCourseActionsMenuOnOutsideClick(event) {
 }
 
 onMounted(() => document.addEventListener('pointerdown', closeCourseActionsMenuOnOutsideClick));
-onUnmounted(() => document.removeEventListener('pointerdown', closeCourseActionsMenuOnOutsideClick));
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', closeCourseActionsMenuOnOutsideClick);
+  clearTimeout(studentSuggestionTimer);
+  ++studentSuggestionRequest;
+});
 
 function goDashboard() {
   router.push("/instructor/dashboard");
@@ -3025,6 +3068,8 @@ async function enrollStudentToSubject() {
     });
     showSuccess('Student enrolled', 'The student was added to this course.');
     subjectStudentEmail.value = "";
+    studentSuggestions.value = [];
+    showStudentSuggestions.value = false;
     await fetchSubjects();
     await refreshSetsView();
   } catch (err) {
@@ -3935,8 +3980,22 @@ onMounted(async () => {
 
 <style scoped>
 @import '@/assets/dashboard.css';
-
-
+.enroll-suggest { position: relative; flex: 1; min-width: 0; }
+.enroll-suggest input { width: 100%; }
+.enroll-suggest__list {
+  position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; right: 0;
+  max-height: 250px; overflow-y: auto; padding: 5px;
+  background: #fff; border: 1px solid #d7e1ed; border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(25, 48, 80, .14);
+}
+.enroll-suggest__option {
+  width: 100%; display: flex; flex-direction: column; align-items: flex-start;
+  gap: 2px; padding: 9px 11px; border: 0; border-radius: 8px;
+  background: transparent; color: #1d3461; font: inherit; text-align: left; cursor: pointer;
+}
+.enroll-suggest__option:hover, .enroll-suggest__option:focus-visible { background: #edf3fa; outline: none; }
+.enroll-suggest__option strong { font-size: .84rem; }
+.enroll-suggest__option span { color: #657792; font-size: .75rem; }
 /* Premium Proctoring Toggle UI */
 .premium-toggle-card {
   display: flex;

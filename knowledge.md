@@ -47,12 +47,17 @@ Admins create courses and assign one or more active instructors to each course.
 A course belongs to one institute (IC, ITED, IASS, or ILEGG) or the separate
 Minor courses group. Institute courses can be assigned only to instructors in
 that institute; minor courses can be assigned to instructors from any institute.
-The original instructor field remains the lead instructor for legacy data and
-student-facing labels; additional instructors share access to exams and rosters.
-Students can belong to only one roster for a given course, even when different
-assigned instructors manage the rosters. Enrollment into another roster in the
-same course is rejected or skipped during bulk import; remove the old enrollment
-before moving the student.
+The original instructor field remains the lead instructor for legacy data.
+Each instructor sees and manages only the course sections and students assigned
+to that instructor; a student's course card names the owner of their section.
+Shared course exams remain available to assigned instructors, but exam progress,
+statistics, reports, and snapshots include only students in their own sections.
+Students can belong to only one section for a given course, even when different
+instructors manage the sections. Enrollment into another section in the same
+course is rejected or skipped during bulk import; the owning instructor must
+remove the old enrollment before moving the student. Section names are unique
+within each instructor's course sections. Manual enrollment suggests active,
+admin-enrolled students who are not already in that course.
 Instructor `.xlsx` attendance imports search every worksheet and column for email
 addresses, including multiple addresses in one cell. Only school addresses that
 match an admin-enrolled student account are added. The import response lists
@@ -64,6 +69,8 @@ banner and archive a course from their own active list. Each instructor has an
 independent archive; restoring returns the course to that instructor's list.
 Archiving does not remove exams, student records, or other instructors' access.
 Admins can edit an instructor's school email or delete an instructor account.
+Reassigning a course preserves sections owned by instructors who remain assigned;
+sections of removed instructors and legacy unowned sections move to the new lead.
 Email edits update the Django login username as well as the email, so the new
 school Google address is used on the next sign-in. Deletion requires all course
 assignments to be reassigned first; standalone rosters remain after removal.
