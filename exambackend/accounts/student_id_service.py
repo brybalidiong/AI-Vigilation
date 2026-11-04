@@ -19,13 +19,16 @@ def _tokens(value):
     return re.findall(r'[A-Z]+', ascii_text.upper())
 
 
-def _read_text(image, page_mode=6, enhance=True):
+def _read_text(image, page_mode=6, enhance=True, white_on_dark=False):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     scale = min(2.0, 2200 / max(gray.shape))
     if abs(scale - 1) > .01:
         gray = cv2.resize(gray, None, fx=scale, fy=scale,
                           interpolation=cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA)
-    if enhance:
+    if white_on_dark:
+        _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+        gray = cv2.copyMakeBorder(gray, 16, 16, 16, 16, cv2.BORDER_CONSTANT, value=255)
+    elif enhance:
         gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
     ok, encoded = cv2.imencode('.png', gray)
     if not ok:
@@ -105,6 +108,29 @@ def _school_header_matches(image):
     return False
 
 
+def _student_label_matches(image):
+    height, width = image.shape[:2]
+    if _ocr_matches(image[int(height * .61):int(height * .77), :], _role_matches):
+        return True
+    lower = image[int(height * .58):int(height * .84), :]
+    if _role_matches(_read_text(lower, page_mode=11, enhance=False)):
+        return True
+
+    # The white STUDENT text is printed on a dark full-width strip. Find the
+    # darkest strip instead of assuming it occupies the same rows on every card.
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    start, stop = int(height * .60), int(height * .84)
+    row_means = gray[start:stop, int(width * .12):int(width * .88)].mean(axis=1)
+    window = max(8, int(height * .035))
+    if len(row_means) < window:
+        return False
+    running_mean = np.convolve(row_means, np.ones(window) / window, mode='valid')
+    center = start + int(np.argmin(running_mean)) + window // 2
+    half_height = max(window, int(height * .045))
+    band = image[max(0, center - half_height):min(height, center + half_height), :]
+    return _role_matches(_read_text(band, page_mode=7, enhance=False, white_on_dark=True))
+
+
 def verify_student_id(image_bytes, first_name, last_name):
     """Return the ID portrait embedding; fail closed on unreadable or mismatched IDs."""
     if not image_bytes or len(image_bytes) > 5 * 1024 * 1024:
@@ -118,8 +144,7 @@ def verify_student_id(image_bytes, first_name, last_name):
 
     if not _school_header_matches(image):
         raise StudentIdError('This does not appear to be a DNSC student ID. Upload the front of your DNSC ID.')
-    role_image = image[int(height * .61):int(height * .77), :]
-    if not _ocr_matches(role_image, _role_matches):
+    if not _student_label_matches(image):
         raise StudentIdError('The student label could not be read. Retake the photo with the entire ID visible.')
     name_region = image[int(height * .52):int(height * .70), int(width * .05):int(width * .96)]
     if not _ocr_matches(name_region, lambda text: _name_matches(text, first_name, last_name)):

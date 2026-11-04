@@ -112,9 +112,20 @@ class StudentIdReadingTests(SimpleTestCase):
 
     @patch('accounts.student_id_service._read_text')
     def test_missing_student_label_is_rejected(self, read_text):
-        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE', 'FACULTY', 'FACULTY', 'FACULTY']
+        read_text.side_effect = ['DAVAO DEL NORTE STATE COLLEGE'] + ['FACULTY'] * 5
         with self.assertRaises(StudentIdError):
             verify_student_id(self.image, 'Alex', 'Reyes')
+
+    @patch('accounts.student_id_service._get_face_features', return_value=np.array([[0.1, 0.2]], dtype=np.float32))
+    @patch('accounts.student_id_service._read_text')
+    def test_white_student_label_on_dark_band_has_focused_fallback(self, read_text, _features):
+        read_text.side_effect = [
+            'DAVAO DEL NORTE STATE COLLEGE',
+            'STU', 'DENT', '', '',
+            'STUDENT', 'ALEX REYES',
+        ]
+        self.assertEqual(len(verify_student_id(self.image, 'Alex', 'Reyes')), 2)
+        self.assertTrue(read_text.call_args_list[5].kwargs['white_on_dark'])
 
     @patch('accounts.student_id_service._get_face_features', return_value=None)
     @patch('accounts.student_id_service._read_text')

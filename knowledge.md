@@ -23,6 +23,9 @@ AI-Vigilation is a capstone online exam platform. It supports exam creation, stu
   differences. School OCR combines readings from the top of the card and a
   text-focused header crop, and retries sparse OCR when ordinary OCR cannot
   read a marker. OCR input is capped in size to avoid timing out on large photos.
+  When the white STUDENT label is unreadable in the standard crop, the reader
+  checks a wider lower region and then isolates the dark printed band for a
+  single-line, contrast-inverted OCR pass.
   Spacing differences in a given name (such as two printed words joined in the
   account) are accepted only when the complete first and last names still match.
 - **Exam face liveness:** The verification dialog first confirms a clearly visible face and shows the live camera preview. It then prompts the student to blink before the ID portrait comparison. A short webcam sequence is analyzed on the backend for both eyes open, closed, then reopened; a single still photo cannot pass. The matching face is taken from the reopened frame. This basic motion check does not establish camera authenticity and may still be defeated by a replayed video or a manipulated client.
