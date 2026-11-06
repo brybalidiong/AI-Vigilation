@@ -64,6 +64,11 @@ def _enroll_student_in_set_once(email: str, roster: StudentSet):
     """Keep one course enrollment even when instructors use different rosters."""
     with transaction.atomic():
         if roster.subject_id:
+            category = roster.subject.category
+            if category and category != Subject.CATEGORY_MINOR and not UserProfile.objects.filter(
+                user__email__iexact=email, role='student', is_enrolled=True, institute=category,
+            ).exists():
+                raise ValueError(f'Student must belong to the {category} institute for this course.')
             # Serialize enrollments for this course across its instructors.
             Subject.objects.select_for_update().get(pk=roster.subject_id)
             existing = EnrolledStudent.objects.filter(
@@ -1650,9 +1655,10 @@ def available_course_students(request, subject_id):
     """Suggest admin-enrolled students who are not already in this course."""
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
-    if not Subject.objects.filter(
+    subject = Subject.objects.filter(
         Q(instructor=request.user) | Q(additional_instructors=request.user), pk=subject_id,
-    ).exists():
+    ).first()
+    if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
     query = (request.query_params.get('q') or '').strip()[:100]
     if len(query) < 2:
@@ -1667,8 +1673,11 @@ def available_course_students(request, subject_id):
                 | Q(user__last_name__icontains=query))
         .annotate(already_in_course=Exists(existing))
         .filter(already_in_course=False)
-        .select_related('user').order_by('user__last_name', 'user__first_name', 'user__email')[:10]
+        .select_related('user')
     )
+    if subject.category and subject.category != Subject.CATEGORY_MINOR:
+        candidates = candidates.filter(institute=subject.category)
+    candidates = candidates.order_by('user__last_name', 'user__first_name', 'user__email')[:10]
     return Response({'students': [
         {'name': profile.user.get_full_name().strip(), 'email': profile.user.email}
         for profile in candidates
@@ -2055,6 +2064,8 @@ def subject_students(request, subject_id):
 
     try:
         enrollment, existing = _enroll_student_in_set_once(email, roster)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     except IntegrityError:
         return Response({'error': 'Student already enrolled in this set.'}, status=status.HTTP_409_CONFLICT)
     if existing:
@@ -2123,12 +2134,13 @@ def subject_sets(request, subject_id):
         )
         return Response({'sets': list(rows)}, status=status.HTTP_200_OK)
 
-    name = (request.data.get('name') or '').strip()
+    name = re.sub(r'\s+', ' ', (request.data.get('name') or '').strip())
     if not name:
         return Response({'error': 'Set name is required.'}, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
         Subject.objects.select_for_update().get(pk=subject.pk)
-        if StudentSet.objects.filter(subject=subject, name__iexact=name).exists():
+        if any(re.sub(r'\s+', ' ', existing_name.strip()).casefold() == name.casefold()
+               for existing_name in StudentSet.objects.filter(subject=subject).values_list('name', flat=True)):
             return Response({'error': 'A section with this name already exists in this course.'}, status=status.HTTP_409_CONFLICT)
         roster = StudentSet.objects.create(name=name, created_by=request.user, subject=subject)
     return Response(
@@ -2330,6 +2342,17 @@ def subject_exam_set_detail(request, subject_id, exam_set_id):
         return Response({'error': 'Exam set not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'PATCH':
+        if request.data.get('action') == 'extend_deadline':
+            due_at = parse_datetime(str(request.data.get('due_at') or ''))
+            if not due_at:
+                return Response({'error': 'Enter a valid end date and time.'}, status=status.HTTP_400_BAD_REQUEST)
+            if timezone.is_naive(due_at):
+                due_at = timezone.make_aware(due_at, timezone.get_current_timezone())
+            if due_at <= timezone.now() or (exam_set.due_at and due_at <= exam_set.due_at):
+                return Response({'error': 'Choose a new end time later than the current end time and now.'}, status=status.HTTP_400_BAD_REQUEST)
+            exam_set.due_at = due_at
+            exam_set.save(update_fields=['due_at'])
+            return Response({'id': exam_set.id, 'due_at': exam_set.due_at})
         if exam_set.is_final:
             return Response(
                 {'error': 'A finalized exam cannot be changed.'},

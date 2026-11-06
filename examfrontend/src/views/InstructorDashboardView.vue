@@ -76,6 +76,7 @@
             <div class="role-pill">Instructor</div>
           </div>
         </header>
+        <div v-if="error" class="error global action-error" role="alert">{{ error }} <button type="button" @click="error = ''" aria-label="Dismiss error">×</button></div>
 
 
         <!-- DASHBOARD TAB -->
@@ -469,6 +470,7 @@
                     <h3 class="create-panel__title">Create New Exam</h3>
                     <p class="create-panel__sub">Set the exam schedule and rules, then choose questions from this course's Question Bank.</p>
                   </div>
+                  <button type="button" class="ghost-btn" @click="showUploadExamPanel = false" aria-label="Close exam creation">Close</button>
                 </div>
                 <form @submit.prevent="createExamSet">
                   <div class="upload-exam-grid">
@@ -562,9 +564,19 @@
                   <button class="moodle-btn-ghost" type="button" @click="openExamStats(exam)">
                     Stats
                   </button>
+                  <button v-if="exam.is_final" class="moodle-btn-ghost" type="button" @click="editingExamDeadlineId = exam.id; extendedExamDueAt = ''">
+                    {{ examLifecycle(exam) === 'ended' ? 'Reopen' : 'Extend' }}
+                  </button>
                   <button class="moodle-btn-ghost moodle-btn-ghost--danger" type="button" @click="requestRemoveExamSet(exam.id)" aria-label="Delete exam">
                     Delete
                   </button>
+                </template>
+                <template #details>
+                  <form v-if="editingExamDeadlineId === exam.id" class="exam-deadline-editor" @submit.prevent="saveExamDeadline(exam)">
+                    <label>New closing date and time <input v-model="extendedExamDueAt" type="datetime-local" required /></label>
+                    <button type="submit" class="primary-btn" :disabled="deadlineSaving">{{ deadlineSaving ? 'Saving…' : 'Save' }}</button>
+                    <button type="button" class="ghost-btn" @click="editingExamDeadlineId = null">Cancel</button>
+                  </form>
                 </template>
               </ExamRow>
             </template>
@@ -1234,7 +1246,6 @@
 
         <!-- GLOBAL MESSAGES -->
         <NoticeModal :model-value="Boolean(message)" :title="messageTitle" :message="message" @close="message = ''" />
-        <p v-if="error" class="error global">{{ error }}</p>
 
       </main>
 
@@ -2127,6 +2138,9 @@ apiClient.interceptors.response.use(
 
 const activeCourseTab = ref("uploaded-exams");
 const showUploadExamPanel = ref(false);
+const editingExamDeadlineId = ref(null);
+const extendedExamDueAt = ref('');
+const deadlineSaving = ref(false);
 const subjects = ref([]);
 const subjectsLoading = ref(false);
 const selectedSubjectId = ref(null);
@@ -2423,7 +2437,7 @@ function examLifecycle(exam) {
 
 function examLifecycleLabel(exam) {
   const key = examLifecycle(exam);
-  return { upcoming: "Opens later", open: "Open now", ended: "Ended", draft: "Draft" }[key] || "";
+  return { upcoming: "Opens later", open: "Open now", ended: "Closed", draft: "Draft" }[key] || "";
 }
 
 const displayedExams = computed(() => {
@@ -3192,9 +3206,14 @@ async function createSubjectSet() {
   }
   error.value = "";
   message.value = "";
+  const requestedName = newSubjectSetName.value.trim().replace(/\s+/g, ' ');
+  if (subjectSets.value.some(set => set.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === requestedName.toLocaleLowerCase())) {
+    error.value = 'A section with this name already exists in this course.';
+    return;
+  }
   try {
     await apiClient.post(`/api/instructor/subjects/${selectedSubjectId.value}/sets/`, {
-      name: newSubjectSetName.value.trim(),
+      name: requestedName,
     });
     showSuccess('Set created', 'The new set was added to this course.');
     newSubjectSetName.value = "";
@@ -3202,6 +3221,25 @@ async function createSubjectSet() {
     await refreshSetsView();
   } catch (err) {
     error.value = err?.response?.data?.error || "Unable to create set.";
+  }
+}
+
+async function saveExamDeadline(exam) {
+  if (!extendedExamDueAt.value || deadlineSaving.value) return;
+  deadlineSaving.value = true;
+  error.value = '';
+  try {
+    const { data } = await apiClient.patch(`/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${exam.id}/`, {
+      action: 'extend_deadline', due_at: localDatetimeInputToApi(extendedExamDueAt.value),
+    });
+    exam.due_at = data.due_at;
+    editingExamDeadlineId.value = null;
+    await fetchUpcomingExams();
+    showSuccess('Exam schedule updated', 'The new closing time is available to students.');
+  } catch (err) {
+    error.value = err?.response?.data?.error || 'Unable to update the exam closing time.';
+  } finally {
+    deadlineSaving.value = false;
   }
 }
 
@@ -4849,5 +4887,10 @@ onMounted(async () => {
   .stats-summary-bar { grid-template-columns: 1fr; }
   .stats-summary-pill { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
+.action-error { position: sticky; top: .75rem; z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: .75rem 1.25rem; padding: .8rem 1rem; border-radius: 9px; background: #fff1f2; color: #9f1239; box-shadow: 0 5px 18px rgba(57, 20, 30, .12); }
+.action-error button { border: 0; background: transparent; color: inherit; font-size: 1.25rem; cursor: pointer; }
+.exam-deadline-editor { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .7rem; }
+.exam-deadline-editor label { display: grid; gap: .25rem; color: #526780; font-size: .75rem; }
+.exam-deadline-editor input { min-height: 36px; padding: .4rem .6rem; border: 1px solid #ccd8e7; border-radius: 8px; color: #1d3461; font: inherit; }
 </style>
 

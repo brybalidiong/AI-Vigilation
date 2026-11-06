@@ -36,6 +36,7 @@
           </span>
         </div>
       </div>
+      <slot name="details"></slot>
     </div>
 
     <div class="timeline-actions">

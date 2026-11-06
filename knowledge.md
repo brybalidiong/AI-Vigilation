@@ -44,6 +44,8 @@ serves full exam records when an instructor opens a course. The live statistics
 panel reuses unchanged snapshot images and limits concurrent snapshot downloads.
 
 Admins create courses and assign one or more active instructors to each course.
+A student can enroll in an institute course only when their admin-assigned
+institute matches the course. Minor courses accept students from any institute.
 A course belongs to one institute (IC, ITED, IASS, or ILEGG) or the separate
 Minor courses group. Institute courses can be assigned only to instructors in
 that institute; minor courses can be assigned to instructors from any institute.

@@ -993,6 +993,51 @@ class ExamBankBatchImportTests(TestCase):
         self.assertEqual(self.exam.questions.count(), 0)
 
 
+class ExamScheduleAndInstituteTests(TestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(username='institute-instructor', is_staff=True)
+        self.subject = Subject.objects.create(name='Computing', code='IC101', category='IC', instructor=self.instructor)
+        self.roster = StudentSet.objects.create(name='Section A', subject=self.subject, created_by=self.instructor)
+        self.exam = ExamSet.objects.create(
+            subject=self.subject, created_by=self.instructor, title='Final', is_final=True,
+            due_at=timezone.now() - timedelta(hours=1),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+
+    def test_closed_exam_can_reopen_and_open_exam_can_extend(self):
+        url = f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{self.exam.pk}/'
+        first_due = timezone.now() + timedelta(days=1)
+        reopened = self.client.patch(url, {'action': 'extend_deadline', 'due_at': first_due.isoformat()}, format='json')
+        self.assertEqual(reopened.status_code, 200, reopened.data)
+        later_due = first_due + timedelta(days=1)
+        extended = self.client.patch(url, {'action': 'extend_deadline', 'due_at': later_due.isoformat()}, format='json')
+        self.assertEqual(extended.status_code, 200, extended.data)
+        self.assertEqual(self.client.patch(url, {'action': 'extend_deadline', 'due_at': first_due.isoformat()}, format='json').status_code, 400)
+        self.exam.refresh_from_db()
+        self.assertEqual(self.exam.due_at, later_due)
+
+    def test_major_course_rejects_other_institute_in_manual_and_batch_enrollment(self):
+        student = User.objects.create_user(username='other-institute', email='student.other@dnsc.edu.ph')
+        UserProfile.objects.create(user=student, role='student', is_enrolled=True, institute='ITED')
+        manual = self.client.post(f'/api/instructor/subjects/{self.subject.pk}/students/', {
+            'email': student.email, 'student_set_id': self.roster.pk,
+        }, format='json')
+        self.assertEqual(manual.status_code, 400, manual.data)
+        batch = self.client.post(f'/api/instructor/sets/{self.roster.pk}/enroll-bulk/', {
+            'emails': [student.email],
+        }, format='json')
+        self.assertEqual(batch.status_code, 200, batch.data)
+        self.assertEqual(batch.data['added'], [])
+        self.assertFalse(EnrolledStudent.objects.filter(email=student.email).exists())
+
+    def test_set_names_ignore_case_and_extra_spaces(self):
+        response = self.client.post(f'/api/instructor/subjects/{self.subject.pk}/sets/', {
+            'name': '  section   a  ',
+        }, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+
+
 class ExamListOrderingTests(TestCase):
     @classmethod
     def setUpTestData(cls):
