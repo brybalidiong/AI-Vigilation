@@ -76,7 +76,9 @@
             <div class="role-pill">Instructor</div>
           </div>
         </header>
-        <div v-if="error" class="error global action-error" role="alert">{{ error }} <button type="button" @click="error = ''" aria-label="Dismiss error">×</button></div>
+        <Teleport to="body">
+          <div v-if="error" class="error global action-error" role="alert">{{ error }} <button type="button" @click="error = ''" aria-label="Dismiss error">×</button></div>
+        </Teleport>
 
 
         <!-- DASHBOARD TAB -->
@@ -798,18 +800,19 @@
                   <div
                     v-for="(setItem, index) in subjectSets"
                     :key="setItem.id"
-                    role="button"
-                    tabindex="0"
                     class="enroll-set-item"
                     :class="[`enroll-set-item--color-${(index % 4) + 1}`, { active: selectedSubjectSetId == setItem.id }]"
-                    @click="selectedSubjectSetId = String(setItem.id); studentSearch = ''; fetchSubjectStudents()"
-                    @keydown.enter.space.prevent="selectedSubjectSetId = String(setItem.id); studentSearch = ''; fetchSubjectStudents()"
                   >
-                    <div class="enroll-set-item__dot"></div>
-                    <div class="enroll-set-item__info">
-                      <span class="enroll-set-item__name">{{ setItem.name }}</span>
-                      <span class="enroll-set-item__count">{{ setItem.student_count }} student{{ setItem.student_count !== 1 ? 's' : '' }}</span>
+                    <div class="enroll-set-item__select" role="button" tabindex="0" @click="selectedSubjectSetId = String(setItem.id); studentSearch = ''; fetchSubjectStudents()" @keydown.enter.space.prevent="selectedSubjectSetId = String(setItem.id); studentSearch = ''; fetchSubjectStudents()">
+                      <div class="enroll-set-item__dot"></div>
+                      <div class="enroll-set-item__info">
+                        <span class="enroll-set-item__name">{{ setItem.name }}</span>
+                        <span class="enroll-set-item__count">{{ setItem.student_count }} student{{ setItem.student_count !== 1 ? 's' : '' }}</span>
+                      </div>
                     </div>
+                    <button type="button" class="enroll-set-item__delete" :aria-label="`Delete ${setItem.name}`" title="Delete set" @click="requestDeleteSubjectSet(setItem.id)">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v6m4-6v6"/></svg>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4885,6 +4888,10 @@ onMounted(async () => {
 }
 .action-error { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 10000; display: flex; justify-content: space-between; align-items: center; gap: 1rem; width: min(520px, calc(100vw - 2rem)); margin: 0; padding: .8rem 1rem; border-radius: 9px; background: #fff1f2; color: #9f1239; box-shadow: 0 5px 18px rgba(57, 20, 30, .2); }
 .action-error button { border: 0; background: transparent; color: inherit; font-size: 1.25rem; cursor: pointer; }
+.enroll-set-item__delete { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #9b4753; cursor: pointer; }
+.enroll-set-item__select { display: flex; align-items: center; gap: .75rem; flex: 1; min-width: 0; outline-offset: 3px; }
+.enroll-set-item__select:focus-visible { outline: 2px solid #315d91; border-radius: 6px; }
+.enroll-set-item__delete:hover, .enroll-set-item__delete:focus-visible { background: #feecef; outline: none; }
 .qe-close-btn { margin-bottom: .8rem; }
 .exam-deadline-editor { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .7rem; }
 .exam-deadline-editor label { display: grid; gap: .25rem; color: #526780; font-size: .75rem; }
