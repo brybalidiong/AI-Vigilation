@@ -1258,17 +1258,13 @@
       <div class="qe-shell">
         <header class="qe-header">
           <div class="qe-header__copy">
-            <button type="button" class="cw-back-btn cw-back-btn--light" @click="closeManageQuestions">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-              Back
-            </button>
+            <button type="button" class="ghost-btn qe-close-btn" @click="closeManageQuestions">Close</button>
             <div class="cw-title-row">
               <span class="exam-item__badge" :class="examIsFinal ? 'exam-item__badge--pub' : 'exam-item__badge--draft'">{{ examIsFinal ? 'Published' : 'Draft' }}</span>
               <h1>{{ managingExam.title }}</h1>
             </div>
             <p class="header-sub">{{ examQuestions.length }} {{ examQuestions.length === 1 ? 'question' : 'questions' }} selected from the course bank. Publish when the set is ready.</p>
           </div>
-          <button type="button" class="ghost-btn" @click="closeManageQuestions">Close</button>
         </header>
 
         <div class="qe-grid">
@@ -4887,8 +4883,9 @@ onMounted(async () => {
   .stats-summary-bar { grid-template-columns: 1fr; }
   .stats-summary-pill { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
-.action-error { position: sticky; top: .75rem; z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: .75rem 1.25rem; padding: .8rem 1rem; border-radius: 9px; background: #fff1f2; color: #9f1239; box-shadow: 0 5px 18px rgba(57, 20, 30, .12); }
+.action-error { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 10000; display: flex; justify-content: space-between; align-items: center; gap: 1rem; width: min(520px, calc(100vw - 2rem)); margin: 0; padding: .8rem 1rem; border-radius: 9px; background: #fff1f2; color: #9f1239; box-shadow: 0 5px 18px rgba(57, 20, 30, .2); }
 .action-error button { border: 0; background: transparent; color: inherit; font-size: 1.25rem; cursor: pointer; }
+.qe-close-btn { margin-bottom: .8rem; }
 .exam-deadline-editor { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .7rem; }
 .exam-deadline-editor label { display: grid; gap: .25rem; color: #526780; font-size: .75rem; }
 .exam-deadline-editor input { min-height: 36px; padding: .4rem .6rem; border: 1px solid #ccd8e7; border-radius: 8px; color: #1d3461; font: inherit; }
