@@ -937,6 +937,62 @@ class CourseEnrollmentUniquenessTests(TestCase):
         ])
 
 
+class ExamBankBatchImportTests(TestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(username='batch-owner', is_staff=True)
+        self.other = User.objects.create_user(username='other-batch-owner', is_staff=True)
+        self.subject = Subject.objects.create(name='Batch Course', code='BATCH', instructor=self.instructor)
+        self.subject.additional_instructors.add(self.other)
+        self.exam = ExamSet.objects.create(subject=self.subject, created_by=self.instructor, title='Draft exam')
+        self.batch = QuestionBankBatch.objects.create(
+            subject=self.subject, created_by=self.instructor, name='Chapter review',
+        )
+        for number in range(1, 4):
+            QuestionBankItem.objects.create(
+                subject=self.subject, batch=self.batch, question_type='identification',
+                question_text=f'Question {number}', correct_answer=f'Answer {number}',
+            )
+        self.client = APIClient()
+        self.client.force_authenticate(self.instructor)
+        self.url = f'/api/instructor/subjects/{self.subject.pk}/exam-sets/{self.exam.pk}/questions/from-bank/'
+
+    def test_entire_batch_keeps_order_and_skips_questions_already_added(self):
+        first = self.client.post(self.url, {'batch_id': self.batch.pk}, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(first.data['added_count'], 3)
+        self.assertEqual(
+            list(self.exam.questions.order_by('order').values_list('question_text', flat=True)),
+            ['Question 1', 'Question 2', 'Question 3'],
+        )
+        repeated = self.client.post(self.url, {'batch_id': self.batch.pk}, format='json')
+        self.assertEqual(repeated.data['added_count'], 0)
+        QuestionBankItem.objects.create(
+            subject=self.subject, batch=self.batch, question_type='identification',
+            question_text='Question 4', correct_answer='Answer 4',
+        )
+        added = self.client.post(self.url, {'batch_id': self.batch.pk}, format='json')
+        self.assertEqual(added.data['added_count'], 1)
+        self.assertEqual(self.exam.questions.count(), 4)
+        self.exam.is_final = True
+        self.exam.save(update_fields=['is_final'])
+        self.assertEqual(self.client.post(self.url, {'batch_id': self.batch.pk}, format='json').status_code, 403)
+
+    def test_entire_batch_requires_this_instructors_course_bank_and_exam(self):
+        other_batch = QuestionBankBatch.objects.create(
+            subject=self.subject, created_by=self.other, name='Other instructor batch',
+        )
+        other_subject = Subject.objects.create(name='Other Course', code='OTHERB', instructor=self.instructor)
+        other_course_batch = QuestionBankBatch.objects.create(
+            subject=other_subject, created_by=self.instructor, name='Other course batch',
+        )
+        for batch in (other_batch, other_course_batch):
+            response = self.client.post(self.url, {'batch_id': batch.pk}, format='json')
+            self.assertEqual(response.status_code, 404, response.data)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post(self.url, {'batch_id': self.batch.pk}, format='json').status_code, 404)
+        self.assertEqual(self.exam.questions.count(), 0)
+
+
 class ExamListOrderingTests(TestCase):
     @classmethod
     def setUpTestData(cls):

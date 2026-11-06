@@ -104,8 +104,10 @@ types, with a downloadable sample format in the UI. Pasted text remains availabl
 The server validates every imported question before saving any of the batch.
 For each question or import, instructors
 choose an existing course batch or create a named batch. A new exam draft starts empty;
-the instructor selects questions from the available bank batches before
-publishing. Exam questions are independent copies linked to their bank source.
+the instructor selects individual questions or adds an entire batch from the
+available course bank before publishing. Adding a batch copies its questions in
+their original import order and skips sources already in that draft. Exam
+questions are independent copies linked to their bank source.
 Deleting a bank question or an entire batch removes those sources but preserves questions already in
 draft or published exams. Existing exam questions are added to the bank by the
 question-bank migration and grouped by source exam in the batch migration. The

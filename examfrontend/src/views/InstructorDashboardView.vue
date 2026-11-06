@@ -1417,7 +1417,13 @@
               <p v-else-if="!selectableBankBatches.length" class="bank-help">No questions match this search.</p>
               <div v-else class="bank-select-list">
                 <details v-for="(batch, index) in selectableBankBatches" :key="batch.id" class="bank-batch" :open="selectableBankBatches.length === 1">
-                  <summary><span class="bank-batch__index">{{ String(index + 1).padStart(2, '0') }}</span><strong>{{ batch.name }}</strong><span>{{ batch.questions.length }} questions</span></summary>
+                  <summary><span class="bank-batch__index">{{ String(index + 1).padStart(2, '0') }}</span><strong>{{ batch.name }}</strong><span>{{ batch.questions.length }} shown / {{ bankBatchQuestionCount(batch.id) }} total</span></summary>
+                  <div class="bank-batch__import">
+                    <span>{{ remainingBatchQuestionCount(batch.id) }} not yet in this exam</span>
+                    <button type="button" class="ghost-btn" :disabled="bankSaving || !remainingBatchQuestionCount(batch.id)" @click="addEntireBankBatch(batch)">
+                      {{ bankSaving ? 'Adding…' : 'Add entire batch' }}
+                    </button>
+                  </div>
                   <label v-for="item in batch.questions" :key="item.id" class="bank-select-item" :class="{ 'bank-select-item--added': examBankItemIds.has(item.id) }">
                     <input v-model="selectedBankQuestionIds" type="checkbox" :value="item.id" :disabled="examBankItemIds.has(item.id) || bankSaving" />
                     <span><small>{{ questionTypeLabel(item.question_type) }}</small><strong>{{ item.question_text }}</strong></span>
@@ -3631,6 +3637,35 @@ async function addSelectedBankQuestions() {
   }
 }
 
+function bankBatchQuestionCount(batchId) {
+  return bankBatches.value.find(item => item.id === batchId)?.questions.length || 0;
+}
+
+function remainingBatchQuestionCount(batchId) {
+  const batch = bankBatches.value.find(item => item.id === batchId);
+  return batch ? batch.questions.filter(item => !examBankItemIds.value.has(item.id)).length : 0;
+}
+
+async function addEntireBankBatch(batch) {
+  if (!managingExam.value || !selectedSubjectId.value || !remainingBatchQuestionCount(batch.id) || bankSaving.value) return;
+  bankSaving.value = true;
+  error.value = '';
+  try {
+    const { data } = await apiClient.post(
+      `/api/instructor/subjects/${selectedSubjectId.value}/exam-sets/${managingExam.value.id}/questions/from-bank/`,
+      { batch_id: batch.id },
+    );
+    const batchQuestionIds = new Set(bankBatches.value.find(item => item.id === batch.id)?.questions.map(item => item.id) || []);
+    selectedBankQuestionIds.value = selectedBankQuestionIds.value.filter(id => !batchQuestionIds.has(id));
+    await fetchExamQuestions();
+    showSuccess('Exam updated', `${data.added_count} question(s) added from ${batch.name}.`);
+  } catch (err) {
+    error.value = err?.response?.data?.error || 'Unable to add this question batch.';
+  } finally {
+    bankSaving.value = false;
+  }
+}
+
 async function deleteExamQuestion(questionId) {
   if (!managingExam.value || !selectedSubjectId.value || examIsFinal.value) return;
   message.value = "";
@@ -4720,6 +4755,8 @@ onMounted(async () => {
 .bank-batch__index { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 8px; background: #e6edf7; color: #355982; font-size: .7rem; font-weight: 800; }
 .bank-batch .bank-item, .bank-batch .bank-select-item { margin: .45rem .65rem; }
 .bank-batch__actions { display: flex; justify-content: flex-end; padding: .65rem .8rem 0; }
+.bank-batch__import { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem; margin: .65rem .65rem .8rem; padding: .6rem .75rem; border-radius: 8px; background: #f2f5f9; color: #5f7490; font-size: .73rem; }
+.bank-batch__import .ghost-btn { min-height: 34px; padding: .4rem .75rem; font-size: .73rem; }
 .bank-item { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; padding: .85rem; border: 1px solid #e6ebf2; border-radius: 10px; background: #fff; }
 .bank-item__main { min-width: 0; overflow-wrap: anywhere; }
 .bank-item__main p { margin: .32rem 0 .45rem; color: #203858; font-size: .84rem; font-weight: 650; line-height: 1.5; white-space: pre-wrap; }

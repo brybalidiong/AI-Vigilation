@@ -3433,7 +3433,7 @@ def subject_question_bank_batch_detail(request, subject_id, batch_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def exam_add_bank_questions(request, subject_id, exam_set_id):
-    """Copy selected bank questions into a draft exam in the chosen order."""
+    """Copy selected questions or an entire owned batch into a draft exam."""
     if not _is_instructor(request.user):
         return Response({'error': 'Instructor access required.'}, status=status.HTTP_403_FORBIDDEN)
     subject = Subject.objects.filter(
@@ -3441,21 +3441,38 @@ def exam_add_bank_questions(request, subject_id, exam_set_id):
     ).distinct().first()
     if not subject:
         return Response({'error': 'Subject not found.'}, status=status.HTTP_404_NOT_FOUND)
+    batch_id = request.data.get('batch_id')
     ids_raw = request.data.get('question_ids')
-    if not isinstance(ids_raw, list) or not 1 <= len(ids_raw) <= 500:
-        return Response({'error': 'Select between 1 and 500 bank questions.'}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        ids = [int(value) for value in ids_raw]
-    except (TypeError, ValueError):
-        return Response({'error': 'Invalid question selection.'}, status=status.HTTP_400_BAD_REQUEST)
-    if len(set(ids)) != len(ids):
-        return Response({'error': 'Duplicate questions in selection.'}, status=status.HTTP_400_BAD_REQUEST)
-    bank_items = {item.id: item for item in QuestionBankItem.objects.filter(
-        subject=subject, id__in=ids,
-        batch__in=QuestionBankBatch.objects.filter(_instructor_bank_filter(request.user), subject=subject),
-    )}
-    if len(bank_items) != len(ids):
-        return Response({'error': 'One or more questions are outside this course.'}, status=status.HTTP_400_BAD_REQUEST)
+    owned_batches = QuestionBankBatch.objects.filter(_instructor_bank_filter(request.user), subject=subject)
+    if batch_id is not None:
+        if ids_raw is not None:
+            return Response({'error': 'Choose a batch or individual questions.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            batch_id = int(batch_id)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid question batch.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not owned_batches.filter(id=batch_id).exists():
+            return Response({'error': 'Question batch not found in this course.'}, status=status.HTTP_404_NOT_FOUND)
+        # Imported questions keep their file order when copied into an exam.
+        items = list(QuestionBankItem.objects.filter(subject=subject, batch_id=batch_id).order_by('id'))
+        ids = [item.id for item in items]
+        if not ids:
+            return Response({'error': 'This question batch is empty.'}, status=status.HTTP_400_BAD_REQUEST)
+        bank_items = {item.id: item for item in items}
+    else:
+        if not isinstance(ids_raw, list) or not 1 <= len(ids_raw) <= 500:
+            return Response({'error': 'Select between 1 and 500 bank questions.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ids = [int(value) for value in ids_raw]
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid question selection.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(set(ids)) != len(ids):
+            return Response({'error': 'Duplicate questions in selection.'}, status=status.HTTP_400_BAD_REQUEST)
+        bank_items = {item.id: item for item in QuestionBankItem.objects.filter(
+            subject=subject, id__in=ids, batch__in=owned_batches,
+        )}
+        if len(bank_items) != len(ids):
+            return Response({'error': 'One or more questions are outside this course.'}, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
         exam_set = ExamSet.objects.select_for_update().filter(
             _instructor_exam_filter(request.user), id=exam_set_id, subject=subject,
