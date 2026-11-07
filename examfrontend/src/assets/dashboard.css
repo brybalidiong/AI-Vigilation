@@ -4000,6 +4000,94 @@
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.055);
 }
 
+/* Keep course table controls in view; scroll only the roster and results. */
+@media (min-width: 1101px) {
+  .dashboard-role--instructor .main-content--course-tables {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 1.5rem;
+  }
+  .main-content--course-tables .course-workspace,
+  .main-content--course-tables .course-tabs-card,
+  .main-content--course-tables .course-tab-panel,
+  .main-content--course-tables .workspace-area {
+    min-height: 0;
+  }
+  .main-content--course-tables .course-workspace {
+    flex: 1;
+    overflow: hidden;
+  }
+  .main-content--course-tables .cw-hero,
+  .main-content--course-tables .course-tabstrip {
+    flex: none;
+  }
+  .main-content--course-tables .course-tabs-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .main-content--course-tables .course-tab-panel {
+    flex: 1;
+    max-height: none;
+    overflow: hidden;
+  }
+  .main-content--course-tables .workspace-area {
+    height: 100%;
+  }
+  .main-content--course-tables .enroll-tab-layout {
+    height: 100%;
+    min-height: 0;
+    align-items: stretch;
+  }
+  .main-content--course-tables .enroll-sets-sidebar,
+  .main-content--course-tables .enroll-panel,
+  .main-content--course-tables .students-list {
+    min-height: 0;
+  }
+  .main-content--course-tables .enroll-sets-sidebar {
+    max-height: 100%;
+  }
+  .main-content--course-tables .enroll-set-list {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+  .main-content--course-tables .students-list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .main-content--course-tables .students-list .data-table-container {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+  .main-content--course-tables .ep-layout {
+    height: 100%;
+    min-height: 0;
+  }
+  .main-content--course-tables .ep-split {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+  .main-content--course-tables .ep-student-panel {
+    min-height: 0;
+    max-height: none;
+  }
+  .main-content--course-tables .ep-results-panel {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .main-content--course-tables .ep-table-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 .dashboard-role :is(button, a, input, select, textarea):focus-visible {
   outline: 3px solid rgba(var(--dash-accent-rgb), 0.22);
   outline-offset: 2px;

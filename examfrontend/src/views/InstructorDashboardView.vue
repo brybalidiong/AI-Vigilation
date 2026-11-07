@@ -49,7 +49,7 @@
       </aside>
 
       <!-- CENTER CONTENT -->
-      <main class="main-content" :class="{ 'main-content--dashboard': activeNav === 'dashboard' }">
+      <main class="main-content" :class="{ 'main-content--dashboard': activeNav === 'dashboard', 'main-content--course-tables': activeNav === 'courses' && isCourseDetailRoute && ['sets', 'exam-progress'].includes(activeCourseTab) }">
         <header class="main-header" :class="{ 'main-header--tight': activeNav === 'courses' }" v-show="!(activeNav === 'courses' && isCourseDetailRoute)">
           <div class="header-titles">
             <template v-if="activeNav === 'courses' && isCourseDetailRoute">
