@@ -2318,6 +2318,20 @@
 .ep-table-scroll {
   width: 100%;
   overflow-x: hidden;
+  overflow-y: auto;
+  max-height: min(60vh, 600px);
+}
+.course-tab-panel .data-table-container {
+  max-height: min(60vh, 600px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.course-tab-panel .data-table-container .bold-td { overflow-wrap: anywhere; }
+.course-tab-panel .data-table-container th,
+.course-tab-panel .ep-table-scroll th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 .ep-assessment-table,
 .ep-student-results-table {

@@ -4701,6 +4701,7 @@ onMounted(async () => {
 }
 .stats-table-wrapper {
   overflow: auto;
+  max-height: min(60vh, 600px);
   border: 0;
   border-radius: 8px;
   background: #ffffff;
