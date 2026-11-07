@@ -34,7 +34,7 @@ class AdminAnalyticsTests(TestCase):
         response = self.client.get('/api/admin/analytics/')
         self.assertEqual(response.status_code, 403)
 
-    def test_aggregates_scores_violations_and_distinct_device_types(self):
+    def test_aggregates_violations_and_distinct_device_types(self):
         low = self.add_attempt('ic@example.com', 'IC', '40.00', terminated=True)
         self.add_attempt('ited@example.com', 'ITED', '90.00')
         ExamProctoringEvent.objects.create(submission=low, event_type='tab_switch')
@@ -48,11 +48,12 @@ class AdminAnalyticsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['summary']['completed_attempts'], 2)
-        self.assertEqual(response.data['summary']['average_integrity'], 65.0)
+        self.assertIsNone(response.data['summary']['average_model_confidence'])
+        self.assertEqual(response.data['summary']['confidence_samples'], 0)
         self.assertEqual(response.data['summary']['flagged_attempts'], 2)
         self.assertEqual(response.data['summary']['terminated_attempts'], 1)
         self.assertEqual(response.data['summary']['recorded_violations'], 2)
-        self.assertEqual(response.data['lowest_institute']['code'], 'IC')
+        self.assertIsNone(response.data['lowest_institute'])
         self.assertEqual(response.data['devices'], [
             {'label': 'Cell phone', 'count': 1}, {'label': 'Laptop', 'count': 1},
         ])
@@ -61,26 +62,59 @@ class AdminAnalyticsTests(TestCase):
         self.client.force_authenticate(self.admin)
         response = self.client.get('/api/admin/analytics/')
         self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.data['summary']['average_integrity'])
+        self.assertIsNone(response.data['summary']['average_model_confidence'])
         self.assertIsNone(response.data['lowest_institute'])
         self.assertEqual(response.data['devices'], [])
-        self.assertTrue(all(row['average_integrity'] is None for row in response.data['gaze_models']))
+        self.assertTrue(all(row['average_confidence'] is None for row in response.data['gaze_models']))
 
-    def test_integrity_by_model_excludes_unattributed_history(self):
-        self.add_attempt('efficient-a@example.com', 'IC', '60.00', model_code='efficientnet')
-        self.add_attempt('efficient-b@example.com', 'IC', '80.00', model_code='efficientnet')
-        self.add_attempt('mobile@example.com', 'ITED', '90.00', model_code='mobilenetv2')
-        self.add_attempt('historical@example.com', 'IASS', '50.00')
+    def test_confidence_by_model_uses_recorded_gaze_alerts_only(self):
+        efficient_a = self.add_attempt('efficient-a@example.com', 'IC', '60.00', model_code='efficientnet')
+        efficient_b = self.add_attempt('efficient-b@example.com', 'IC', '80.00', model_code='efficientnet')
+        mobile = self.add_attempt('mobile@example.com', 'ITED', '90.00', model_code='mobilenetv2')
+        historical = self.add_attempt('historical@example.com', 'IASS', '50.00')
+        for submission, confidence in ((efficient_a, .9), (efficient_b, .8), (mobile, .7), (historical, .95)):
+            ExamProctoringEvent.objects.create(
+                submission=submission, event_type=ExamProctoringEvent.EVENT_GAZE_VIOLATION,
+                source='gaze_ai', metadata={'confidence': confidence},
+            )
+        ExamProctoringEvent.objects.create(
+            submission=efficient_a, event_type=ExamProctoringEvent.EVENT_GAZE_NO_FACE,
+            source='gaze_ai', metadata={'confidence': 0},
+        )
         self.client.force_authenticate(self.admin)
 
         response = self.client.get('/api/admin/analytics/')
 
         self.assertEqual(response.status_code, 200, response.data)
         models = {row['code']: row for row in response.data['gaze_models']}
-        self.assertEqual((models['efficientnet']['average_integrity'], models['efficientnet']['attempts']), (70.0, 2))
-        self.assertEqual((models['mobilenetv2']['average_integrity'], models['mobilenetv2']['attempts']), (90.0, 1))
-        self.assertEqual((models['resnet50v2']['average_integrity'], models['resnet50v2']['attempts']), (None, 0))
+        self.assertEqual((models['efficientnet']['average_confidence'], models['efficientnet']['samples'], models['efficientnet']['attempts']), (85.0, 2, 2))
+        self.assertEqual((models['mobilenetv2']['average_confidence'], models['mobilenetv2']['samples']), (70.0, 1))
+        self.assertEqual((models['resnet50v2']['average_confidence'], models['resnet50v2']['samples']), (None, 0))
+        self.assertEqual(response.data['summary']['average_model_confidence'], 80.0)
+        self.assertEqual(response.data['summary']['confidence_samples'], 3)
+        self.assertEqual(response.data['lowest_institute']['code'], 'ITED')
         self.assertEqual(response.data['unattributed_attempts'], 1)
+
+    def test_confidence_follows_the_model_used_for_each_attempt(self):
+        submission = self.add_attempt('repeat@example.com', 'IC', '80.00', model_code='efficientnet')
+        ExamIntegrityReport.objects.create(
+            submission=submission, attempt_number=2, integrity_score=Decimal('70.00'),
+            summary={'gaze_model_code': 'mobilenetv2'},
+        )
+        for attempt_number, confidence in ((1, .9), (2, .6)):
+            ExamProctoringEvent.objects.create(
+                submission=submission, attempt_number=attempt_number,
+                event_type=ExamProctoringEvent.EVENT_GAZE_VIOLATION,
+                source='gaze_ai', metadata={'confidence': confidence},
+            )
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get('/api/admin/analytics/')
+
+        models = {row['code']: row for row in response.data['gaze_models']}
+        self.assertEqual(models['efficientnet']['average_confidence'], 90.0)
+        self.assertEqual(models['mobilenetv2']['average_confidence'], 60.0)
+        self.assertEqual(response.data['summary']['average_model_confidence'], 75.0)
 
     def test_exam_start_records_model_and_report_keeps_it_per_attempt(self):
         student = User.objects.create_user('model-student', email='model-student@example.com')

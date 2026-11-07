@@ -121,9 +121,10 @@
                 <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 3 7v5c0 5 3.7 8.4 9 9 5.3-.6 9-4 9-9V7l-9-4Z"/><path d="m8.5 12 2.3 2.3 4.7-4.7"/></svg>
               </div>
               <div class="stat-body">
-                <p class="stat-label">Average integrity</p>
+                <p class="stat-label">Average gaze confidence</p>
                 <SkeletonLoader v-if="loadingAnalytics && !analytics" type="text" width="4rem" height="2rem" />
-                <h2 v-else class="stat-value">{{ formatIntegrity(analytics?.summary?.average_integrity) }}</h2>
+                <h2 v-else class="stat-value">{{ formatPercentage(analytics?.summary?.average_model_confidence) }}</h2>
+                <small v-if="analytics" class="stat-sample">{{ analytics.summary.confidence_samples }} recorded gaze {{ analytics.summary.confidence_samples === 1 ? 'alert' : 'alerts' }}</small>
               </div>
             </div>
           </div>
@@ -132,8 +133,8 @@
             <div class="analytics-heading">
               <div>
                 <span class="admin-section-kicker">Exam oversight</span>
-                <h2 id="analytics-heading">Integrity analytics</h2>
-                <p>All recorded exam attempts. Institute averages use completed attempts with integrity reports.</p>
+                <h2 id="analytics-heading">Exam analytics</h2>
+                <p>Violations cover recorded attempts. Confidence averages use gaze alerts with a recorded model and confidence.</p>
               </div>
               <button type="button" class="analytics-refresh" :disabled="loadingAnalytics" @click="fetchAnalytics">{{ loadingAnalytics ? 'Refreshing…' : 'Refresh data' }}</button>
             </div>
@@ -154,8 +155,8 @@
                   <div class="analytics-panel__heading"><div><h3>Most recorded violations</h3><p>Share of {{ analytics.summary.recorded_violations }} classified events</p></div><span class="analytics-panel__index">01</span></div>
                   <div v-if="topViolations.length" class="violation-chart">
                     <svg class="violation-chart__plot" viewBox="0 0 680 245" role="img" :aria-label="`Violations by type: ${topViolations.map((item) => `${item.label}, ${item.count} events, ${formatShare(item.count, analytics.summary.recorded_violations)}`).join('; ')}`">
-                      <text x="48" y="17" class="violation-chart__axis-title">EVENTS</text>
-                      <text x="632" y="17" class="violation-chart__axis-title" text-anchor="end">SHARE</text>
+                      <text x="48" y="17" class="violation-chart__axis-title">EVENT COUNT</text>
+                      <text x="632" y="17" class="violation-chart__axis-title" text-anchor="end">SHARE OF EVENTS</text>
                       <g v-for="tick in violationChartTicks" :key="tick.percent">
                         <line x1="50" :y1="tick.y" x2="630" :y2="tick.y" class="violation-chart__grid" />
                         <text x="42" :y="tick.y + 4" class="violation-chart__axis-label" text-anchor="end">{{ tick.count }}</text>
@@ -165,11 +166,12 @@
                       <g v-for="point in violationChartPoints" :key="point.key">
                         <circle :cx="point.x" :cy="point.y" r="6" class="violation-chart__point" />
                         <text :x="point.x" :y="point.y - 13" class="violation-chart__value" text-anchor="middle">{{ point.count }} · {{ formatShare(point.count, analytics.summary.recorded_violations) }}</text>
-                        <text :x="point.x" y="232" class="violation-chart__number" text-anchor="middle">{{ String(point.index + 1).padStart(2, '0') }}</text>
+                        <text :x="point.x" y="232" class="violation-chart__number" text-anchor="middle">{{ shortViolationLabel(point) }}</text>
                       </g>
                     </svg>
+                    <div class="analytics-legend"><span class="analytics-legend__line" aria-hidden="true"></span><span>Line: recorded events by violation type</span><span>Point labels: event count · share of classified events</span></div>
                     <div class="violation-chart__key" aria-label="Violation types">
-                      <div v-for="(item, index) in topViolations" :key="item.key"><span>{{ String(index + 1).padStart(2, '0') }}</span><span class="violation-chart__key-label">{{ item.label }}<small>{{ item.count }} events · {{ formatShare(item.count, analytics.summary.recorded_violations) }}</small></span></div>
+                      <div v-for="item in topViolations" :key="item.key"><span class="violation-chart__key-label">{{ item.label }}<small>{{ item.count }} events · {{ formatShare(item.count, analytics.summary.recorded_violations) }}</small></span></div>
                     </div>
                   </div>
                   <p v-else class="analytics-empty">No violations have been recorded yet.</p>
@@ -181,6 +183,7 @@
                       <div class="device-chart__center"><strong>{{ deviceDetectionCount }}</strong><span>detections</span></div>
                     </div>
                     <div class="device-chart__legend">
+                      <p class="device-chart__legend-title">Legend · device type · share · detections</p>
                       <div v-for="(device, index) in deviceChartItems" :key="device.label" class="device-chart__item">
                         <span class="device-chart__swatch" :style="{ backgroundColor: deviceChartColors[index] }" aria-hidden="true"></span>
                         <span class="device-chart__label">{{ device.label }}</span>
@@ -193,26 +196,28 @@
                 </article>
               </div>
               <article class="analytics-panel institute-panel">
-                <div class="analytics-panel__heading"><div><h3>Integrity by institute</h3><p>Average score per completed attempt</p></div><span class="analytics-panel__index">03</span></div>
-                <div v-if="analytics.lowest_institute" class="institute-insight"><span>Lowest average</span><strong>{{ analytics.lowest_institute.code }} · {{ formatIntegrity(analytics.lowest_institute.average_integrity) }}</strong><small>{{ analytics.lowest_institute.attempts }} {{ analytics.lowest_institute.attempts === 1 ? 'attempt' : 'attempts' }}</small></div>
+                <div class="analytics-panel__heading"><div><h3>Gaze confidence by institute</h3><p>Average confidence of recorded gaze alerts</p></div><span class="analytics-panel__index">03</span></div>
+                <div class="analytics-legend"><span class="analytics-legend__bar" aria-hidden="true"></span><span>Bar: average model confidence</span><span>Sample size: recorded gaze alerts</span></div>
+                <div v-if="analytics.lowest_institute" class="institute-insight"><span>Lowest recorded average</span><strong>{{ analytics.lowest_institute.code }} · {{ formatPercentage(analytics.lowest_institute.average_model_confidence) }}</strong><small>{{ analytics.lowest_institute.samples }} gaze {{ analytics.lowest_institute.samples === 1 ? 'alert' : 'alerts' }}</small></div>
                 <div class="institute-list">
                   <div v-for="item in analytics.institutes" :key="item.code" class="institute-row">
                     <div class="institute-identity"><strong>{{ item.code }}</strong><span>{{ item.name }}</span></div>
-                    <div class="institute-measure"><div class="analytics-bar-track"><span :style="{ width: barWidth(item.average_integrity || 0, 100) }"></span></div><small>{{ item.attempts }} {{ item.attempts === 1 ? 'attempt' : 'attempts' }}</small></div>
-                    <strong class="institute-score">{{ formatIntegrity(item.average_integrity) }}</strong>
+                    <div class="institute-measure"><div class="analytics-bar-track"><span :style="{ width: barWidth(item.average_model_confidence || 0, 100) }"></span></div><small>{{ item.samples }} gaze {{ item.samples === 1 ? 'alert' : 'alerts' }}</small></div>
+                    <strong class="institute-score">{{ formatPercentage(item.average_model_confidence) }}</strong>
                   </div>
                 </div>
               </article>
               <article class="analytics-panel model-integrity-panel">
-                <div class="analytics-panel__heading"><div><h3>Integrity by gaze model</h3><p>Average exam integrity for attempts started with each model</p></div><span class="analytics-panel__index">04</span></div>
+                <div class="analytics-panel__heading"><div><h3>Confidence by gaze model</h3><p>Average confidence of recorded gaze alerts for each model</p></div><span class="analytics-panel__index">04</span></div>
+                <div class="analytics-legend"><span class="analytics-legend__bar" aria-hidden="true"></span><span>Bar: average model confidence</span><span>Sample size: recorded gaze alerts</span></div>
                 <div class="model-integrity-list">
                   <div v-for="model in analytics.gaze_models || []" :key="model.code" class="model-integrity-row">
                     <div class="model-integrity-row__title"><strong>{{ model.name }}</strong><span v-if="model.code === analytics.active_gaze_model">Currently selected</span></div>
-                    <div class="model-integrity-row__measure"><div class="analytics-bar-track"><span :style="{ width: barWidth(model.average_integrity || 0, 100) }"></span></div><strong>{{ formatIntegrity(model.average_integrity) }}</strong></div>
-                    <small>{{ model.attempts }} {{ model.attempts === 1 ? 'attempt' : 'attempts' }}</small>
+                    <div class="model-integrity-row__measure"><div class="analytics-bar-track"><span :style="{ width: barWidth(model.average_confidence || 0, 100) }"></span></div><strong>{{ formatPercentage(model.average_confidence) }}</strong></div>
+                    <small>{{ model.samples }} gaze {{ model.samples === 1 ? 'alert' : 'alerts' }} · {{ model.attempts }} {{ model.attempts === 1 ? 'attempt' : 'attempts' }}</small>
                   </div>
                 </div>
-                <p class="model-integrity-note">Integrity includes all recorded proctoring signals. It is not a measured model accuracy rate. The model is recorded when an attempt begins.</p>
+                <p class="model-integrity-note">Confidence is sampled from recorded gaze violations only. It is not measured model accuracy or an average of all camera frames.</p>
                 <p v-if="analytics.unattributed_attempts" class="model-integrity-note">{{ analytics.unattributed_attempts }} earlier {{ analytics.unattributed_attempts === 1 ? 'attempt has' : 'attempts have' }} no recorded model.</p>
               </article>
             </template>
@@ -830,7 +835,12 @@ const deviceChartGradient = computed(() => {
   });
   return `conic-gradient(${slices.join(', ')})`;
 });
-const formatIntegrity = (value) => value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
+const formatPercentage = (value) => value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
+const violationShortLabels = {
+  gaze_violation: 'Gaze away', gaze_no_face: 'Face missing', tab_switch: 'Tab switch',
+  gadget_detected: 'Gadget', split_screen: 'Split screen', screenshot_attempt: 'Screenshot',
+};
+const shortViolationLabel = (item) => violationShortLabels[item.key] || item.label.slice(0, 13);
 const formatShare = (count, total) => total > 0 ? `${(count / total * 100).toFixed(1)}%` : '—';
 const barWidth = (value, maximum) => `${maximum ? Math.max(0, Math.min(100, value / maximum * 100)) : 0}%`;
 const reviewStudent = ref(null);
@@ -1484,11 +1494,15 @@ onMounted(() => {
 .violation-chart__point { fill: #fff; stroke: #254e86; stroke-width: 3; }
 .violation-chart__value { fill: #1d3461; font: 700 11px 'Poppins', sans-serif; }
 .violation-chart__number { fill: #71829a; font: 700 11px 'Poppins', sans-serif; }
+.analytics-legend { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem 1rem; margin: .15rem 0 .85rem; color: #64758d; font-size: .7rem; }
+.analytics-legend__line { width: 1.8rem; height: 3px; border-radius: 3px; background: #38649d; }
+.analytics-legend__bar { width: 1.8rem; height: 7px; border-radius: 4px; background: #6f88ac; }
 .violation-chart__key { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem 1rem; padding-top: .7rem; border-top: 1px solid #edf0f5; }
 .violation-chart__key div { display: flex; gap: .5rem; min-width: 0; color: #445774; font-size: .72rem; }
 .violation-chart__key span { color: #8a9bb1; font-weight: 800; }
 .violation-chart__key .violation-chart__key-label { display: grid; color: #445774; font-weight: 600; }
 .violation-chart__key-label small { color: #8392a7; font-size: .68rem; font-weight: 400; }
+.stat-sample { display: block; margin-top: .2rem; color: #8a98aa; font-size: .67rem; }
 .analytics-bar-track { width: 100%; height: 7px; overflow: hidden; border-radius: 999px; background: #edf1f6; }
 .analytics-bar-track span { display: block; height: 100%; border-radius: inherit; background: #6f88ac; }
 .analytics-empty { margin: 0; padding: 2rem .5rem; color: #8492a6; font-size: .84rem; text-align: center; }
@@ -1498,6 +1512,7 @@ onMounted(() => {
 .device-chart__center strong { color: #1b3157; font: 750 1.6rem 'Poppins', sans-serif; line-height: 1.2; }
 .device-chart__center span { color: #75849a; font-size: .68rem; }
 .device-chart__legend { display: grid; flex: 1; min-width: 0; }
+.device-chart__legend-title { margin: 0 0 .35rem; color: #64758d; font-size: .7rem; }
 .device-chart__item { display: grid; grid-template-columns: .65rem minmax(0, 1fr) auto auto; align-items: center; gap: .55rem; padding: .55rem 0; border-bottom: 1px solid #edf0f5; color: #374a64; font-size: .76rem; }
 .device-chart__item:last-child { border-bottom: 0; }
 .device-chart__swatch { width: .65rem; height: .65rem; border-radius: 50%; }

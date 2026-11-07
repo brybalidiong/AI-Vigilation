@@ -934,7 +934,8 @@ def admin_analytics(request):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     from .gaze_service import GAZE_MODEL_NAMES, selected_gaze_model_code
-    model_scores = {code: [] for code in GAZE_MODEL_NAMES}
+    model_confidences = {code: [] for code in GAZE_MODEL_NAMES}
+    model_attempts = {code: 0 for code in GAZE_MODEL_NAMES}
 
     institute_names = dict(UserProfile.INSTITUTE_CHOICES)
     institute_by_email = {
@@ -943,44 +944,65 @@ def admin_analytics(request):
         if email
     }
     reports = ExamIntegrityReport.objects.select_related('submission').all()
-    institute_scores = {code: [] for code in institute_names}
-    score_total = Decimal('0')
+    institute_confidences = {code: [] for code in institute_names}
+    institute_attempts = {code: 0 for code in institute_names}
+    attempt_groups = {}
     flagged_attempts = 0
     terminated_attempts = 0
     report_count = 0
     for report in reports.iterator():
         report_count += 1
-        score_total += report.integrity_score
         model_code = (report.summary or {}).get('gaze_model_code')
-        if model_code in model_scores:
-            model_scores[model_code].append(report.integrity_score)
+        if model_code in model_attempts:
+            model_attempts[model_code] += 1
         if report.integrity_score < 100:
             flagged_attempts += 1
         if (report.summary or {}).get('terminated'):
             terminated_attempts += 1
         institute = institute_by_email.get(report.submission.student_email.lower())
-        if institute in institute_scores:
-            institute_scores[institute].append(report.integrity_score)
+        if institute in institute_attempts:
+            institute_attempts[institute] += 1
+        attempt_groups[(report.submission_id, report.attempt_number)] = (model_code, institute)
+
+    # Gaze event metadata contains the classifier's confidence. Match by attempt,
+    # since the same submission can use a different model on a later attempt.
+    for submission_id, attempt_number, metadata in ExamProctoringEvent.objects.filter(
+        event_type=ExamProctoringEvent.EVENT_GAZE_VIOLATION,
+        source='gaze_ai',
+    ).values_list('submission_id', 'attempt_number', 'metadata').iterator():
+        model_code, institute = attempt_groups.get((submission_id, attempt_number), (None, None))
+        if model_code not in model_confidences or not isinstance(metadata, dict):
+            continue
+        confidence = metadata.get('confidence')
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+            continue
+        model_confidences[model_code].append(confidence)
+        if institute in institute_confidences:
+            institute_confidences[institute].append(confidence)
+
+    all_confidences = [value for samples in model_confidences.values() for value in samples]
 
     institute_rows = [
         {
             'code': code,
             'name': name,
-            'average_integrity': round(float(sum(institute_scores[code]) / len(institute_scores[code])), 1)
-                if institute_scores[code] else None,
-            'attempts': len(institute_scores[code]),
+            'average_model_confidence': round(sum(institute_confidences[code]) / len(institute_confidences[code]) * 100, 1)
+                if institute_confidences[code] else None,
+            'samples': len(institute_confidences[code]),
+            'attempts': institute_attempts[code],
         }
         for code, name in institute_names.items()
     ]
-    scored_institutes = [row for row in institute_rows if row['attempts']]
-    lowest_institute = min(scored_institutes, key=lambda row: row['average_integrity']) if scored_institutes else None
+    scored_institutes = [row for row in institute_rows if row['samples']]
+    lowest_institute = min(scored_institutes, key=lambda row: row['average_model_confidence']) if scored_institutes else None
     gaze_model_rows = [
         {
             'code': code,
             'name': name,
-            'average_integrity': round(float(sum(model_scores[code]) / len(model_scores[code])), 1)
-                if model_scores[code] else None,
-            'attempts': len(model_scores[code]),
+            'average_confidence': round(sum(model_confidences[code]) / len(model_confidences[code]) * 100, 1)
+                if model_confidences[code] else None,
+            'samples': len(model_confidences[code]),
+            'attempts': model_attempts[code],
         }
         for code, name in GAZE_MODEL_NAMES.items()
     ]
@@ -1024,7 +1046,9 @@ def admin_analytics(request):
     return Response({
         'summary': {
             'completed_attempts': report_count,
-            'average_integrity': round(float(score_total / report_count), 1) if report_count else None,
+            'average_model_confidence': round(sum(all_confidences) / len(all_confidences) * 100, 1)
+                if all_confidences else None,
+            'confidence_samples': len(all_confidences),
             'flagged_attempts': flagged_attempts,
             'terminated_attempts': terminated_attempts,
             'recorded_violations': sum(violation_counts.values()),
