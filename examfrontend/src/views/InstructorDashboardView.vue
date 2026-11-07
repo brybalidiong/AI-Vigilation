@@ -948,6 +948,7 @@
               icon='<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
             />
             <template v-else>
+              <div class="ep-controls">
               <div class="ep-view-toolbar">
                 <div class="ep-view-control">
                   <span class="ep-control-label">View by</span>
@@ -999,6 +1000,7 @@
                   <svg class="courses-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   <input v-model.trim="progressStudentSearch" type="search" class="courses-search-input" placeholder="Search students" aria-label="Search progress students" />
                 </div>
+              </div>
               </div>
 
               <div v-if="selectedProgressSetId && progressView === 'student'" class="ep-split">

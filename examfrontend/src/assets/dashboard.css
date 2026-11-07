@@ -3999,6 +3999,11 @@
   border-color: #dfe6ef;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.055);
 }
+.ep-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
 
 /* Keep course table controls in view; scroll only the roster and results. */
 @media (min-width: 1101px) {
@@ -4006,8 +4011,16 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    padding-bottom: 1.5rem;
+    padding-top: 1.25rem;
+    padding-bottom: 0.75rem;
   }
+  .main-content--course-tables .course-workspace { gap: 0.75rem; }
+  .main-content--course-tables .cw-hero__content { padding: 0.7rem 1.5rem 0.8rem; }
+  .main-content--course-tables .cw-hero__nav { margin-bottom: 0.3rem; }
+  .main-content--course-tables .cw-hero__code { margin-bottom: 0.2rem; }
+  .main-content--course-tables .cw-hero__title { font-size: 1.5rem; }
+  .main-content--course-tables .cw-hero__stats { margin-top: 0.4rem; }
+  .main-content--course-tables .cw-stat-chip { padding: 0.25rem 0.65rem; }
   .main-content--course-tables .course-workspace,
   .main-content--course-tables .course-tabs-card,
   .main-content--course-tables .course-tab-panel,
@@ -4031,6 +4044,7 @@
     flex: 1;
     max-height: none;
     overflow: hidden;
+    padding: 1.25rem;
   }
   .main-content--course-tables .workspace-area {
     height: 100%;
@@ -4063,9 +4077,25 @@
     min-height: 0;
     max-height: none;
   }
+  .main-content--course-tables .students-list .data-table :is(th, td) {
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
   .main-content--course-tables .ep-layout {
     height: 100%;
     min-height: 0;
+    gap: 0.75rem;
+  }
+  .main-content--course-tables .ep-controls { gap: 0.65rem; }
+  .main-content--course-tables .ep-view-toolbar,
+  .main-content--course-tables .ep-controls .panel-toolbar {
+    padding: 0.6rem 0.85rem;
+  }
+  .main-content--course-tables .ep-controls .panel-toolbar { margin-bottom: 0; }
+  .main-content--course-tables .ep-student-row { padding: 0.5rem; }
+  .main-content--course-tables .ep-table :is(th, td) {
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
   }
   .main-content--course-tables .ep-split {
     flex: 1;
@@ -4086,6 +4116,14 @@
     min-height: 0;
     max-height: none;
   }
+}
+@media (min-width: 1500px) {
+  .main-content--course-tables .ep-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+  .main-content--course-tables .ep-view-toolbar { gap: 0.5rem; }
 }
 
 .dashboard-role :is(button, a, input, select, textarea):focus-visible {
